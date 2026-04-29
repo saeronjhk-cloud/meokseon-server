@@ -1,0 +1,3641 @@
+{
+  "stats": {
+    "total": 132,
+    "hasIngredients": 54,
+    "noIngredients": 78,
+    "ingredientC002Match": 0,
+    "ingredientC002Mismatch": 0,
+    "hasAdditives": 38,
+    "noAdditives": 94,
+    "additiveCorrect": 219,
+    "additiveNotInText": 2,
+    "hasNutrition": 72,
+    "noNutrition": 60,
+    "nutritionAnomalies": 3,
+    "trafficLightMatch": 72,
+    "trafficLightMismatch": 0,
+    "trafficLightExcluded": 0,
+    "categoryMatch": 131,
+    "categoryMismatch": 1
+  },
+  "results": [
+    {
+      "product_id": "12",
+      "product_name": "신라면",
+      "pop_keyword": "신라면",
+      "pop_category": "라면",
+      "brand": "",
+      "manufacturer": "(주)농심",
+      "barcode": "8801043032704",
+      "issues": [],
+      "checks": {
+        "ingredients": "O",
+        "additives": "O",
+        "nutrition": "O",
+        "trafficLight": "O",
+        "category": "O"
+      },
+      "trafficLight": {
+        "sodium": "red",
+        "sugars": "green",
+        "sat_fat": null,
+        "total_fat": "red",
+        "cholesterol": "green",
+        "trans_fat": "green",
+        "protein": "green",
+        "fiber": "yellow",
+        "excluded": false,
+        "category": "general"
+      }
+    },
+    {
+      "product_id": "15",
+      "product_name": "짜파게티",
+      "pop_keyword": "짜파게티",
+      "pop_category": "라면",
+      "brand": "",
+      "manufacturer": "(주)농심",
+      "barcode": "8801043033008",
+      "issues": [],
+      "checks": {
+        "ingredients": "O",
+        "additives": "O",
+        "nutrition": "O",
+        "trafficLight": "O",
+        "category": "O"
+      },
+      "trafficLight": {
+        "sodium": "red",
+        "sugars": "green",
+        "sat_fat": null,
+        "total_fat": "red",
+        "cholesterol": "green",
+        "trans_fat": "green",
+        "protein": "green",
+        "fiber": "yellow",
+        "excluded": false,
+        "category": "general"
+      }
+    },
+    {
+      "product_id": "13",
+      "product_name": "진라면 순한맛",
+      "pop_keyword": "진라면",
+      "pop_category": "라면",
+      "brand": "",
+      "manufacturer": "(주)오뚜기",
+      "barcode": "8801045520001",
+      "issues": [],
+      "checks": {
+        "ingredients": "O",
+        "additives": "-",
+        "nutrition": "O",
+        "trafficLight": "O",
+        "category": "O"
+      },
+      "trafficLight": {
+        "sodium": "red",
+        "sugars": "green",
+        "sat_fat": null,
+        "total_fat": "red",
+        "cholesterol": "green",
+        "trans_fat": "green",
+        "protein": "green",
+        "fiber": "yellow",
+        "excluded": false,
+        "category": "general"
+      }
+    },
+    {
+      "product_id": "17",
+      "product_name": "불닭볶음면",
+      "pop_keyword": "불닭볶음면",
+      "pop_category": "라면",
+      "brand": "",
+      "manufacturer": "삼양식품(주)",
+      "barcode": "8801073110809",
+      "issues": [],
+      "checks": {
+        "ingredients": "O",
+        "additives": "-",
+        "nutrition": "O",
+        "trafficLight": "O",
+        "category": "O"
+      },
+      "trafficLight": {
+        "sodium": "red",
+        "sugars": "green",
+        "sat_fat": null,
+        "total_fat": "red",
+        "cholesterol": "green",
+        "trans_fat": "green",
+        "protein": "green",
+        "fiber": "yellow",
+        "excluded": false,
+        "category": "general"
+      }
+    },
+    {
+      "product_id": "20",
+      "product_name": "안성탕면",
+      "pop_keyword": "안성탕면",
+      "pop_category": "라면",
+      "brand": "",
+      "manufacturer": "(주)농심",
+      "barcode": "8801043032308",
+      "issues": [],
+      "checks": {
+        "ingredients": "O",
+        "additives": "-",
+        "nutrition": "O",
+        "trafficLight": "O",
+        "category": "O"
+      },
+      "trafficLight": {
+        "sodium": "red",
+        "sugars": "green",
+        "sat_fat": null,
+        "total_fat": "red",
+        "cholesterol": "green",
+        "trans_fat": "green",
+        "protein": "green",
+        "fiber": "yellow",
+        "excluded": false,
+        "category": "general"
+      }
+    },
+    {
+      "product_id": "16",
+      "product_name": "삼양라면",
+      "pop_keyword": "삼양라면",
+      "pop_category": "라면",
+      "brand": "",
+      "manufacturer": "삼양식품(주)",
+      "barcode": "8801073100107",
+      "issues": [],
+      "checks": {
+        "ingredients": "O",
+        "additives": "-",
+        "nutrition": "O",
+        "trafficLight": "O",
+        "category": "O"
+      },
+      "trafficLight": {
+        "sodium": "red",
+        "sugars": "green",
+        "sat_fat": null,
+        "total_fat": "red",
+        "cholesterol": "green",
+        "trans_fat": "green",
+        "protein": "green",
+        "fiber": "yellow",
+        "excluded": false,
+        "category": "general"
+      }
+    },
+    {
+      "product_id": "14",
+      "product_name": "너구리",
+      "pop_keyword": "너구리",
+      "pop_category": "라면",
+      "brand": "",
+      "manufacturer": "(주)농심",
+      "barcode": "8801043032902",
+      "issues": [],
+      "checks": {
+        "ingredients": "O",
+        "additives": "-",
+        "nutrition": "O",
+        "trafficLight": "O",
+        "category": "O"
+      },
+      "trafficLight": {
+        "sodium": "red",
+        "sugars": "green",
+        "sat_fat": null,
+        "total_fat": "red",
+        "cholesterol": "green",
+        "trans_fat": "green",
+        "protein": "green",
+        "fiber": "yellow",
+        "excluded": false,
+        "category": "general"
+      }
+    },
+    {
+      "product_id": "386",
+      "product_name": "육개장",
+      "pop_keyword": "육개장",
+      "pop_category": "라면",
+      "brand": "",
+      "manufacturer": "성일식품",
+      "barcode": "8809050290025",
+      "issues": [
+        "원재료 없음"
+      ],
+      "checks": {
+        "ingredients": "X",
+        "additives": "-",
+        "nutrition": "O",
+        "trafficLight": "O",
+        "category": "O"
+      },
+      "trafficLight": {
+        "sodium": "yellow",
+        "sugars": null,
+        "sat_fat": null,
+        "total_fat": "yellow",
+        "cholesterol": null,
+        "trans_fat": null,
+        "protein": "yellow",
+        "fiber": null,
+        "excluded": false,
+        "category": "general"
+      }
+    },
+    {
+      "product_id": "21",
+      "product_name": "비빔면",
+      "pop_keyword": "비빔면",
+      "pop_category": "라면",
+      "brand": "",
+      "manufacturer": "팔도(주)",
+      "barcode": "8803900020101",
+      "issues": [
+        "원재료 없음"
+      ],
+      "checks": {
+        "ingredients": "X",
+        "additives": "-",
+        "nutrition": "O",
+        "trafficLight": "O",
+        "category": "O"
+      },
+      "trafficLight": {
+        "sodium": "red",
+        "sugars": "yellow",
+        "sat_fat": null,
+        "total_fat": "red",
+        "cholesterol": "green",
+        "trans_fat": "green",
+        "protein": "green",
+        "fiber": "yellow",
+        "excluded": false,
+        "category": "general"
+      }
+    },
+    {
+      "product_id": "1900",
+      "product_name": "김치라면밥",
+      "pop_keyword": "김치라면",
+      "pop_category": "라면",
+      "brand": "",
+      "manufacturer": "건농식품",
+      "barcode": "8809287910727",
+      "issues": [],
+      "checks": {
+        "ingredients": "O",
+        "additives": "-",
+        "nutrition": "O",
+        "trafficLight": "O",
+        "category": "O"
+      },
+      "trafficLight": {
+        "sodium": "green",
+        "sugars": null,
+        "sat_fat": null,
+        "total_fat": "yellow",
+        "cholesterol": null,
+        "trans_fat": null,
+        "protein": "green",
+        "fiber": null,
+        "excluded": false,
+        "category": "fermented"
+      }
+    },
+    {
+      "product_id": "5711",
+      "product_name": "왕뚜껑S",
+      "pop_keyword": "왕뚜껑",
+      "pop_category": "라면",
+      "brand": "",
+      "manufacturer": "(주) 팔도",
+      "barcode": "8801128509954",
+      "issues": [
+        "영양정보 없음"
+      ],
+      "checks": {
+        "ingredients": "O",
+        "additives": "-",
+        "nutrition": "X",
+        "trafficLight": "-",
+        "category": "O"
+      }
+    },
+    {
+      "product_id": "3431",
+      "product_name": "본고장가쓰오튀김우동",
+      "pop_keyword": "튀김우동",
+      "pop_category": "라면",
+      "brand": "",
+      "manufacturer": "한일식품(주)",
+      "barcode": "8801085069300",
+      "issues": [
+        "영양정보 없음",
+        "분류 불일치: DB(dried) vs 탐지(general)"
+      ],
+      "checks": {
+        "ingredients": "O",
+        "additives": "-",
+        "nutrition": "X",
+        "trafficLight": "-",
+        "category": "X"
+      }
+    },
+    {
+      "product_id": "909",
+      "product_name": "나가사끼 꽃게짬뽕",
+      "pop_keyword": "나가사끼",
+      "pop_category": "라면",
+      "brand": "",
+      "manufacturer": "삼양식품(주)원주공장",
+      "barcode": "8801073140615",
+      "issues": [
+        "원재료 없음"
+      ],
+      "checks": {
+        "ingredients": "X",
+        "additives": "-",
+        "nutrition": "O",
+        "trafficLight": "O",
+        "category": "O"
+      },
+      "trafficLight": {
+        "sodium": "green",
+        "sugars": null,
+        "sat_fat": null,
+        "total_fat": "yellow",
+        "cholesterol": null,
+        "trans_fat": null,
+        "protein": "yellow",
+        "fiber": null,
+        "excluded": false,
+        "category": "general"
+      }
+    },
+    {
+      "product_id": "451",
+      "product_name": "무파마탕면",
+      "pop_keyword": "무파마",
+      "pop_category": "라면",
+      "brand": "",
+      "manufacturer": "(주)농심",
+      "barcode": "8801043052238",
+      "issues": [],
+      "checks": {
+        "ingredients": "O",
+        "additives": "O",
+        "nutrition": "O",
+        "trafficLight": "O",
+        "category": "O"
+      },
+      "trafficLight": {
+        "sodium": "green",
+        "sugars": null,
+        "sat_fat": null,
+        "total_fat": "yellow",
+        "cholesterol": null,
+        "trans_fat": null,
+        "protein": "yellow",
+        "fiber": null,
+        "excluded": false,
+        "category": "general"
+      }
+    },
+    {
+      "product_id": "1",
+      "product_name": "새우깡",
+      "pop_keyword": "새우깡",
+      "pop_category": "과자",
+      "brand": "",
+      "manufacturer": "(주)농심",
+      "barcode": "8801043012607",
+      "issues": [],
+      "checks": {
+        "ingredients": "O",
+        "additives": "O",
+        "nutrition": "O",
+        "trafficLight": "O",
+        "category": "O"
+      },
+      "trafficLight": {
+        "sodium": "red",
+        "sugars": "yellow",
+        "sat_fat": null,
+        "total_fat": "red",
+        "cholesterol": "green",
+        "trans_fat": "green",
+        "protein": "gray",
+        "fiber": "gray",
+        "excluded": false,
+        "category": "general"
+      }
+    },
+    {
+      "product_id": "2",
+      "product_name": "포카칩 오리지널",
+      "pop_keyword": "포카칩",
+      "pop_category": "과자",
+      "brand": "",
+      "manufacturer": "(주)오리온",
+      "barcode": "8801117211004",
+      "issues": [],
+      "checks": {
+        "ingredients": "O",
+        "additives": "-",
+        "nutrition": "O",
+        "trafficLight": "O",
+        "category": "O"
+      },
+      "trafficLight": {
+        "sodium": "yellow",
+        "sugars": "green",
+        "sat_fat": null,
+        "total_fat": "red",
+        "cholesterol": "green",
+        "trans_fat": "green",
+        "protein": "gray",
+        "fiber": "gray",
+        "excluded": false,
+        "category": "general"
+      }
+    },
+    {
+      "product_id": "77",
+      "product_name": "꼬깔콘 고소한맛",
+      "pop_keyword": "꼬깔콘",
+      "pop_category": "과자",
+      "brand": "",
+      "manufacturer": "롯데웰푸드(주)",
+      "barcode": "8801062333806",
+      "issues": [],
+      "checks": {
+        "ingredients": "O",
+        "additives": "O",
+        "nutrition": "O",
+        "trafficLight": "O",
+        "category": "O"
+      },
+      "trafficLight": {
+        "sodium": "red",
+        "sugars": null,
+        "sat_fat": null,
+        "total_fat": "red",
+        "cholesterol": null,
+        "trans_fat": null,
+        "protein": "yellow",
+        "fiber": null,
+        "excluded": false,
+        "category": "general"
+      }
+    },
+    {
+      "product_id": "668",
+      "product_name": "오징어땅콩",
+      "pop_keyword": "오징어땅콩",
+      "pop_category": "과자",
+      "brand": "",
+      "manufacturer": "(주)오리온 이천공장",
+      "barcode": "8801117723705",
+      "issues": [],
+      "checks": {
+        "ingredients": "O",
+        "additives": "O",
+        "nutrition": "O",
+        "trafficLight": "O",
+        "category": "O"
+      },
+      "trafficLight": {
+        "sodium": "yellow",
+        "sugars": null,
+        "sat_fat": null,
+        "total_fat": "red",
+        "cholesterol": null,
+        "trans_fat": null,
+        "protein": "green",
+        "fiber": null,
+        "excluded": false,
+        "category": "general"
+      }
+    },
+    {
+      "product_id": "10",
+      "product_name": "초코파이",
+      "pop_keyword": "초코파이",
+      "pop_category": "과자",
+      "brand": "",
+      "manufacturer": "(주)오리온",
+      "barcode": "8801117100100",
+      "issues": [
+        "원재료 없음"
+      ],
+      "checks": {
+        "ingredients": "X",
+        "additives": "-",
+        "nutrition": "O",
+        "trafficLight": "O",
+        "category": "O"
+      },
+      "trafficLight": {
+        "sodium": "yellow",
+        "sugars": "red",
+        "sat_fat": null,
+        "total_fat": "yellow",
+        "cholesterol": "green",
+        "trans_fat": "green",
+        "protein": "gray",
+        "fiber": "gray",
+        "excluded": false,
+        "category": "general"
+      }
+    },
+    {
+      "product_id": "89",
+      "product_name": "롯데 빈츠",
+      "pop_keyword": "빈츠",
+      "pop_category": "과자",
+      "brand": "",
+      "manufacturer": "롯데웰푸드(주)",
+      "barcode": "8801062200702",
+      "issues": [
+        "원재료 없음",
+        "영양정보 없음"
+      ],
+      "checks": {
+        "ingredients": "X",
+        "additives": "-",
+        "nutrition": "X",
+        "trafficLight": "-",
+        "category": "O"
+      }
+    },
+    {
+      "product_id": "3",
+      "product_name": "칸쵸 초코",
+      "pop_keyword": "칸쵸",
+      "pop_category": "과자",
+      "brand": "",
+      "manufacturer": "롯데웰푸드(주)",
+      "barcode": "8801062634507",
+      "issues": [],
+      "checks": {
+        "ingredients": "O",
+        "additives": "O",
+        "nutrition": "O",
+        "trafficLight": "O",
+        "category": "O"
+      },
+      "trafficLight": {
+        "sodium": "yellow",
+        "sugars": "red",
+        "sat_fat": null,
+        "total_fat": "red",
+        "cholesterol": "green",
+        "trans_fat": "green",
+        "protein": "gray",
+        "fiber": "gray",
+        "excluded": false,
+        "category": "general"
+      }
+    },
+    {
+      "product_id": "8",
+      "product_name": "고래밥 볶음양념맛",
+      "pop_keyword": "고래밥",
+      "pop_category": "과자",
+      "brand": "",
+      "manufacturer": "(주)오리온",
+      "barcode": "8801117779603",
+      "issues": [],
+      "checks": {
+        "ingredients": "O",
+        "additives": "O",
+        "nutrition": "O",
+        "trafficLight": "O",
+        "category": "O"
+      },
+      "trafficLight": {
+        "sodium": "red",
+        "sugars": "yellow",
+        "sat_fat": null,
+        "total_fat": "yellow",
+        "cholesterol": "green",
+        "trans_fat": "green",
+        "protein": "yellow",
+        "fiber": "gray",
+        "excluded": false,
+        "category": "general"
+      }
+    },
+    {
+      "product_id": "9",
+      "product_name": "양파링",
+      "pop_keyword": "양파링",
+      "pop_category": "과자",
+      "brand": "",
+      "manufacturer": "(주)농심",
+      "barcode": "8801043013000",
+      "issues": [],
+      "checks": {
+        "ingredients": "O",
+        "additives": "O",
+        "nutrition": "O",
+        "trafficLight": "O",
+        "category": "O"
+      },
+      "trafficLight": {
+        "sodium": "red",
+        "sugars": "yellow",
+        "sat_fat": null,
+        "total_fat": "red",
+        "cholesterol": "green",
+        "trans_fat": "green",
+        "protein": "gray",
+        "fiber": "gray",
+        "excluded": false,
+        "category": "general"
+      }
+    },
+    {
+      "product_id": "9229",
+      "product_name": "꿀꽈배기",
+      "pop_keyword": "꿀꽈배기",
+      "pop_category": "과자",
+      "brand": "",
+      "manufacturer": "(주)농심",
+      "barcode": "8801043805933",
+      "issues": [],
+      "checks": {
+        "ingredients": "O",
+        "additives": "O",
+        "nutrition": "O",
+        "trafficLight": "O",
+        "category": "O"
+      },
+      "trafficLight": {
+        "sodium": "yellow",
+        "sugars": null,
+        "sat_fat": null,
+        "total_fat": "red",
+        "cholesterol": null,
+        "trans_fat": null,
+        "protein": "yellow",
+        "fiber": null,
+        "excluded": false,
+        "category": "general"
+      }
+    },
+    {
+      "product_id": "1292",
+      "product_name": "홈런볼 크림치즈",
+      "pop_keyword": "홈런볼",
+      "pop_category": "과자",
+      "brand": "",
+      "manufacturer": "해태제과식품(주)",
+      "barcode": "8801019304965",
+      "issues": [
+        "원재료 없음",
+        "영양정보 없음"
+      ],
+      "checks": {
+        "ingredients": "X",
+        "additives": "-",
+        "nutrition": "X",
+        "trafficLight": "-",
+        "category": "O"
+      }
+    },
+    {
+      "product_id": "709",
+      "product_name": "참콘칩",
+      "pop_keyword": "콘칩",
+      "pop_category": "과자",
+      "brand": "",
+      "manufacturer": "상일식품(주)",
+      "barcode": "8805856102197",
+      "issues": [
+        "원재료 없음"
+      ],
+      "checks": {
+        "ingredients": "X",
+        "additives": "-",
+        "nutrition": "O",
+        "trafficLight": "O",
+        "category": "O"
+      },
+      "trafficLight": {
+        "sodium": "yellow",
+        "sugars": null,
+        "sat_fat": null,
+        "total_fat": "red",
+        "cholesterol": null,
+        "trans_fat": null,
+        "protein": "yellow",
+        "fiber": null,
+        "excluded": false,
+        "category": "general"
+      }
+    },
+    {
+      "product_id": "6",
+      "product_name": "프링글스 오리지널",
+      "pop_keyword": "프링글스",
+      "pop_category": "과자",
+      "brand": "",
+      "manufacturer": "켈로그(주)",
+      "barcode": "8801037062908",
+      "issues": [
+        "원재료 없음"
+      ],
+      "checks": {
+        "ingredients": "X",
+        "additives": "-",
+        "nutrition": "O",
+        "trafficLight": "O",
+        "category": "O"
+      },
+      "trafficLight": {
+        "sodium": "yellow",
+        "sugars": "green",
+        "sat_fat": null,
+        "total_fat": "red",
+        "cholesterol": "green",
+        "trans_fat": "green",
+        "protein": "gray",
+        "fiber": "gray",
+        "excluded": false,
+        "category": "general"
+      }
+    },
+    {
+      "product_id": "7",
+      "product_name": "허니버터칩",
+      "pop_keyword": "허니버터칩",
+      "pop_category": "과자",
+      "brand": "",
+      "manufacturer": "해태제과식품(주)",
+      "barcode": "8801019607806",
+      "issues": [],
+      "checks": {
+        "ingredients": "O",
+        "additives": "-",
+        "nutrition": "O",
+        "trafficLight": "O",
+        "category": "O"
+      },
+      "trafficLight": {
+        "sodium": "yellow",
+        "sugars": "red",
+        "sat_fat": null,
+        "total_fat": "red",
+        "cholesterol": "green",
+        "trans_fat": "green",
+        "protein": "gray",
+        "fiber": "gray",
+        "excluded": false,
+        "category": "general"
+      }
+    },
+    {
+      "product_id": "90",
+      "product_name": "해태 에이스",
+      "pop_keyword": "에이스",
+      "pop_category": "과자",
+      "brand": "",
+      "manufacturer": "해태제과식품(주)",
+      "barcode": "8801019200007",
+      "issues": [
+        "영양정보 없음"
+      ],
+      "checks": {
+        "ingredients": "O",
+        "additives": "O",
+        "nutrition": "X",
+        "trafficLight": "-",
+        "category": "O"
+      }
+    },
+    {
+      "product_id": "33",
+      "product_name": "빙그레 바나나맛우유",
+      "pop_keyword": "바나나맛우유",
+      "pop_category": "음료",
+      "brand": "",
+      "manufacturer": "빙그레(주)",
+      "barcode": "8801104200004",
+      "issues": [
+        "원재료 없음"
+      ],
+      "checks": {
+        "ingredients": "X",
+        "additives": "-",
+        "nutrition": "O",
+        "trafficLight": "O",
+        "category": "O"
+      },
+      "trafficLight": {
+        "sodium": "yellow",
+        "sugars": "red",
+        "sat_fat": null,
+        "total_fat": "yellow",
+        "cholesterol": "green",
+        "trans_fat": "green",
+        "protein": "yellow",
+        "fiber": "gray",
+        "excluded": false,
+        "category": "beverage"
+      }
+    },
+    {
+      "product_id": "22",
+      "product_name": "코카콜라 제로",
+      "pop_keyword": "코카콜라",
+      "pop_category": "음료",
+      "brand": "",
+      "manufacturer": "한국코카콜라(주)",
+      "barcode": "8806007045052",
+      "issues": [
+        "이상치: 칼로리 0이하"
+      ],
+      "checks": {
+        "ingredients": "O",
+        "additives": "O",
+        "nutrition": "△",
+        "trafficLight": "O",
+        "category": "O"
+      },
+      "trafficLight": {
+        "sodium": "green",
+        "sugars": "green",
+        "sat_fat": null,
+        "total_fat": "green",
+        "cholesterol": "green",
+        "trans_fat": "green",
+        "protein": "gray",
+        "fiber": "gray",
+        "excluded": false,
+        "category": "beverage"
+      }
+    },
+    {
+      "product_id": "25",
+      "product_name": "포카리스웨트",
+      "pop_keyword": "포카리스웨트",
+      "pop_category": "음료",
+      "brand": "",
+      "manufacturer": "동아오츠카(주)",
+      "barcode": "8801037010008",
+      "issues": [],
+      "checks": {
+        "ingredients": "O",
+        "additives": "O",
+        "nutrition": "O",
+        "trafficLight": "O",
+        "category": "O"
+      },
+      "trafficLight": {
+        "sodium": "green",
+        "sugars": "yellow",
+        "sat_fat": null,
+        "total_fat": "green",
+        "cholesterol": "green",
+        "trans_fat": "green",
+        "protein": "gray",
+        "fiber": "gray",
+        "excluded": false,
+        "category": "beverage"
+      }
+    },
+    {
+      "product_id": "79",
+      "product_name": "밀키스",
+      "pop_keyword": "밀키스",
+      "pop_category": "음료",
+      "brand": "",
+      "manufacturer": "롯데칠성음료(주)",
+      "barcode": "8801056020507",
+      "issues": [],
+      "checks": {
+        "ingredients": "O",
+        "additives": "O",
+        "nutrition": "O",
+        "trafficLight": "O",
+        "category": "O"
+      },
+      "trafficLight": {
+        "sodium": "green",
+        "sugars": null,
+        "sat_fat": null,
+        "total_fat": "green",
+        "cholesterol": null,
+        "trans_fat": null,
+        "protein": "gray",
+        "fiber": null,
+        "excluded": false,
+        "category": "beverage"
+      }
+    },
+    {
+      "product_id": "3665",
+      "product_name": "레쓰비 에스프레소",
+      "pop_keyword": "레쓰비",
+      "pop_category": "음료",
+      "brand": "",
+      "manufacturer": "롯데칠성음료(주)",
+      "barcode": "8801056890018",
+      "issues": [
+        "원재료 없음",
+        "영양정보 없음"
+      ],
+      "checks": {
+        "ingredients": "X",
+        "additives": "-",
+        "nutrition": "X",
+        "trafficLight": "-",
+        "category": "O"
+      }
+    },
+    {
+      "product_id": "461",
+      "product_name": "롯데실론티밀크티",
+      "pop_keyword": "실론티",
+      "pop_category": "음료",
+      "brand": "",
+      "manufacturer": "롯데칠성음료(주)",
+      "barcode": "8801056028619",
+      "issues": [
+        "원재료 없음",
+        "영양정보 없음"
+      ],
+      "checks": {
+        "ingredients": "X",
+        "additives": "-",
+        "nutrition": "X",
+        "trafficLight": "-",
+        "category": "O"
+      }
+    },
+    {
+      "product_id": "659",
+      "product_name": "게토레이블루볼트",
+      "pop_keyword": "게토레이",
+      "pop_category": "음료",
+      "brand": "",
+      "manufacturer": "롯데칠성음료(주)",
+      "barcode": "8801056052256",
+      "issues": [],
+      "checks": {
+        "ingredients": "O",
+        "additives": "O",
+        "nutrition": "O",
+        "trafficLight": "O",
+        "category": "O"
+      },
+      "trafficLight": {
+        "sodium": "green",
+        "sugars": null,
+        "sat_fat": null,
+        "total_fat": "green",
+        "cholesterol": null,
+        "trans_fat": null,
+        "protein": "gray",
+        "fiber": null,
+        "excluded": false,
+        "category": "beverage"
+      }
+    },
+    {
+      "product_id": "24",
+      "product_name": "델몬트 오렌지주스 100%",
+      "pop_keyword": "델몬트",
+      "pop_category": "음료",
+      "brand": "",
+      "manufacturer": "롯데칠성음료(주)",
+      "barcode": "8801056099009",
+      "issues": [
+        "원재료 없음"
+      ],
+      "checks": {
+        "ingredients": "X",
+        "additives": "-",
+        "nutrition": "O",
+        "trafficLight": "O",
+        "category": "O"
+      },
+      "trafficLight": {
+        "sodium": "green",
+        "sugars": "red",
+        "sat_fat": null,
+        "total_fat": "green",
+        "cholesterol": "green",
+        "trans_fat": "green",
+        "protein": "gray",
+        "fiber": "gray",
+        "excluded": false,
+        "category": "beverage"
+      }
+    },
+    {
+      "product_id": "5630",
+      "product_name": "칠성사이다제로",
+      "pop_keyword": "칠성사이다",
+      "pop_category": "음료",
+      "brand": "",
+      "manufacturer": "롯데칠성음료(주)",
+      "barcode": "8801056050023",
+      "issues": [],
+      "checks": {
+        "ingredients": "O",
+        "additives": "O",
+        "nutrition": "O",
+        "trafficLight": "O",
+        "category": "O"
+      },
+      "trafficLight": {
+        "sodium": "green",
+        "sugars": null,
+        "sat_fat": null,
+        "total_fat": "green",
+        "cholesterol": null,
+        "trans_fat": null,
+        "protein": "gray",
+        "fiber": null,
+        "excluded": false,
+        "category": "beverage"
+      }
+    },
+    {
+      "product_id": "23",
+      "product_name": "펩시콜라",
+      "pop_keyword": "펩시",
+      "pop_category": "음료",
+      "brand": "",
+      "manufacturer": "롯데칠성음료(주)",
+      "barcode": "8801056037802",
+      "issues": [],
+      "checks": {
+        "ingredients": "O",
+        "additives": "O",
+        "nutrition": "O",
+        "trafficLight": "O",
+        "category": "O"
+      },
+      "trafficLight": {
+        "sodium": "green",
+        "sugars": "red",
+        "sat_fat": null,
+        "total_fat": "green",
+        "cholesterol": "green",
+        "trans_fat": "green",
+        "protein": "gray",
+        "fiber": "gray",
+        "excluded": false,
+        "category": "beverage"
+      }
+    },
+    {
+      "product_id": "964",
+      "product_name": "환타 비타 레몬맛 원제 제2A부",
+      "pop_keyword": "환타",
+      "pop_category": "음료",
+      "brand": "",
+      "manufacturer": "한국 코카콜라 유한회사",
+      "barcode": "8801094152406",
+      "issues": [
+        "원재료 없음",
+        "영양정보 없음"
+      ],
+      "checks": {
+        "ingredients": "X",
+        "additives": "-",
+        "nutrition": "X",
+        "trafficLight": "-",
+        "category": "O"
+      }
+    },
+    {
+      "product_id": "102",
+      "product_name": "제주삼다수(먹는샘물)",
+      "pop_keyword": "제주삼다수",
+      "pop_category": "음료",
+      "brand": "",
+      "manufacturer": "제주도개발공사",
+      "barcode": "NO_BARCODE_101",
+      "issues": [
+        "원재료 없음",
+        "이상치: 칼로리 0이하"
+      ],
+      "checks": {
+        "ingredients": "X",
+        "additives": "-",
+        "nutrition": "△",
+        "trafficLight": "O",
+        "category": "O"
+      },
+      "trafficLight": {
+        "sodium": "green",
+        "sugars": "green",
+        "sat_fat": null,
+        "total_fat": "green",
+        "cholesterol": "green",
+        "trans_fat": "green",
+        "protein": "gray",
+        "fiber": "gray",
+        "excluded": false,
+        "category": "general"
+      }
+    },
+    {
+      "product_id": "80",
+      "product_name": "토레타",
+      "pop_keyword": "토레타",
+      "pop_category": "음료",
+      "brand": "",
+      "manufacturer": "한국코카콜라(주)",
+      "barcode": "8806007019053",
+      "issues": [
+        "원재료 없음"
+      ],
+      "checks": {
+        "ingredients": "X",
+        "additives": "-",
+        "nutrition": "O",
+        "trafficLight": "O",
+        "category": "O"
+      },
+      "trafficLight": {
+        "sodium": "yellow",
+        "sugars": null,
+        "sat_fat": null,
+        "total_fat": "green",
+        "cholesterol": null,
+        "trans_fat": null,
+        "protein": "gray",
+        "fiber": null,
+        "excluded": false,
+        "category": "beverage"
+      }
+    },
+    {
+      "product_id": "26",
+      "product_name": "비타500",
+      "pop_keyword": "비타500",
+      "pop_category": "음료",
+      "brand": "",
+      "manufacturer": "광동제약(주)",
+      "barcode": "8801045050003",
+      "issues": [],
+      "checks": {
+        "ingredients": "O",
+        "additives": "O",
+        "nutrition": "O",
+        "trafficLight": "O",
+        "category": "O"
+      },
+      "trafficLight": {
+        "sodium": "green",
+        "sugars": "red",
+        "sat_fat": null,
+        "total_fat": "green",
+        "cholesterol": "green",
+        "trans_fat": "green",
+        "protein": "gray",
+        "fiber": "gray",
+        "excluded": false,
+        "category": "beverage"
+      }
+    },
+    {
+      "product_id": "24225",
+      "product_name": "핫식스라이트",
+      "pop_keyword": "핫식스",
+      "pop_category": "음료",
+      "brand": "",
+      "manufacturer": "롯데칠성음료(주)",
+      "barcode": "8801056059309",
+      "issues": [],
+      "checks": {
+        "ingredients": "O",
+        "additives": "O",
+        "nutrition": "O",
+        "trafficLight": "O",
+        "category": "O"
+      },
+      "trafficLight": {
+        "sodium": "green",
+        "sugars": null,
+        "sat_fat": null,
+        "total_fat": "green",
+        "cholesterol": null,
+        "trans_fat": null,
+        "protein": "gray",
+        "fiber": null,
+        "excluded": false,
+        "category": "beverage"
+      }
+    },
+    {
+      "product_id": "3606",
+      "product_name": "써니텐오렌지",
+      "pop_keyword": "써니텐",
+      "pop_category": "음료",
+      "brand": "",
+      "manufacturer": "해태에이치티비주식회사",
+      "barcode": "8801105903867",
+      "issues": [
+        "원재료 없음",
+        "영양정보 없음"
+      ],
+      "checks": {
+        "ingredients": "X",
+        "additives": "-",
+        "nutrition": "X",
+        "trafficLight": "-",
+        "category": "O"
+      }
+    },
+    {
+      "product_id": "34",
+      "product_name": "서울우유 1급A",
+      "pop_keyword": "서울우유",
+      "pop_category": "유제품",
+      "brand": "",
+      "manufacturer": "서울우유협동조합",
+      "barcode": "8801115112006",
+      "issues": [
+        "원재료 없음"
+      ],
+      "checks": {
+        "ingredients": "X",
+        "additives": "-",
+        "nutrition": "O",
+        "trafficLight": "O",
+        "category": "O"
+      },
+      "trafficLight": {
+        "sodium": "green",
+        "sugars": "yellow",
+        "sat_fat": null,
+        "total_fat": "yellow",
+        "cholesterol": "green",
+        "trans_fat": "yellow",
+        "protein": "yellow",
+        "fiber": "gray",
+        "excluded": false,
+        "category": "beverage"
+      }
+    },
+    {
+      "product_id": "621",
+      "product_name": "매일우유 커피맛",
+      "pop_keyword": "매일우유",
+      "pop_category": "유제품",
+      "brand": "",
+      "manufacturer": "매일유업(주) 청양공장",
+      "barcode": "8801121652022",
+      "issues": [
+        "원재료 없음"
+      ],
+      "checks": {
+        "ingredients": "X",
+        "additives": "-",
+        "nutrition": "O",
+        "trafficLight": "O",
+        "category": "O"
+      },
+      "trafficLight": {
+        "sodium": "green",
+        "sugars": null,
+        "sat_fat": null,
+        "total_fat": "yellow",
+        "cholesterol": null,
+        "trans_fat": null,
+        "protein": "gray",
+        "fiber": "green",
+        "excluded": false,
+        "category": "beverage"
+      }
+    },
+    {
+      "product_id": "3763",
+      "product_name": "또죠요플레인요구르트S",
+      "pop_keyword": "요플레",
+      "pop_category": "유제품",
+      "brand": "",
+      "manufacturer": "(주)유담",
+      "barcode": "8809408052060",
+      "issues": [
+        "원재료 없음",
+        "영양정보 없음"
+      ],
+      "checks": {
+        "ingredients": "X",
+        "additives": "-",
+        "nutrition": "X",
+        "trafficLight": "-",
+        "category": "O"
+      }
+    },
+    {
+      "product_id": "81",
+      "product_name": "비요뜨 딸기",
+      "pop_keyword": "비요뜨",
+      "pop_category": "유제품",
+      "brand": "",
+      "manufacturer": "CJ제일제당(주)",
+      "barcode": "8801007330002",
+      "issues": [
+        "원재료 없음",
+        "영양정보 없음"
+      ],
+      "checks": {
+        "ingredients": "X",
+        "additives": "-",
+        "nutrition": "X",
+        "trafficLight": "-",
+        "category": "O"
+      }
+    },
+    {
+      "product_id": "5728",
+      "product_name": "허쉬딸기우유",
+      "pop_keyword": "딸기우유",
+      "pop_category": "유제품",
+      "brand": "",
+      "manufacturer": "매일유업(주)평택공장",
+      "barcode": "8801121190319",
+      "issues": [
+        "원재료 없음",
+        "영양정보 없음"
+      ],
+      "checks": {
+        "ingredients": "X",
+        "additives": "-",
+        "nutrition": "X",
+        "trafficLight": "-",
+        "category": "O"
+      }
+    },
+    {
+      "product_id": "2761",
+      "product_name": "푸르밀 가나 초코우유",
+      "pop_keyword": "초코우유",
+      "pop_category": "유제품",
+      "brand": "",
+      "manufacturer": "(주)푸르밀",
+      "barcode": "8806371300488",
+      "issues": [
+        "원재료 없음",
+        "영양정보 없음"
+      ],
+      "checks": {
+        "ingredients": "X",
+        "additives": "-",
+        "nutrition": "X",
+        "trafficLight": "-",
+        "category": "O"
+      }
+    },
+    {
+      "product_id": "40984",
+      "product_name": "야쿠르트",
+      "pop_keyword": "야쿠르트",
+      "pop_category": "유제품",
+      "brand": "",
+      "manufacturer": "(주)에치와이 평택공장",
+      "barcode": "8801128000017",
+      "issues": [
+        "원재료 없음"
+      ],
+      "checks": {
+        "ingredients": "X",
+        "additives": "-",
+        "nutrition": "O",
+        "trafficLight": "O",
+        "category": "O"
+      },
+      "trafficLight": {
+        "sodium": "green",
+        "sugars": null,
+        "sat_fat": null,
+        "total_fat": "green",
+        "cholesterol": null,
+        "trans_fat": null,
+        "protein": "gray",
+        "fiber": null,
+        "excluded": false,
+        "category": "general"
+      }
+    },
+    {
+      "product_id": "51",
+      "product_name": "CJ 햇반 백미",
+      "pop_keyword": "햇반",
+      "pop_category": "간편식",
+      "brand": "",
+      "manufacturer": "CJ제일제당(주)",
+      "barcode": "8801007200003",
+      "issues": [
+        "원재료 없음"
+      ],
+      "checks": {
+        "ingredients": "X",
+        "additives": "-",
+        "nutrition": "O",
+        "trafficLight": "O",
+        "category": "O"
+      },
+      "trafficLight": {
+        "sodium": "green",
+        "sugars": "green",
+        "sat_fat": null,
+        "total_fat": "green",
+        "cholesterol": "green",
+        "trans_fat": "green",
+        "protein": "yellow",
+        "fiber": "gray",
+        "excluded": false,
+        "category": "general"
+      }
+    },
+    {
+      "product_id": "37990",
+      "product_name": "스팸팡",
+      "pop_keyword": "스팸",
+      "pop_category": "간편식",
+      "brand": "",
+      "manufacturer": "성실식품",
+      "barcode": "8809381010026",
+      "issues": [
+        "원재료 없음",
+        "영양정보 없음"
+      ],
+      "checks": {
+        "ingredients": "X",
+        "additives": "-",
+        "nutrition": "X",
+        "trafficLight": "-",
+        "category": "O"
+      }
+    },
+    {
+      "product_id": "284",
+      "product_name": "오뚜기카레(순한맛)",
+      "pop_keyword": "오뚜기카레",
+      "pop_category": "간편식",
+      "brand": "",
+      "manufacturer": "주식회사 오뚜기",
+      "barcode": "8801045010113",
+      "issues": [
+        "영양정보 없음"
+      ],
+      "checks": {
+        "ingredients": "O",
+        "additives": "O",
+        "nutrition": "X",
+        "trafficLight": "-",
+        "category": "O"
+      }
+    },
+    {
+      "product_id": "32687",
+      "product_name": "비비고왕교자",
+      "pop_keyword": "비비고왕교자",
+      "pop_category": "간편식",
+      "brand": "",
+      "manufacturer": "씨제이제일제당(주)",
+      "barcode": "8801007323527",
+      "issues": [],
+      "checks": {
+        "ingredients": "O",
+        "additives": "O",
+        "nutrition": "O",
+        "trafficLight": "O",
+        "category": "O"
+      },
+      "trafficLight": {
+        "sodium": "yellow",
+        "sugars": null,
+        "sat_fat": null,
+        "total_fat": "yellow",
+        "cholesterol": null,
+        "trans_fat": null,
+        "protein": "yellow",
+        "fiber": null,
+        "excluded": false,
+        "category": "general"
+      }
+    },
+    {
+      "product_id": "3229",
+      "product_name": "동원참치명작",
+      "pop_keyword": "동원참치",
+      "pop_category": "간편식",
+      "brand": "",
+      "manufacturer": "(주)동원F&B",
+      "barcode": "8801047876045",
+      "issues": [
+        "영양정보 없음"
+      ],
+      "checks": {
+        "ingredients": "O",
+        "additives": "-",
+        "nutrition": "X",
+        "trafficLight": "-",
+        "category": "O"
+      }
+    },
+    {
+      "product_id": "91",
+      "product_name": "롯데 몽쉘",
+      "pop_keyword": "몽쉘",
+      "pop_category": "빵",
+      "brand": "",
+      "manufacturer": "롯데웰푸드(주)",
+      "barcode": "8801062300005",
+      "issues": [
+        "원재료 없음",
+        "영양정보 없음"
+      ],
+      "checks": {
+        "ingredients": "X",
+        "additives": "-",
+        "nutrition": "X",
+        "trafficLight": "-",
+        "category": "O"
+      }
+    },
+    {
+      "product_id": "209",
+      "product_name": "카스타드까망베르",
+      "pop_keyword": "카스타드",
+      "pop_category": "빵",
+      "brand": "",
+      "manufacturer": "롯데웰푸드(주)",
+      "barcode": "8801062246014",
+      "issues": [
+        "원재료 없음",
+        "영양정보 없음"
+      ],
+      "checks": {
+        "ingredients": "X",
+        "additives": "-",
+        "nutrition": "X",
+        "trafficLight": "-",
+        "category": "O"
+      }
+    },
+    {
+      "product_id": "3095",
+      "product_name": "리얼피넛브라우니",
+      "pop_keyword": "브라우니",
+      "pop_category": "빵",
+      "brand": "",
+      "manufacturer": "(주)오리온 제2익산공장",
+      "barcode": "8801117262709",
+      "issues": [
+        "원재료 없음",
+        "영양정보 없음"
+      ],
+      "checks": {
+        "ingredients": "X",
+        "additives": "-",
+        "nutrition": "X",
+        "trafficLight": "-",
+        "category": "O"
+      }
+    },
+    {
+      "product_id": "1403",
+      "product_name": "삼립호빵 야채",
+      "pop_keyword": "삼립호빵",
+      "pop_category": "빵",
+      "brand": "",
+      "manufacturer": "주식회사삼립",
+      "barcode": "8801068083552",
+      "issues": [
+        "영양정보 없음"
+      ],
+      "checks": {
+        "ingredients": "O",
+        "additives": "O",
+        "nutrition": "X",
+        "trafficLight": "-",
+        "category": "O"
+      }
+    },
+    {
+      "product_id": "22195",
+      "product_name": "빅파이코코아",
+      "pop_keyword": "빅파이",
+      "pop_category": "빵",
+      "brand": "",
+      "manufacturer": "(주)크라운제과",
+      "barcode": "8801111904506",
+      "issues": [
+        "원재료 없음",
+        "영양정보 없음"
+      ],
+      "checks": {
+        "ingredients": "X",
+        "additives": "-",
+        "nutrition": "X",
+        "trafficLight": "-",
+        "category": "O"
+      }
+    },
+    {
+      "product_id": "929",
+      "product_name": "크라운산도초코",
+      "pop_keyword": "크라운산도",
+      "pop_category": "빵",
+      "brand": "",
+      "manufacturer": "(주)크라운제과",
+      "barcode": "8801111117326",
+      "issues": [
+        "원재료 없음"
+      ],
+      "checks": {
+        "ingredients": "X",
+        "additives": "-",
+        "nutrition": "O",
+        "trafficLight": "O",
+        "category": "O"
+      },
+      "trafficLight": {
+        "sodium": "yellow",
+        "sugars": null,
+        "sat_fat": null,
+        "total_fat": "red",
+        "cholesterol": null,
+        "trans_fat": null,
+        "protein": "yellow",
+        "fiber": null,
+        "excluded": false,
+        "category": "general"
+      }
+    },
+    {
+      "product_id": "2751",
+      "product_name": "메로나 딸기",
+      "pop_keyword": "메로나",
+      "pop_category": "아이스크림",
+      "brand": "",
+      "manufacturer": "(주)빙그레",
+      "barcode": "8801104900041",
+      "issues": [
+        "원재료 없음"
+      ],
+      "checks": {
+        "ingredients": "X",
+        "additives": "-",
+        "nutrition": "O",
+        "trafficLight": "O",
+        "category": "O"
+      },
+      "trafficLight": {
+        "sodium": "green",
+        "sugars": null,
+        "sat_fat": null,
+        "total_fat": "yellow",
+        "cholesterol": null,
+        "trans_fat": null,
+        "protein": "gray",
+        "fiber": null,
+        "excluded": false,
+        "category": "general"
+      }
+    },
+    {
+      "product_id": "12245",
+      "product_name": "비비빅",
+      "pop_keyword": "비비빅",
+      "pop_category": "아이스크림",
+      "brand": "",
+      "manufacturer": "(주)빙그레",
+      "barcode": "8801104122283",
+      "issues": [
+        "원재료 없음"
+      ],
+      "checks": {
+        "ingredients": "X",
+        "additives": "-",
+        "nutrition": "O",
+        "trafficLight": "O",
+        "category": "O"
+      },
+      "trafficLight": {
+        "sodium": "green",
+        "sugars": null,
+        "sat_fat": null,
+        "total_fat": "green",
+        "cholesterol": null,
+        "trans_fat": null,
+        "protein": "yellow",
+        "fiber": null,
+        "excluded": false,
+        "category": "general"
+      }
+    },
+    {
+      "product_id": "885",
+      "product_name": "헤이즐넛 월드콘",
+      "pop_keyword": "월드콘",
+      "pop_category": "아이스크림",
+      "brand": "",
+      "manufacturer": "롯데웰푸드(주)",
+      "barcode": "8801062421558",
+      "issues": [
+        "원재료 없음"
+      ],
+      "checks": {
+        "ingredients": "X",
+        "additives": "-",
+        "nutrition": "O",
+        "trafficLight": "O",
+        "category": "O"
+      },
+      "trafficLight": {
+        "sodium": "green",
+        "sugars": null,
+        "sat_fat": null,
+        "total_fat": "yellow",
+        "cholesterol": null,
+        "trans_fat": null,
+        "protein": "gray",
+        "fiber": null,
+        "excluded": false,
+        "category": "general"
+      }
+    },
+    {
+      "product_id": "12405",
+      "product_name": "빠삐코",
+      "pop_keyword": "빠삐코",
+      "pop_category": "아이스크림",
+      "brand": "",
+      "manufacturer": "롯데웰푸드 주식회사 천안공장",
+      "barcode": "8801118224232",
+      "issues": [],
+      "checks": {
+        "ingredients": "O",
+        "additives": "O",
+        "nutrition": "O",
+        "trafficLight": "O",
+        "category": "O"
+      },
+      "trafficLight": {
+        "sodium": "green",
+        "sugars": null,
+        "sat_fat": null,
+        "total_fat": "yellow",
+        "cholesterol": null,
+        "trans_fat": null,
+        "protein": "gray",
+        "fiber": null,
+        "excluded": false,
+        "category": "general"
+      }
+    },
+    {
+      "product_id": "2283",
+      "product_name": "투게더",
+      "pop_keyword": "투게더",
+      "pop_category": "아이스크림",
+      "brand": "",
+      "manufacturer": "(주)빙그레김해공장",
+      "barcode": "8801104142021",
+      "issues": [
+        "원재료 없음"
+      ],
+      "checks": {
+        "ingredients": "X",
+        "additives": "-",
+        "nutrition": "O",
+        "trafficLight": "O",
+        "category": "O"
+      },
+      "trafficLight": {
+        "sodium": "green",
+        "sugars": null,
+        "sat_fat": null,
+        "total_fat": "yellow",
+        "cholesterol": null,
+        "trans_fat": null,
+        "protein": "gray",
+        "fiber": null,
+        "excluded": false,
+        "category": "general"
+      }
+    },
+    {
+      "product_id": "35430",
+      "product_name": "팔도비빔면컵",
+      "pop_keyword": "팔도비빔면",
+      "pop_category": "라면",
+      "brand": "",
+      "manufacturer": "(주) 팔도",
+      "barcode": "8801128506594",
+      "issues": [],
+      "checks": {
+        "ingredients": "O",
+        "additives": "-",
+        "nutrition": "O",
+        "trafficLight": "O",
+        "category": "O"
+      },
+      "trafficLight": {
+        "sodium": "green",
+        "sugars": null,
+        "sat_fat": null,
+        "total_fat": "red",
+        "cholesterol": null,
+        "trans_fat": null,
+        "protein": "yellow",
+        "fiber": null,
+        "excluded": false,
+        "category": "general"
+      }
+    },
+    {
+      "product_id": "4950",
+      "product_name": "농심감자면",
+      "pop_keyword": "감자면",
+      "pop_category": "라면",
+      "brand": "",
+      "manufacturer": "(주)농심",
+      "barcode": "8801043020022",
+      "issues": [],
+      "checks": {
+        "ingredients": "O",
+        "additives": "O",
+        "nutrition": "O",
+        "trafficLight": "O",
+        "category": "O"
+      },
+      "trafficLight": {
+        "sodium": "green",
+        "sugars": null,
+        "sat_fat": null,
+        "total_fat": "red",
+        "cholesterol": null,
+        "trans_fat": null,
+        "protein": "green",
+        "fiber": null,
+        "excluded": false,
+        "category": "general"
+      }
+    },
+    {
+      "product_id": "10200",
+      "product_name": "꼬꼬면소컵",
+      "pop_keyword": "꼬꼬면",
+      "pop_category": "라면",
+      "brand": "",
+      "manufacturer": "(주) 팔도",
+      "barcode": "8801128510035",
+      "issues": [
+        "원재료 없음",
+        "영양정보 없음"
+      ],
+      "checks": {
+        "ingredients": "X",
+        "additives": "-",
+        "nutrition": "X",
+        "trafficLight": "-",
+        "category": "O"
+      }
+    },
+    {
+      "product_id": "487",
+      "product_name": "생콩국수(냉장)",
+      "pop_keyword": "콩국수",
+      "pop_category": "라면",
+      "brand": "",
+      "manufacturer": "(주)면누리",
+      "barcode": "8809406250093",
+      "issues": [
+        "원재료 없음"
+      ],
+      "checks": {
+        "ingredients": "X",
+        "additives": "-",
+        "nutrition": "O",
+        "trafficLight": "O",
+        "category": "O"
+      },
+      "trafficLight": {
+        "sodium": "red",
+        "sugars": null,
+        "sat_fat": null,
+        "total_fat": "green",
+        "cholesterol": null,
+        "trans_fat": null,
+        "protein": "yellow",
+        "fiber": null,
+        "excluded": false,
+        "category": "general"
+      }
+    },
+    {
+      "product_id": "1226",
+      "product_name": "왕손칼국수",
+      "pop_keyword": "칼국수",
+      "pop_category": "라면",
+      "brand": "",
+      "manufacturer": "칠갑농산(주)",
+      "barcode": "8801759011390",
+      "issues": [
+        "원재료 없음",
+        "영양정보 없음"
+      ],
+      "checks": {
+        "ingredients": "X",
+        "additives": "-",
+        "nutrition": "X",
+        "trafficLight": "-",
+        "category": "O"
+      }
+    },
+    {
+      "product_id": "5913",
+      "product_name": "칙촉 쿠키몬드",
+      "pop_keyword": "칙촉",
+      "pop_category": "과자",
+      "brand": "",
+      "manufacturer": "롯데웰푸드 주식회사",
+      "barcode": "8801062242290",
+      "issues": [
+        "원재료 없음",
+        "영양정보 없음"
+      ],
+      "checks": {
+        "ingredients": "X",
+        "additives": "-",
+        "nutrition": "X",
+        "trafficLight": "-",
+        "category": "O"
+      }
+    },
+    {
+      "product_id": "11",
+      "product_name": "마가렛트",
+      "pop_keyword": "마가렛트",
+      "pop_category": "과자",
+      "brand": "",
+      "manufacturer": "롯데웰푸드(주)",
+      "barcode": "8801062001200",
+      "issues": [],
+      "checks": {
+        "ingredients": "O",
+        "additives": "O",
+        "nutrition": "O",
+        "trafficLight": "O",
+        "category": "O"
+      },
+      "trafficLight": {
+        "sodium": "yellow",
+        "sugars": "red",
+        "sat_fat": null,
+        "total_fat": "red",
+        "cholesterol": "green",
+        "trans_fat": "green",
+        "protein": "gray",
+        "fiber": "gray",
+        "excluded": false,
+        "category": "general"
+      }
+    },
+    {
+      "product_id": "23436",
+      "product_name": "다이제흑오",
+      "pop_keyword": "다이제",
+      "pop_category": "과자",
+      "brand": "",
+      "manufacturer": "(주)오리온 제2익산공장",
+      "barcode": "8801117239800",
+      "issues": [
+        "원재료 없음",
+        "영양정보 없음"
+      ],
+      "checks": {
+        "ingredients": "X",
+        "additives": "-",
+        "nutrition": "X",
+        "trafficLight": "-",
+        "category": "O"
+      }
+    },
+    {
+      "product_id": "6621",
+      "product_name": "썬칩탄두리치킨맛",
+      "pop_keyword": "썬칩",
+      "pop_category": "과자",
+      "brand": "",
+      "manufacturer": "롯데웰푸드 주식회사",
+      "barcode": "8801062289813",
+      "issues": [
+        "원재료 없음",
+        "영양정보 없음"
+      ],
+      "checks": {
+        "ingredients": "X",
+        "additives": "-",
+        "nutrition": "X",
+        "trafficLight": "-",
+        "category": "O"
+      }
+    },
+    {
+      "product_id": "2502",
+      "product_name": "눈을감자(양파맛)",
+      "pop_keyword": "눈을감자",
+      "pop_category": "과자",
+      "brand": "",
+      "manufacturer": "(주)오리온 이천공장",
+      "barcode": "8801117741501",
+      "issues": [
+        "원재료 없음",
+        "영양정보 없음"
+      ],
+      "checks": {
+        "ingredients": "X",
+        "additives": "-",
+        "nutrition": "X",
+        "trafficLight": "-",
+        "category": "O"
+      }
+    },
+    {
+      "product_id": "3176",
+      "product_name": "쌀로별 오리지널",
+      "pop_keyword": "쌀로별",
+      "pop_category": "과자",
+      "brand": "",
+      "manufacturer": "롯데웰푸드(주)",
+      "barcode": "8801062380893",
+      "issues": [
+        "원재료 없음",
+        "영양정보 없음"
+      ],
+      "checks": {
+        "ingredients": "X",
+        "additives": "-",
+        "nutrition": "X",
+        "trafficLight": "-",
+        "category": "O"
+      }
+    },
+    {
+      "product_id": "45319",
+      "product_name": "자갈치뱃자반간고등어(냉장)",
+      "pop_keyword": "자갈치",
+      "pop_category": "과자",
+      "brand": "",
+      "manufacturer": "송도수산",
+      "barcode": "8809018290401",
+      "issues": [
+        "원재료 없음",
+        "영양정보 없음"
+      ],
+      "checks": {
+        "ingredients": "X",
+        "additives": "-",
+        "nutrition": "X",
+        "trafficLight": "-",
+        "category": "O"
+      }
+    },
+    {
+      "product_id": "11578",
+      "product_name": "오징어칩 버터맛",
+      "pop_keyword": "오징어칩",
+      "pop_category": "과자",
+      "brand": "",
+      "manufacturer": "(주)명성식품",
+      "barcode": "8809259042005",
+      "issues": [
+        "원재료 없음",
+        "영양정보 없음"
+      ],
+      "checks": {
+        "ingredients": "X",
+        "additives": "-",
+        "nutrition": "X",
+        "trafficLight": "-",
+        "category": "O"
+      }
+    },
+    {
+      "product_id": "65",
+      "product_name": "농심 바나나킥",
+      "pop_keyword": "바나나킥",
+      "pop_category": "과자",
+      "brand": "",
+      "manufacturer": "(주)농심",
+      "barcode": "8801043020008",
+      "issues": [],
+      "checks": {
+        "ingredients": "O",
+        "additives": "O",
+        "nutrition": "O",
+        "trafficLight": "O",
+        "category": "O"
+      },
+      "trafficLight": {
+        "sodium": "yellow",
+        "sugars": "red",
+        "sat_fat": null,
+        "total_fat": "yellow",
+        "cholesterol": "green",
+        "trans_fat": "green",
+        "protein": "gray",
+        "fiber": "gray",
+        "excluded": false,
+        "category": "general"
+      }
+    },
+    {
+      "product_id": "1047",
+      "product_name": "이온에이드 파워에이드 원제 제3A부",
+      "pop_keyword": "파워에이드",
+      "pop_category": "음료",
+      "brand": "",
+      "manufacturer": "한국코카콜라유한회사",
+      "barcode": "8801094342401",
+      "issues": [
+        "영양정보 없음"
+      ],
+      "checks": {
+        "ingredients": "O",
+        "additives": "-",
+        "nutrition": "X",
+        "trafficLight": "-",
+        "category": "O"
+      }
+    },
+    {
+      "product_id": "434",
+      "product_name": "립톤 레몬티(Lipton Lemon Tea)",
+      "pop_keyword": "립톤",
+      "pop_category": "음료",
+      "brand": "",
+      "manufacturer": "(주)스윗티",
+      "barcode": "8801619800461",
+      "issues": [
+        "원재료 없음",
+        "영양정보 없음"
+      ],
+      "checks": {
+        "ingredients": "X",
+        "additives": "-",
+        "nutrition": "X",
+        "trafficLight": "-",
+        "category": "O"
+      }
+    },
+    {
+      "product_id": "3157",
+      "product_name": "오란씨 오렌지맛",
+      "pop_keyword": "오란씨",
+      "pop_category": "음료",
+      "brand": "",
+      "manufacturer": "동아오츠카(주)",
+      "barcode": "8801097121010",
+      "issues": [
+        "영양정보 없음"
+      ],
+      "checks": {
+        "ingredients": "O",
+        "additives": "O",
+        "nutrition": "X",
+        "trafficLight": "-",
+        "category": "O"
+      }
+    },
+    {
+      "product_id": "30",
+      "product_name": "헛개수",
+      "pop_keyword": "헛개수",
+      "pop_category": "음료",
+      "brand": "",
+      "manufacturer": "CJ제일제당(주)",
+      "barcode": "8801007100005",
+      "issues": [
+        "원재료 없음",
+        "이상치: 칼로리 0이하"
+      ],
+      "checks": {
+        "ingredients": "X",
+        "additives": "-",
+        "nutrition": "△",
+        "trafficLight": "O",
+        "category": "O"
+      },
+      "trafficLight": {
+        "sodium": "green",
+        "sugars": "green",
+        "sat_fat": null,
+        "total_fat": "green",
+        "cholesterol": "green",
+        "trans_fat": "green",
+        "protein": "gray",
+        "fiber": "gray",
+        "excluded": false,
+        "category": "beverage"
+      }
+    },
+    {
+      "product_id": "8396",
+      "product_name": "미닛메이드 펄피 오렌지 원제 제2부",
+      "pop_keyword": "미닛메이드",
+      "pop_category": "음료",
+      "brand": "",
+      "manufacturer": "한국 코카콜라 유한회사",
+      "barcode": "8801094822200",
+      "issues": [
+        "영양정보 없음"
+      ],
+      "checks": {
+        "ingredients": "O",
+        "additives": "O",
+        "nutrition": "X",
+        "trafficLight": "-",
+        "category": "O"
+      }
+    },
+    {
+      "product_id": "4245",
+      "product_name": "데미소다 그레이프",
+      "pop_keyword": "데미소다",
+      "pop_category": "음료",
+      "brand": "",
+      "manufacturer": "동아오츠카(주)",
+      "barcode": "8801097268012",
+      "issues": [
+        "원재료 없음",
+        "영양정보 없음"
+      ],
+      "checks": {
+        "ingredients": "X",
+        "additives": "-",
+        "nutrition": "X",
+        "trafficLight": "-",
+        "category": "O"
+      }
+    },
+    {
+      "product_id": "26063",
+      "product_name": "홈플러스오리지날 캔커피",
+      "pop_keyword": "캔커피",
+      "pop_category": "음료",
+      "brand": "",
+      "manufacturer": "동서식품(주)",
+      "barcode": "8801037011074",
+      "issues": [
+        "원재료 없음",
+        "영양정보 없음"
+      ],
+      "checks": {
+        "ingredients": "X",
+        "additives": "-",
+        "nutrition": "X",
+        "trafficLight": "-",
+        "category": "O"
+      }
+    },
+    {
+      "product_id": "82",
+      "product_name": "액티비아 플레인",
+      "pop_keyword": "액티비아",
+      "pop_category": "유제품",
+      "brand": "",
+      "manufacturer": "풀무원다논(주)",
+      "barcode": "8801069450003",
+      "issues": [
+        "원재료 없음"
+      ],
+      "checks": {
+        "ingredients": "X",
+        "additives": "-",
+        "nutrition": "O",
+        "trafficLight": "O",
+        "category": "O"
+      },
+      "trafficLight": {
+        "sodium": "green",
+        "sugars": null,
+        "sat_fat": null,
+        "total_fat": "green",
+        "cholesterol": null,
+        "trans_fat": null,
+        "protein": "yellow",
+        "fiber": "green",
+        "excluded": false,
+        "category": "fermented"
+      }
+    },
+    {
+      "product_id": "2089",
+      "product_name": "후디스 그릭요거트 저지방",
+      "pop_keyword": "그릭요거트",
+      "pop_category": "유제품",
+      "brand": "",
+      "manufacturer": "일동후디스(주)횡성유가공공장",
+      "barcode": "8801157491688",
+      "issues": [
+        "원재료 없음",
+        "영양정보 없음"
+      ],
+      "checks": {
+        "ingredients": "X",
+        "additives": "-",
+        "nutrition": "X",
+        "trafficLight": "-",
+        "category": "O"
+      }
+    },
+    {
+      "product_id": "20767",
+      "product_name": "임실찢어먹는 스트링치즈",
+      "pop_keyword": "스트링치즈",
+      "pop_category": "유제품",
+      "brand": "",
+      "manufacturer": "무지개영농조합법인",
+      "barcode": "8809352491618",
+      "issues": [
+        "원재료 없음",
+        "영양정보 없음"
+      ],
+      "checks": {
+        "ingredients": "X",
+        "additives": "-",
+        "nutrition": "X",
+        "trafficLight": "-",
+        "category": "O"
+      }
+    },
+    {
+      "product_id": "76",
+      "product_name": "삼육 검은콩 두유",
+      "pop_keyword": "두유",
+      "pop_category": "유제품",
+      "brand": "",
+      "manufacturer": "삼육식품(주)",
+      "barcode": "8801026600001",
+      "issues": [],
+      "checks": {
+        "ingredients": "O",
+        "additives": "O",
+        "nutrition": "O",
+        "trafficLight": "O",
+        "category": "O"
+      },
+      "trafficLight": {
+        "sodium": "yellow",
+        "sugars": "yellow",
+        "sat_fat": null,
+        "total_fat": "yellow",
+        "cholesterol": "green",
+        "trans_fat": "green",
+        "protein": "yellow",
+        "fiber": "gray",
+        "excluded": false,
+        "category": "beverage"
+      }
+    },
+    {
+      "product_id": "38707",
+      "product_name": "연세우유",
+      "pop_keyword": "연세우유",
+      "pop_category": "유제품",
+      "brand": "",
+      "manufacturer": "연세대학교 연세유업",
+      "barcode": "8801753000543",
+      "issues": [
+        "원재료 없음"
+      ],
+      "checks": {
+        "ingredients": "X",
+        "additives": "-",
+        "nutrition": "O",
+        "trafficLight": "O",
+        "category": "O"
+      },
+      "trafficLight": {
+        "sodium": "green",
+        "sugars": null,
+        "sat_fat": null,
+        "total_fat": "yellow",
+        "cholesterol": null,
+        "trans_fat": null,
+        "protein": "yellow",
+        "fiber": "green",
+        "excluded": false,
+        "category": "beverage"
+      }
+    },
+    {
+      "product_id": "30295",
+      "product_name": "불가리스 사과",
+      "pop_keyword": "불가리스",
+      "pop_category": "유제품",
+      "brand": "",
+      "manufacturer": "남양유업 주식회사 세종공장",
+      "barcode": "8801069217925",
+      "issues": [
+        "원재료 없음"
+      ],
+      "checks": {
+        "ingredients": "X",
+        "additives": "-",
+        "nutrition": "O",
+        "trafficLight": "O",
+        "category": "O"
+      },
+      "trafficLight": {
+        "sodium": "green",
+        "sugars": null,
+        "sat_fat": null,
+        "total_fat": "green",
+        "cholesterol": null,
+        "trans_fat": null,
+        "protein": "yellow",
+        "fiber": null,
+        "excluded": false,
+        "category": "general"
+      }
+    },
+    {
+      "product_id": "60",
+      "product_name": "백설 올리고당",
+      "pop_keyword": "백설",
+      "pop_category": "간편식",
+      "brand": "",
+      "manufacturer": "CJ제일제당(주)",
+      "barcode": "8801007400004",
+      "issues": [],
+      "checks": {
+        "ingredients": "O",
+        "additives": "O",
+        "nutrition": "O",
+        "trafficLight": "O",
+        "category": "O"
+      },
+      "trafficLight": {
+        "sodium": "green",
+        "sugars": "red",
+        "sat_fat": null,
+        "total_fat": "green",
+        "cholesterol": "green",
+        "trans_fat": "green",
+        "protein": "gray",
+        "fiber": "yellow",
+        "excluded": false,
+        "category": "general"
+      }
+    },
+    {
+      "product_id": "42",
+      "product_name": "청정원 순창 된장",
+      "pop_keyword": "청정원",
+      "pop_category": "간편식",
+      "brand": "",
+      "manufacturer": "(주)대상",
+      "barcode": "8801052440002",
+      "issues": [],
+      "checks": {
+        "ingredients": "O",
+        "additives": "-",
+        "nutrition": "O",
+        "trafficLight": "O",
+        "category": "O"
+      },
+      "trafficLight": {
+        "sodium": "red",
+        "sugars": "green",
+        "sat_fat": null,
+        "total_fat": "yellow",
+        "cholesterol": "green",
+        "trans_fat": "green",
+        "protein": "gray",
+        "fiber": "gray",
+        "excluded": false,
+        "category": "fermented"
+      }
+    },
+    {
+      "product_id": "45",
+      "product_name": "동원 양반김 도시락김",
+      "pop_keyword": "동원",
+      "pop_category": "간편식",
+      "brand": "",
+      "manufacturer": "동원F&B(주)",
+      "barcode": "8801047200004",
+      "issues": [
+        "원재료 없음"
+      ],
+      "checks": {
+        "ingredients": "X",
+        "additives": "-",
+        "nutrition": "O",
+        "trafficLight": "O",
+        "category": "O"
+      },
+      "trafficLight": {
+        "sodium": "green",
+        "sugars": "green",
+        "sat_fat": null,
+        "total_fat": "green",
+        "cholesterol": "green",
+        "trans_fat": "green",
+        "protein": "gray",
+        "fiber": "gray",
+        "excluded": false,
+        "category": "dried"
+      }
+    },
+    {
+      "product_id": "495",
+      "product_name": "진미채",
+      "pop_keyword": "진미채",
+      "pop_category": "간편식",
+      "brand": "",
+      "manufacturer": "옹골찬 동광",
+      "barcode": "8809273560288",
+      "issues": [
+        "원재료 없음"
+      ],
+      "checks": {
+        "ingredients": "X",
+        "additives": "-",
+        "nutrition": "O",
+        "trafficLight": "O",
+        "category": "O"
+      },
+      "trafficLight": {
+        "sodium": "green",
+        "sugars": "green",
+        "sat_fat": null,
+        "total_fat": "green",
+        "cholesterol": "green",
+        "trans_fat": null,
+        "protein": "green",
+        "fiber": "green",
+        "excluded": false,
+        "category": "general"
+      }
+    },
+    {
+      "product_id": "283",
+      "product_name": "구멍쌀떡볶이Ⅰ",
+      "pop_keyword": "떡볶이",
+      "pop_category": "간편식",
+      "brand": "",
+      "manufacturer": "삼오식품(주)",
+      "barcode": "8801364300469",
+      "issues": [
+        "원재료 없음",
+        "영양정보 없음"
+      ],
+      "checks": {
+        "ingredients": "X",
+        "additives": "-",
+        "nutrition": "X",
+        "trafficLight": "-",
+        "category": "O"
+      }
+    },
+    {
+      "product_id": "49",
+      "product_name": "풀무원 얇은피 꽃만두",
+      "pop_keyword": "만두",
+      "pop_category": "간편식",
+      "brand": "",
+      "manufacturer": "(주)풀무원",
+      "barcode": "8801069880001",
+      "issues": [
+        "원재료 없음"
+      ],
+      "checks": {
+        "ingredients": "X",
+        "additives": "-",
+        "nutrition": "O",
+        "trafficLight": "O",
+        "category": "O"
+      },
+      "trafficLight": {
+        "sodium": "yellow",
+        "sugars": "green",
+        "sat_fat": null,
+        "total_fat": "yellow",
+        "cholesterol": "green",
+        "trans_fat": "green",
+        "protein": "green",
+        "fiber": "yellow",
+        "excluded": false,
+        "category": "general"
+      }
+    },
+    {
+      "product_id": "1240",
+      "product_name": "이맛이다 스테이크 컵밥",
+      "pop_keyword": "컵밥",
+      "pop_category": "간편식",
+      "brand": "",
+      "manufacturer": "(주)비컴",
+      "barcode": "8809378110081",
+      "issues": [
+        "원재료 없음",
+        "영양정보 없음"
+      ],
+      "checks": {
+        "ingredients": "X",
+        "additives": "-",
+        "nutrition": "X",
+        "trafficLight": "-",
+        "category": "O"
+      }
+    },
+    {
+      "product_id": "16646",
+      "product_name": "냉동피자",
+      "pop_keyword": "냉동피자",
+      "pop_category": "간편식",
+      "brand": "",
+      "manufacturer": "애덕의집보호작업장(소올베이커리)",
+      "barcode": "8809410620042",
+      "issues": [
+        "원재료 없음"
+      ],
+      "checks": {
+        "ingredients": "X",
+        "additives": "-",
+        "nutrition": "O",
+        "trafficLight": "O",
+        "category": "O"
+      },
+      "trafficLight": {
+        "sodium": "yellow",
+        "sugars": null,
+        "sat_fat": null,
+        "total_fat": "yellow",
+        "cholesterol": null,
+        "trans_fat": null,
+        "protein": "green",
+        "fiber": null,
+        "excluded": false,
+        "category": "general"
+      }
+    },
+    {
+      "product_id": "36715",
+      "product_name": "삼양프레시 햄버거패티",
+      "pop_keyword": "햄버거패티",
+      "pop_category": "간편식",
+      "brand": "",
+      "manufacturer": "삼양스퀘어밀 주식회사",
+      "barcode": "8804127004994",
+      "issues": [
+        "원재료 없음",
+        "영양정보 없음"
+      ],
+      "checks": {
+        "ingredients": "X",
+        "additives": "-",
+        "nutrition": "X",
+        "trafficLight": "-",
+        "category": "O"
+      }
+    },
+    {
+      "product_id": "4",
+      "product_name": "오예스",
+      "pop_keyword": "오예스",
+      "pop_category": "빵",
+      "brand": "",
+      "manufacturer": "해태제과식품(주)",
+      "barcode": "8801019303401",
+      "issues": [],
+      "checks": {
+        "ingredients": "O",
+        "additives": "O",
+        "nutrition": "O",
+        "trafficLight": "O",
+        "category": "O"
+      },
+      "trafficLight": {
+        "sodium": "yellow",
+        "sugars": "red",
+        "sat_fat": null,
+        "total_fat": "red",
+        "cholesterol": "green",
+        "trans_fat": "green",
+        "protein": "gray",
+        "fiber": "gray",
+        "excluded": false,
+        "category": "general"
+      }
+    },
+    {
+      "product_id": "911",
+      "product_name": "빵또아",
+      "pop_keyword": "빵또아",
+      "pop_category": "빵",
+      "brand": "",
+      "manufacturer": "(주)빙그레",
+      "barcode": "8801104190725",
+      "issues": [
+        "원재료 없음",
+        "영양정보 없음"
+      ],
+      "checks": {
+        "ingredients": "X",
+        "additives": "-",
+        "nutrition": "X",
+        "trafficLight": "-",
+        "category": "O"
+      }
+    },
+    {
+      "product_id": "37208",
+      "product_name": "유자쉘마들렌",
+      "pop_keyword": "마들렌",
+      "pop_category": "빵",
+      "brand": "",
+      "manufacturer": "미미전심",
+      "barcode": "8809333631521",
+      "issues": [
+        "원재료 없음",
+        "영양정보 없음"
+      ],
+      "checks": {
+        "ingredients": "X",
+        "additives": "-",
+        "nutrition": "X",
+        "trafficLight": "-",
+        "category": "O"
+      }
+    },
+    {
+      "product_id": "5203",
+      "product_name": "Home plus 검은깨찰떡파이",
+      "pop_keyword": "찰떡파이",
+      "pop_category": "빵",
+      "brand": "",
+      "manufacturer": "삼진식품",
+      "barcode": "8803567101348",
+      "issues": [
+        "원재료 없음",
+        "영양정보 없음"
+      ],
+      "checks": {
+        "ingredients": "X",
+        "additives": "-",
+        "nutrition": "X",
+        "trafficLight": "-",
+        "category": "O"
+      }
+    },
+    {
+      "product_id": "27683",
+      "product_name": "쿠크다스 스퀘어 치즈",
+      "pop_keyword": "쿠크다스",
+      "pop_category": "빵",
+      "brand": "",
+      "manufacturer": "(주)크라운제과",
+      "barcode": "8801111909976",
+      "issues": [
+        "원재료 없음",
+        "영양정보 없음"
+      ],
+      "checks": {
+        "ingredients": "X",
+        "additives": "-",
+        "nutrition": "X",
+        "trafficLight": "-",
+        "category": "O"
+      }
+    },
+    {
+      "product_id": "5536",
+      "product_name": "클래식치즈케이크",
+      "pop_keyword": "치즈케이크",
+      "pop_category": "빵",
+      "brand": "",
+      "manufacturer": "씨제이푸드빌주식회사",
+      "barcode": "8809188223841",
+      "issues": [],
+      "checks": {
+        "ingredients": "O",
+        "additives": "O",
+        "nutrition": "O",
+        "trafficLight": "O",
+        "category": "O"
+      },
+      "trafficLight": {
+        "sodium": "yellow",
+        "sugars": null,
+        "sat_fat": null,
+        "total_fat": "red",
+        "cholesterol": null,
+        "trans_fat": null,
+        "protein": "yellow",
+        "fiber": null,
+        "excluded": false,
+        "category": "general"
+      }
+    },
+    {
+      "product_id": "5594",
+      "product_name": "시폰 롤케이크",
+      "pop_keyword": "롤케이크",
+      "pop_category": "빵",
+      "brand": "",
+      "manufacturer": "동산베이커리",
+      "barcode": "8809411770104",
+      "issues": [
+        "원재료 없음"
+      ],
+      "checks": {
+        "ingredients": "X",
+        "additives": "-",
+        "nutrition": "O",
+        "trafficLight": "O",
+        "category": "O"
+      },
+      "trafficLight": {
+        "sodium": "yellow",
+        "sugars": null,
+        "sat_fat": null,
+        "total_fat": "yellow",
+        "cholesterol": null,
+        "trans_fat": null,
+        "protein": "yellow",
+        "fiber": null,
+        "excluded": false,
+        "category": "general"
+      }
+    },
+    {
+      "product_id": "14942",
+      "product_name": "호두과자",
+      "pop_keyword": "호두과자",
+      "pop_category": "빵",
+      "brand": "",
+      "manufacturer": "그린밀푸드",
+      "barcode": "8809360130097",
+      "issues": [
+        "원재료 없음"
+      ],
+      "checks": {
+        "ingredients": "X",
+        "additives": "-",
+        "nutrition": "O",
+        "trafficLight": "O",
+        "category": "O"
+      },
+      "trafficLight": {
+        "sodium": "yellow",
+        "sugars": "yellow",
+        "sat_fat": null,
+        "total_fat": "yellow",
+        "cholesterol": "green",
+        "trans_fat": null,
+        "protein": "yellow",
+        "fiber": "green",
+        "excluded": false,
+        "category": "general"
+      }
+    },
+    {
+      "product_id": "2814",
+      "product_name": "Cool shock 탱크보이바",
+      "pop_keyword": "탱크보이",
+      "pop_category": "아이스크림",
+      "brand": "",
+      "manufacturer": "해태제과식품(주)",
+      "barcode": "8801019510830",
+      "issues": [
+        "원재료 없음",
+        "영양정보 없음"
+      ],
+      "checks": {
+        "ingredients": "X",
+        "additives": "-",
+        "nutrition": "X",
+        "trafficLight": "-",
+        "category": "O"
+      }
+    },
+    {
+      "product_id": "6844",
+      "product_name": "구구콘(피넛버터)",
+      "pop_keyword": "구구콘",
+      "pop_category": "아이스크림",
+      "brand": "",
+      "manufacturer": "롯데웰푸드 주식회사 천안공장",
+      "barcode": "8801118248221",
+      "issues": [
+        "원재료 없음"
+      ],
+      "checks": {
+        "ingredients": "X",
+        "additives": "-",
+        "nutrition": "O",
+        "trafficLight": "O",
+        "category": "O"
+      },
+      "trafficLight": {
+        "sodium": "green",
+        "sugars": null,
+        "sat_fat": null,
+        "total_fat": "yellow",
+        "cholesterol": null,
+        "trans_fat": null,
+        "protein": "gray",
+        "fiber": null,
+        "excluded": false,
+        "category": "general"
+      }
+    },
+    {
+      "product_id": "5906",
+      "product_name": "셀렉션",
+      "pop_keyword": "셀렉션",
+      "pop_category": "아이스크림",
+      "brand": "",
+      "manufacturer": "롯데웰푸드(주)",
+      "barcode": "8801062404360",
+      "issues": [],
+      "checks": {
+        "ingredients": "O",
+        "additives": "-",
+        "nutrition": "O",
+        "trafficLight": "O",
+        "category": "O"
+      },
+      "trafficLight": {
+        "sodium": "green",
+        "sugars": null,
+        "sat_fat": null,
+        "total_fat": "yellow",
+        "cholesterol": null,
+        "trans_fat": null,
+        "protein": "yellow",
+        "fiber": null,
+        "excluded": false,
+        "category": "general"
+      }
+    },
+    {
+      "product_id": "2346",
+      "product_name": "해태바밤바",
+      "pop_keyword": "바밤바",
+      "pop_category": "아이스크림",
+      "brand": "",
+      "manufacturer": "해태제과식품(주)",
+      "barcode": "8801019503399",
+      "issues": [
+        "원재료 없음",
+        "영양정보 없음"
+      ],
+      "checks": {
+        "ingredients": "X",
+        "additives": "-",
+        "nutrition": "X",
+        "trafficLight": "-",
+        "category": "O"
+      }
+    },
+    {
+      "product_id": "1348",
+      "product_name": "폴라포포도",
+      "pop_keyword": "폴라포",
+      "pop_category": "아이스크림",
+      "brand": "",
+      "manufacturer": "해태제과식품(주)",
+      "barcode": "8801019502088",
+      "issues": [],
+      "checks": {
+        "ingredients": "O",
+        "additives": "O",
+        "nutrition": "O",
+        "trafficLight": "O",
+        "category": "O"
+      },
+      "trafficLight": {
+        "sodium": "green",
+        "sugars": null,
+        "sat_fat": null,
+        "total_fat": "green",
+        "cholesterol": null,
+        "trans_fat": null,
+        "protein": "gray",
+        "fiber": null,
+        "excluded": false,
+        "category": "general"
+      }
+    },
+    {
+      "product_id": "136",
+      "product_name": "설레임 녹차쉐이크",
+      "pop_keyword": "설레임",
+      "pop_category": "아이스크림",
+      "brand": "",
+      "manufacturer": "롯데웰푸드(주)",
+      "barcode": "8801062441815",
+      "issues": [
+        "원재료 없음",
+        "영양정보 없음"
+      ],
+      "checks": {
+        "ingredients": "X",
+        "additives": "-",
+        "nutrition": "X",
+        "trafficLight": "-",
+        "category": "O"
+      }
+    },
+    {
+      "product_id": "1692",
+      "product_name": "더위사냥 커피",
+      "pop_keyword": "더위사냥",
+      "pop_category": "아이스크림",
+      "brand": "",
+      "manufacturer": "(주)빙그레",
+      "barcode": "8801104110815",
+      "issues": [],
+      "checks": {
+        "ingredients": "O",
+        "additives": "O",
+        "nutrition": "O",
+        "trafficLight": "O",
+        "category": "O"
+      },
+      "trafficLight": {
+        "sodium": "green",
+        "sugars": null,
+        "sat_fat": null,
+        "total_fat": "yellow",
+        "cholesterol": null,
+        "trans_fat": null,
+        "protein": "gray",
+        "fiber": null,
+        "excluded": false,
+        "category": "beverage"
+      }
+    },
+    {
+      "product_id": "24609",
+      "product_name": "가나초콜릿(가나파이)",
+      "pop_keyword": "가나초콜릿",
+      "pop_category": "초콜릿",
+      "brand": "",
+      "manufacturer": "롯데웰푸드(주)",
+      "barcode": "8801062274574",
+      "issues": [
+        "원재료 없음",
+        "영양정보 없음"
+      ],
+      "checks": {
+        "ingredients": "X",
+        "additives": "-",
+        "nutrition": "X",
+        "trafficLight": "-",
+        "category": "O"
+      }
+    },
+    {
+      "product_id": "5728",
+      "product_name": "허쉬딸기우유",
+      "pop_keyword": "허쉬",
+      "pop_category": "초콜릿",
+      "brand": "",
+      "manufacturer": "매일유업(주)평택공장",
+      "barcode": "8801121190319",
+      "issues": [
+        "원재료 없음",
+        "영양정보 없음"
+      ],
+      "checks": {
+        "ingredients": "X",
+        "additives": "-",
+        "nutrition": "X",
+        "trafficLight": "-",
+        "category": "O"
+      }
+    },
+    {
+      "product_id": "747",
+      "product_name": "마이쮸",
+      "pop_keyword": "마이쮸",
+      "pop_category": "초콜릿",
+      "brand": "",
+      "manufacturer": "(주)크라운제과진천공장",
+      "barcode": "8801111903226",
+      "issues": [
+        "영양정보 없음"
+      ],
+      "checks": {
+        "ingredients": "O",
+        "additives": "O",
+        "nutrition": "X",
+        "trafficLight": "-",
+        "category": "O"
+      }
+    },
+    {
+      "product_id": "4922",
+      "product_name": "키즈트리 초코토끼와 새콤달콤 블루베리치즈",
+      "pop_keyword": "새콤달콤",
+      "pop_category": "초콜릿",
+      "brand": "",
+      "manufacturer": "롯데웰푸드(주)",
+      "barcode": "8801062633517",
+      "issues": [
+        "원재료 없음",
+        "영양정보 없음"
+      ],
+      "checks": {
+        "ingredients": "X",
+        "additives": "-",
+        "nutrition": "X",
+        "trafficLight": "-",
+        "category": "O"
+      }
+    },
+    {
+      "product_id": "33874",
+      "product_name": "알프스냉면",
+      "pop_keyword": "알프스",
+      "pop_category": "초콜릿",
+      "brand": "",
+      "manufacturer": "칠갑농산 주식회사",
+      "barcode": "8801759005641",
+      "issues": [
+        "원재료 없음",
+        "영양정보 없음"
+      ],
+      "checks": {
+        "ingredients": "X",
+        "additives": "-",
+        "nutrition": "X",
+        "trafficLight": "-",
+        "category": "O"
+      }
+    },
+    {
+      "product_id": "560",
+      "product_name": "롯데자일리톨",
+      "pop_keyword": "자일리톨",
+      "pop_category": "초콜릿",
+      "brand": "",
+      "manufacturer": "롯데웰푸드(주)",
+      "barcode": "8801062216918",
+      "issues": [
+        "첨가물 2건 미확인: 에탄올, 멘톨",
+        "영양정보 없음"
+      ],
+      "checks": {
+        "ingredients": "O",
+        "additives": "△",
+        "nutrition": "X",
+        "trafficLight": "-",
+        "category": "O"
+      }
+    },
+    {
+      "product_id": "86",
+      "product_name": "CJ 다시다",
+      "pop_keyword": "다시다",
+      "pop_category": "조미료",
+      "brand": "",
+      "manufacturer": "CJ제일제당(주)",
+      "barcode": "8801007170008",
+      "issues": [
+        "원재료 없음",
+        "영양정보 없음"
+      ],
+      "checks": {
+        "ingredients": "X",
+        "additives": "-",
+        "nutrition": "X",
+        "trafficLight": "-",
+        "category": "O"
+      }
+    },
+    {
+      "product_id": "85",
+      "product_name": "대상 미원",
+      "pop_keyword": "미원",
+      "pop_category": "조미료",
+      "brand": "",
+      "manufacturer": "(주)대상",
+      "barcode": "8801052200002",
+      "issues": [
+        "원재료 없음",
+        "영양정보 없음"
+      ],
+      "checks": {
+        "ingredients": "X",
+        "additives": "-",
+        "nutrition": "X",
+        "trafficLight": "-",
+        "category": "O"
+      }
+    },
+    {
+      "product_id": "94",
+      "product_name": "오뚜기 참기름",
+      "pop_keyword": "참기름",
+      "pop_category": "조미료",
+      "brand": "",
+      "manufacturer": "(주)오뚜기",
+      "barcode": "8801045520009",
+      "issues": [
+        "영양정보 없음"
+      ],
+      "checks": {
+        "ingredients": "O",
+        "additives": "-",
+        "nutrition": "X",
+        "trafficLight": "-",
+        "category": "O"
+      }
+    },
+    {
+      "product_id": "236",
+      "product_name": "시골들기름",
+      "pop_keyword": "들기름",
+      "pop_category": "조미료",
+      "brand": "",
+      "manufacturer": "(주)시골김",
+      "barcode": "8801654100175",
+      "issues": [],
+      "checks": {
+        "ingredients": "O",
+        "additives": "O",
+        "nutrition": "O",
+        "trafficLight": "O",
+        "category": "O"
+      },
+      "trafficLight": {
+        "sodium": "green",
+        "sugars": null,
+        "sat_fat": null,
+        "total_fat": "red",
+        "cholesterol": null,
+        "trans_fat": null,
+        "protein": "gray",
+        "fiber": null,
+        "excluded": false,
+        "category": "general"
+      }
+    },
+    {
+      "product_id": "593",
+      "product_name": "완주동상매실감식초",
+      "pop_keyword": "식초",
+      "pop_category": "조미료",
+      "brand": "",
+      "manufacturer": "완주군고산농협동상지점",
+      "barcode": "8802904000139",
+      "issues": [
+        "원재료 없음",
+        "영양정보 없음"
+      ],
+      "checks": {
+        "ingredients": "X",
+        "additives": "-",
+        "nutrition": "X",
+        "trafficLight": "-",
+        "category": "O"
+      }
+    },
+    {
+      "product_id": "87",
+      "product_name": "오뚜기 마요네즈",
+      "pop_keyword": "마요네즈",
+      "pop_category": "조미료",
+      "brand": "",
+      "manufacturer": "(주)오뚜기",
+      "barcode": "8801045510007",
+      "issues": [
+        "영양정보 없음"
+      ],
+      "checks": {
+        "ingredients": "O",
+        "additives": "O",
+        "nutrition": "X",
+        "trafficLight": "-",
+        "category": "O"
+      }
+    },
+    {
+      "product_id": "6956",
+      "product_name": "허니머스타드드레싱소스",
+      "pop_keyword": "머스타드",
+      "pop_category": "조미료",
+      "brand": "",
+      "manufacturer": "(주)예우당에프에스",
+      "barcode": "8809295300268",
+      "issues": [
+        "원재료 없음",
+        "영양정보 없음"
+      ],
+      "checks": {
+        "ingredients": "X",
+        "additives": "-",
+        "nutrition": "X",
+        "trafficLight": "-",
+        "category": "O"
+      }
+    }
+  ],
+  "notFound": [
+    {
+      "keyword": "짜왕",
+      "category": "라면"
+    },
+    {
+      "keyword": "참깨라면",
+      "category": "라면"
+    },
+    {
+      "keyword": "신라면블랙",
+      "category": "라면"
+    },
+    {
+      "keyword": "열라면",
+      "category": "라면"
+    },
+    {
+      "keyword": "사리곰탕",
+      "category": "라면"
+    },
+    {
+      "keyword": "오뚜기컵누들",
+      "category": "라면"
+    },
+    {
+      "keyword": "오레오",
+      "category": "과자"
+    },
+    {
+      "keyword": "빠다코코넛",
+      "category": "과자"
+    },
+    {
+      "keyword": "감자깡",
+      "category": "과자"
+    },
+    {
+      "keyword": "꼬북칩",
+      "category": "과자"
+    },
+    {
+      "keyword": "오사쯔",
+      "category": "과자"
+    },
+    {
+      "keyword": "초록매실",
+      "category": "음료"
+    },
+    {
+      "keyword": "웰치스",
+      "category": "음료"
+    },
+    {
+      "keyword": "아이시스",
+      "category": "음료"
+    },
+    {
+      "keyword": "맥콜",
+      "category": "음료"
+    },
+    {
+      "keyword": "남양우유",
+      "category": "유제품"
+    },
+    {
+      "keyword": "떠먹는불가리스",
+      "category": "유제품"
+    },
+    {
+      "keyword": "덴마크우유",
+      "category": "유제품"
+    },
+    {
+      "keyword": "비비고만두",
+      "category": "간편식"
+    },
+    {
+      "keyword": "오뚜기3분",
+      "category": "간편식"
+    },
+    {
+      "keyword": "풀무원두부",
+      "category": "간편식"
+    },
+    {
+      "keyword": "종가집김치",
+      "category": "간편식"
+    },
+    {
+      "keyword": "오뚜기케찹",
+      "category": "간편식"
+    },
+    {
+      "keyword": "청정원고추장",
+      "category": "간편식"
+    },
+    {
+      "keyword": "사조참치",
+      "category": "간편식"
+    },
+    {
+      "keyword": "맛있는오뚜기밥",
+      "category": "간편식"
+    },
+    {
+      "keyword": "풀무원생면",
+      "category": "간편식"
+    },
+    {
+      "keyword": "진라면컵",
+      "category": "간편식"
+    },
+    {
+      "keyword": "포켓몬빵",
+      "category": "빵"
+    },
+    {
+      "keyword": "로아커",
+      "category": "빵"
+    },
+    {
+      "keyword": "죠스바",
+      "category": "아이스크림"
+    },
+    {
+      "keyword": "수박바",
+      "category": "아이스크림"
+    },
+    {
+      "keyword": "틈새라면",
+      "category": "라면"
+    },
+    {
+      "keyword": "오징어짬뽕",
+      "category": "라면"
+    },
+    {
+      "keyword": "짜파게티범벅",
+      "category": "라면"
+    },
+    {
+      "keyword": "라면사리",
+      "category": "라면"
+    },
+    {
+      "keyword": "맛있는라면",
+      "category": "라면"
+    },
+    {
+      "keyword": "버터링",
+      "category": "과자"
+    },
+    {
+      "keyword": "맛동산",
+      "category": "과자"
+    },
+    {
+      "keyword": "조리퐁",
+      "category": "과자"
+    },
+    {
+      "keyword": "카라멜콘",
+      "category": "과자"
+    },
+    {
+      "keyword": "부셔먹는라면",
+      "category": "과자"
+    },
+    {
+      "keyword": "빅사이즈칩",
+      "category": "과자"
+    },
+    {
+      "keyword": "레드불",
+      "category": "음료"
+    },
+    {
+      "keyword": "몬스터에너지",
+      "category": "음료"
+    },
+    {
+      "keyword": "스프라이트",
+      "category": "음료"
+    },
+    {
+      "keyword": "닥터페퍼",
+      "category": "음료"
+    },
+    {
+      "keyword": "솔의눈",
+      "category": "음료"
+    },
+    {
+      "keyword": "2%부족할때",
+      "category": "음료"
+    },
+    {
+      "keyword": "트레비",
+      "category": "음료"
+    },
+    {
+      "keyword": "백산수",
+      "category": "음료"
+    },
+    {
+      "keyword": "서울우유초코",
+      "category": "유제품"
+    },
+    {
+      "keyword": "남양맛있는우유",
+      "category": "유제품"
+    },
+    {
+      "keyword": "흰우유",
+      "category": "유제품"
+    },
+    {
+      "keyword": "파스퇴르",
+      "category": "유제품"
+    },
+    {
+      "keyword": "오뚜기밥",
+      "category": "간편식"
+    },
+    {
+      "keyword": "비비고국",
+      "category": "간편식"
+    },
+    {
+      "keyword": "하림닭가슴살",
+      "category": "간편식"
+    },
+    {
+      "keyword": "풀무원김치",
+      "category": "간편식"
+    },
+    {
+      "keyword": "오뚜기간장",
+      "category": "간편식"
+    },
+    {
+      "keyword": "비비고죽",
+      "category": "간편식"
+    },
+    {
+      "keyword": "에이스케이크",
+      "category": "빵"
+    },
+    {
+      "keyword": "파운드케이크",
+      "category": "빵"
+    },
+    {
+      "keyword": "부라보콘",
+      "category": "아이스크림"
+    },
+    {
+      "keyword": "페레로로쉐",
+      "category": "초콜릿"
+    },
+    {
+      "keyword": "킨더",
+      "category": "초콜릿"
+    },
+    {
+      "keyword": "자일리톨껌",
+      "category": "초콜릿"
+    },
+    {
+      "keyword": "롯데껌",
+      "category": "초콜릿"
+    }
+  ],
+  "timestamp": "2026-04-28T16:33:17.902Z"
+}

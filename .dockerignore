@@ -1,0 +1,12 @@
+node_modules
+logs
+.env
+.env.local
+*.log
+tests
+scripts/staging
+scripts/merge
+week1_pipeline
+data
+uploads
+.git

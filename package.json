@@ -1,0 +1,43 @@
+{
+  "name": "meokseon-server",
+  "version": "1.0.0",
+  "description": "먹선(吃選) 식품 안전 정보 API 서버",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "NODE_ENV=development node src/server.js",
+    "test": "NODE_ENV=test node tests/test_traffic_light.js && node tests/test_100_products.js && node tests/test_ocr_parser.js && node tests/test_api.js",
+    "test:unit": "node tests/test_traffic_light.js",
+    "test:integration": "node tests/test_100_products.js",
+    "test:api": "node tests/test_api.js",
+    "test:ocr": "node tests/test_ocr_parser.js",
+    "migrate": "psql $DATABASE_URL -f scripts/migrations/001_init_schema.sql && psql $DATABASE_URL -f scripts/migrations/002_seed_config.sql && psql $DATABASE_URL -f scripts/migrations/004_add_disputed.sql",
+    "migrate:all": "npm run migrate && psql $DATABASE_URL -f scripts/migrations/003_seed_products.sql"
+  },
+  "keywords": [
+    "food-safety",
+    "nutrition",
+    "traffic-light",
+    "korea"
+  ],
+  "author": "Jay Kim <saeronjhk@gmail.com>",
+  "license": "ISC",
+  "dependencies": {
+    "@capacitor/browser": "^8.0.3",
+    "@capacitor/filesystem": "^8.1.2",
+    "@capacitor/share": "^8.0.1",
+    "cors": "^2.8.6",
+    "dotenv": "^17.4.2",
+    "express": "^4.21.2",
+    "express-async-errors": "^3.1.1",
+    "express-rate-limit": "^8.3.2",
+    "express-validator": "^7.3.2",
+    "helmet": "^8.1.0",
+    "morgan": "^1.10.1",
+    "multer": "^2.1.1",
+    "pg": "^8.20.0",
+    "swagger-ui-express": "^5.0.1",
+    "winston": "^3.19.0",
+    "winston-daily-rotate-file": "^5.0.0"
+  }
+}

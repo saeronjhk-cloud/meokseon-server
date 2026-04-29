@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>먹선 OCR 테스트</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Segoe UI', sans-serif; background: #f5f5f5; color: #333; padding: 20px; }
+    .container { max-width: 900px; margin: 0 auto; }
+    h1 { text-align: center; margin-bottom: 8px; font-size: 24px; }
+    .subtitle { text-align: center; color: #666; margin-bottom: 24px; font-size: 14px; }
+
+    .upload-area {
+      border: 3px dashed #ccc; border-radius: 12px; padding: 40px; text-align: center;
+      cursor: pointer; transition: all 0.3s; background: white; margin-bottom: 20px;
+    }
+    .upload-area:hover { border-color: #4CAF50; background: #f9fff9; }
+    .upload-area.dragover { border-color: #4CAF50; background: #e8f5e9; }
+    .upload-area img { max-width: 100%; max-height: 300px; border-radius: 8px; margin-top: 12px; }
+
+    .btn {
+      display: block; width: 100%; padding: 14px; border: none; border-radius: 8px;
+      font-size: 16px; font-weight: bold; cursor: pointer; transition: all 0.2s;
+    }
+    .btn-primary { background: #4CAF50; color: white; }
+    .btn-primary:hover { background: #45a049; }
+    .btn-primary:disabled { background: #ccc; cursor: not-allowed; }
+
+    .loading { display: none; text-align: center; padding: 30px; }
+    .loading.show { display: block; }
+    .spinner { display: inline-block; width: 40px; height: 40px; border: 4px solid #ddd;
+      border-top-color: #4CAF50; border-radius: 50%; animation: spin 0.8s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .result { display: none; margin-top: 20px; }
+    .result.show { display: block; }
+    .card { background: white; border-radius: 12px; padding: 20px; margin-bottom: 16px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
+    .card h3 { margin-bottom: 12px; font-size: 16px; display: flex; align-items: center; gap: 8px; }
+
+    .stat { display: inline-block; background: #e8f5e9; padding: 4px 12px; border-radius: 20px;
+      font-size: 13px; margin: 4px; }
+    .stat.warn { background: #fff3e0; }
+    .stat.danger { background: #ffebee; }
+
+    .nutrient-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 8px; }
+    .nutrient-item { padding: 10px; border-radius: 8px; font-size: 14px; }
+    .nutrient-item .label { font-weight: 600; }
+    .nutrient-item .value { float: right; }
+    .color-green { background: #e8f5e9; border-left: 4px solid #4CAF50; }
+    .color-yellow { background: #fff8e1; border-left: 4px solid #FFC107; }
+    .color-red { background: #ffebee; border-left: 4px solid #f44336; }
+    .color-gray { background: #f5f5f5; border-left: 4px solid #9e9e9e; }
+
+    .ingredient-list { display: flex; flex-wrap: wrap; gap: 6px; }
+    .ingredient-tag { background: #e3f2fd; padding: 4px 10px; border-radius: 16px; font-size: 13px; }
+    .additive-tag { background: #fff3e0; padding: 4px 10px; border-radius: 16px; font-size: 13px; }
+    .allergen-tag { background: #ffebee; padding: 4px 10px; border-radius: 16px; font-size: 13px; font-weight: 600; }
+
+    .text-preview { background: #fafafa; border: 1px solid #eee; border-radius: 8px;
+      padding: 12px; font-size: 13px; white-space: pre-wrap; max-height: 200px;
+      overflow-y: auto; line-height: 1.6; }
+
+    .error { background: #ffebee; border: 1px solid #ef9a9a; border-radius: 8px;
+      padding: 16px; color: #c62828; display: none; margin-top: 16px; }
+    .error.show { display: block; }
+
+    input[type="file"] { display: none; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>먹선(吃選) OCR 테스트</h1>
+    <p class="subtitle">식품 라벨 사진을 업로드하면 원재료·영양성분·첨가물·알레르기를 자동 분석합니다</p>
+
+    <div class="upload-area" id="uploadArea">
+      <p style="font-size: 18px; margin-bottom: 8px;">클릭하거나 이미지를 드래그하세요</p>
+      <p style="color: #999; font-size: 13px;">JPG, PNG (최대 10MB)</p>
+      <img id="preview" style="display:none">
+    </div>
+    <input type="file" id="fileInput" accept="image/*">
+
+    <button class="btn btn-primary" id="analyzeBtn" disabled>분석하기</button>
+
+    <div class="loading" id="loading">
+      <div class="spinner"></div>
+      <p style="margin-top: 12px; color: #666;">Google Vision OCR 분석 중...</p>
+    </div>
+
+    <div class="error" id="error"></div>
+
+    <div class="result" id="result">
+      <!-- OCR 정보 -->
+      <div class="card" id="ocrCard">
+        <h3>📸 OCR 결과</h3>
+        <div id="ocrStats"></div>
+        <div class="text-preview" id="ocrText" style="margin-top:12px"></div>
+      </div>
+
+      <!-- 영양 신호등 -->
+      <div class="card" id="trafficCard" style="display:none">
+        <h3>🚦 영양 신호등 판정</h3>
+        <div id="trafficCategory" style="margin-bottom:12px"></div>
+        <div class="nutrient-grid" id="nutrientGrid"></div>
+        <div id="multiServing" style="margin-top:12px"></div>
+      </div>
+
+      <!-- 원재료 -->
+      <div class="card" id="ingredientCard" style="display:none">
+        <h3>🧾 원재료 (<span id="ingredientCount">0</span>개)</h3>
+        <div class="ingredient-list" id="ingredientList"></div>
+      </div>
+
+      <!-- 첨가물 -->
+      <div class="card" id="additiveCard" style="display:none">
+        <h3>⚗️ 식품첨가물 (<span id="additiveCount">0</span>개)</h3>
+        <div class="ingredient-list" id="additiveList"></div>
+      </div>
+
+      <!-- 알레르기 -->
+      <div class="card" id="allergenCard" style="display:none">
+        <h3>⚠️ 알레르기 유발물질</h3>
+        <div class="ingredient-list" id="allergenList"></div>
+      </div>
+
+      <!-- Sanity 경고 -->
+      <div class="card" id="sanityCard" style="display:none">
+        <h3>🔍 OCR 이상치 경고</h3>
+        <div id="sanityList"></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const API_URL = 'http://localhost:4000/api/ocr/analyze';
+    let base64Image = null;
+
+    // 업로드 영역
+    const uploadArea = document.getElementById('uploadArea');
+    const fileInput = document.getElementById('fileInput');
+    const preview = document.getElementById('preview');
+    const analyzeBtn = document.getElementById('analyzeBtn');
+
+    uploadArea.addEventListener('click', () => fileInput.click());
+    uploadArea.addEventListener('dragover', e => { e.preventDefault(); uploadArea.classList.add('dragover'); });
+    uploadArea.addEventListener('dragleave', () => uploadArea.classList.remove('dragover'));
+    uploadArea.addEventListener('drop', e => {
+      e.preventDefault();
+      uploadArea.classList.remove('dragover');
+      if (e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]);
+    });
+    fileInput.addEventListener('change', e => { if (e.target.files[0]) handleFile(e.target.files[0]); });
+
+    function handleFile(file) {
+      if (!file.type.startsWith('image/')) { alert('이미지 파일만 가능합니다.'); return; }
+      if (file.size > 10 * 1024 * 1024) { alert('10MB 이하 파일만 가능합니다.'); return; }
+
+      const reader = new FileReader();
+      reader.onload = e => {
+        base64Image = e.target.result;
+        preview.src = base64Image;
+        preview.style.display = 'block';
+        analyzeBtn.disabled = false;
+        document.getElementById('result').classList.remove('show');
+        document.getElementById('error').classList.remove('show');
+      };
+      reader.readAsDataURL(file);
+    }
+
+    // 분석 실행
+    analyzeBtn.addEventListener('click', async () => {
+      if (!base64Image) return;
+
+      analyzeBtn.disabled = true;
+      document.getElementById('loading').classList.add('show');
+      document.getElementById('result').classList.remove('show');
+      document.getElementById('error').classList.remove('show');
+
+      try {
+        const resp = await fetch(API_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ image: base64Image }),
+        });
+
+        const data = await resp.json();
+
+        if (!data.success) {
+          throw new Error(data.error?.message || '분석 실패');
+        }
+
+        renderResult(data.data);
+      } catch (err) {
+        const errorEl = document.getElementById('error');
+        errorEl.textContent = '오류: ' + err.message;
+        errorEl.classList.add('show');
+      } finally {
+        document.getElementById('loading').classList.remove('show');
+        analyzeBtn.disabled = false;
+      }
+    });
+
+    // 결과 렌더링
+    function renderResult(data) {
+      // OCR 정보
+      const ocr = data.ocr;
+      document.getElementById('ocrStats').innerHTML =
+        `<span class="stat">블록 ${ocr.block_count}개</span>` +
+        `<span class="stat">신뢰도 ${(ocr.avg_confidence * 100).toFixed(1)}%</span>` +
+        `<span class="stat">${ocr.elapsed_ms}ms</span>` +
+        (ocr.corrections.length > 0 ? `<span class="stat warn">교정 ${ocr.corrections.length}건</span>` : '');
+      document.getElementById('ocrText').textContent = data.corrected_text;
+
+      // 영양 신호등
+      const tl = data.traffic_light;
+      const tlCard = document.getElementById('trafficCard');
+      if (tl && !tl.is_excluded) {
+        tlCard.style.display = 'block';
+        document.getElementById('trafficCategory').innerHTML =
+          `<span class="stat">카테고리: ${tl.food_category}</span>` +
+          (tl.is_dried_exception ? '<span class="stat warn">건조식품 예외 적용</span>' : '');
+
+        const grid = document.getElementById('nutrientGrid');
+        grid.innerHTML = '';
+        const nutrients = tl.nutrients;
+        const nameMap = { sodium: '나트륨', sugars: '당류', sat_fat: '포화지방', total_fat: '총지방',
+          cholesterol: '콜레스테롤', protein: '단백질', fiber: '식이섬유', trans_fat: '트랜스지방' };
+
+        for (const [key, info] of Object.entries(nutrients)) {
+          if (!info || !info.color) continue;
+          const item = document.createElement('div');
+          item.className = `nutrient-item color-${info.color}`;
+          item.innerHTML = `<span class="label">${nameMap[key] || key}</span>` +
+            `<span class="value">${info.pct_dv != null ? info.pct_dv + '%DV' : ''}</span>`;
+          grid.appendChild(item);
+        }
+
+        const ms = tl.multi_serving;
+        if (ms && ms.servings_per_container > 1) {
+          document.getElementById('multiServing').innerHTML =
+            `<span class="stat warn">${ms.message}</span>`;
+        }
+      } else {
+        tlCard.style.display = tl?.is_excluded ? 'block' : 'none';
+        if (tl?.is_excluded) {
+          document.getElementById('trafficCategory').innerHTML =
+            `<span class="stat">평가 제외: ${tl.exclude_reason}</span>`;
+          document.getElementById('nutrientGrid').innerHTML = '';
+        }
+      }
+
+      // 원재료
+      const analysis = data.analysis;
+      const ingCard = document.getElementById('ingredientCard');
+      if (analysis.ingredient_count > 0) {
+        ingCard.style.display = 'block';
+        document.getElementById('ingredientCount').textContent = analysis.ingredient_count;
+        document.getElementById('ingredientList').innerHTML = analysis.ingredients
+          .map(i => {
+            let label = i.name;
+            if (i.origin) label += ` [${i.origin}]`;
+            if (i.percentage) label += ` ${i.percentage}%`;
+            return `<span class="ingredient-tag">${label}</span>`;
+          }).join('');
+      } else { ingCard.style.display = 'none'; }
+
+      // 첨가물
+      const addCard = document.getElementById('additiveCard');
+      if (analysis.additive_count > 0) {
+        addCard.style.display = 'block';
+        document.getElementById('additiveCount').textContent = analysis.additive_count;
+        document.getElementById('additiveList').innerHTML = analysis.additives
+          .map(a => `<span class="additive-tag">${a.name} (${a.category})</span>`).join('');
+      } else { addCard.style.display = 'none'; }
+
+      // 알레르기
+      const allCard = document.getElementById('allergenCard');
+      if (analysis.allergens.length > 0) {
+        allCard.style.display = 'block';
+        document.getElementById('allergenList').innerHTML = analysis.allergens
+          .map(a => `<span class="allergen-tag">${a}</span>`).join('');
+      } else { allCard.style.display = 'none'; }
+
+      // Sanity 경고
+      const sanCard = document.getElementById('sanityCard');
+      if (data.sanity_warnings && data.sanity_warnings.length > 0) {
+        sanCard.style.display = 'block';
+        document.getElementById('sanityList').innerHTML = data.sanity_warnings
+          .map(w => `<span class="stat danger">${w.nutrient}: ${w.message}</span>`).join('');
+      } else { sanCard.style.display = 'none'; }
+
+      document.getElementById('result').classList.add('show');
+    }
+  </script>
+</body>
+</html>

@@ -19,6 +19,50 @@ const { getContext } = require('../utils/foodCategory');
 // 4색 우선순위 — 가장 위험한 색이 dominant_color
 const COLOR_RANK = { red: 4, orange: 3, yellow: 2, green: 1, gray: 0 };
 
+// 첨가물 description 안의 영어 enum 토큰 → 한글 매핑
+// DB의 additives.description 은 "분류: 유지 | 규제: approved_with_limits | 유전독성: negative | 데이터: extensive"
+// 형태로 저장되어 있어 사용자에게 그대로 노출되지 않도록 enum 값만 한글로 치환한다.
+const ENUM_TO_KOREAN = {
+  // regulatory_status
+  universally_approved: '전세계 승인',
+  korea_approved: '국내 승인',
+  approved_with_limits: '제한 승인',
+  approved: '승인',
+  banned: '금지',
+  withdrawn: '철회',
+  restricted: '제한',
+  not_acceptable: '불가',
+  // genotox_status
+  negative: '음성',
+  equivocal: '의심',
+  positive_invitro: '양성(시험관)',
+  positive_invivo: '양성(생체)',
+  positive: '양성',
+  // data_sufficiency
+  extensive: '충분',
+  adequate: '양호',
+  moderate: '보통',
+  limited: '제한적',
+  insufficient: '부족',
+  none: '없음',
+  // adi_type
+  not_specified: '미지정',
+  numerical: '수치',
+  numeric: '수치',
+  not_established: '미설정',
+  group: '그룹',
+};
+
+/**
+ * description 텍스트 안의 영어 enum 토큰을 한글로 치환
+ * 예: "규제: approved_with_limits | 유전독성: negative" → "규제: 제한 승인 | 유전독성: 음성"
+ */
+function humanizeAdditiveDescription(text) {
+  if (!text || typeof text !== 'string') return text;
+  // 단어 경계로 매칭 (한글·하이픈 등은 그대로 두고 snake_case enum만 치환)
+  return text.replace(/\b([a-z][a-z_]+)\b/g, (m) => ENUM_TO_KOREAN[m] || m);
+}
+
 /**
  * 첨가물 row 배열 → MFRAS 응답 객체
  * 스펙: docs/API_SPEC_MFRAS.md §2.1
@@ -62,7 +106,7 @@ function buildMfras(additivesRows) {
       score: a.risk_grade,           // 1.0~10.0 (DB의 risk_grade 직접 노출)
       order_in_product: null,
       order_weight: null,
-      summary: a.description,
+      summary: humanizeAdditiveDescription(a.description),
       detail_url: null,
     })),
   };

@@ -1,12 +1,51 @@
-node_modules
-logs
+# Docker 이미지에 들어가지 말아야 할 것들
+# 운영 컨테이너 크기·보안·빌드 속도 모두 개선
+
+# 의존성 (이미지 빌드 시 npm ci로 새로 설치)
+node_modules/
+
+# 환경변수 (Railway 환경변수가 런타임에 주입됨 — 파일은 절대 들어가면 안 됨)
 .env
-.env.local
+.env.*
+!.env.example
+
+# 로그·임시
+logs/
 *.log
-tests
-scripts/staging
-scripts/merge
-week1_pipeline
-data
-uploads
-.git
+tmp/
+temp/
+
+# DB 백업·덤프 (이미지에 들어가면 보안·크기 모두 재앙)
+*.sql.gz
+*.dump
+*.tar.gz
+*.zip
+*backup*.sql
+*_dump.sql
+meokseon_backup.sql
+
+# 개발·테스트 코드
+tests/
+.jest-cache/
+
+# 일회성 데이터 파이프라인 스크립트 (운영엔 불필요)
+scripts/staging/
+scripts/merge/
+week1_pipeline/
+data/
+uploads/
+
+# 코드 리뷰·문서 (이미지에 불필요)
+CODE_REVIEW.md
+*.csv
+
+# git
+.git/
+.gitignore
+.gitattributes
+
+# IDE / OS
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

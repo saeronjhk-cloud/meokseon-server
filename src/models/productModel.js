@@ -16,6 +16,7 @@ async function findByBarcode(barcode) {
        p.product_id, p.barcode, p.product_name, p.brand, p.manufacturer,
        p.food_type, p.food_category, p.serving_size, p.total_content,
        p.content_unit, p.data_source, p.image_url,
+       p.verification, p.verify_count,
        n.calories, n.total_fat, n.saturated_fat, n.trans_fat,
        n.cholesterol, n.sodium, n.total_carbs, n.total_sugars,
        n.dietary_fiber, n.protein, n.data_source AS nutrition_source,

@@ -88,6 +88,27 @@ router.post('/analyze', upload.single('image'), async (req, res) => {
   // Step 3: 분석
   const analysis = analyzeText(corrected);
 
+  // ── 사용자 입력값 우선 병합 ──
+  // 사용자가 OCR 결과 화면에서 영양성분·원재료·알레르기를 직접 수정한 경우,
+  // OCR 결과 대신 사용자 값을 신뢰한다. (Trust the user, not the OCR.)
+  if (productInfo?.nutrition) {
+    analysis.nutrition = { ...analysis.nutrition, ...productInfo.nutrition };
+  }
+  if (productInfo?.ingredients_text) {
+    // 사용자가 텍스트 영역에서 수정한 원재료 — corrected 텍스트로 갈아끼우면
+    // analyzeText 가 다시 파싱해 ingredients 배열을 새로 생성
+    const reanalyzed = analyzeText(productInfo.ingredients_text);
+    if (reanalyzed.ingredients?.length) {
+      analysis.ingredients = reanalyzed.ingredients;
+      analysis.ingredient_count = reanalyzed.ingredient_count;
+      analysis.additives = reanalyzed.additives;
+      analysis.additive_count = reanalyzed.additive_count;
+    }
+  }
+  if (Array.isArray(productInfo?.allergens)) {
+    analysis.allergens = productInfo.allergens;
+  }
+
   // Step 4: 영양 신호등
   let trafficLight = null;
   let sanityWarnings = [];
@@ -125,6 +146,7 @@ router.post('/analyze', upload.single('image'), async (req, res) => {
   if (shouldSave) {
     saveResult = await saveOcrContribution({
       barcode: productInfo?.barcode || req.body.barcode || null,
+      productInfo: productInfo || {},
       ocrResult: { corrected_text: corrected, corrections },
       analysis,
       avgConfidence: ocrResult.avg_confidence,

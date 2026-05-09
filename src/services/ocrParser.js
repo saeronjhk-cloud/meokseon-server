@@ -30,7 +30,8 @@ function extractIngredientSection(text) {
 
   for (const pattern of patterns) {
     const match = cleaned.match(pattern);
-    if (match && match[1].trim().length >= 10) {
+    // 임계값 10 → 3 으로 완화: OCR이 짧게 잘라도 \"밀가루\" 같은 한 단어라도 받음
+    if (match && match[1].trim().length >= 3) {
       return match[1].trim();
     }
   }
@@ -38,8 +39,23 @@ function extractIngredientSection(text) {
   // 라면류 특수 케이스
   const ramenPattern = new RegExp(`\\*?면\\s*[:]\\s*(.+?)${endKeywords}`, 's');
   const ramenMatch = cleaned.match(ramenPattern);
-  if (ramenMatch && ramenMatch[1].trim().length >= 10) {
+  if (ramenMatch && ramenMatch[1].trim().length >= 3) {
     return ramenMatch[1].trim();
+  }
+
+  // 종료 키워드가 텍스트에 전혀 없는 경우 — \"원재료명\" 시작 후 끝까지 추출
+  // (OCR이 라벨 일부만 읽고 \"내용량\" 같은 종료 키워드 못 읽은 케이스 대응)
+  const fallbackPatterns = [
+    /원재료명\s*(?:및\s*)?(?:함량)?\s*[:\s]\s*(.+)/s,
+    /원재료\s*[:\s]\s*(.+)/s,
+  ];
+  for (const pattern of fallbackPatterns) {
+    const match = cleaned.match(pattern);
+    if (match && match[1].trim().length >= 3) {
+      // 너무 길면(>2000자) 일부만 — 영양정보 등 다른 섹션이 섞여있을 수 있어 제한
+      const result = match[1].trim().substring(0, 2000);
+      return result;
+    }
   }
 
   return null;

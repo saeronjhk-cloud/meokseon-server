@@ -366,6 +366,101 @@ function detectAllergens(text) {
 }
 
 // ============================================================
+// 5b. 제품 메타정보 추출 (제품명·식품유형·판매원·제조원·내용량·품목보고번호)
+// ============================================================
+
+/**
+ * 한국 식품 라벨에서 자주 나타나는 라벨-값 패턴.
+ * 다음 키워드 중 하나가 등장하면 현재 값을 종료한다.
+ */
+const META_END_KEYWORDS = [
+  '제품명', '상품명', '식품유형', '내용량', '총내용량',
+  '유통전문판매원', '판매원', '소분원', '제조원', '제조사', '수입원',
+  '품목보고번호', '품목제조번호', '소비기한', '유통기한',
+  '보관방법', '포장재질', '반품', '교환', '주의사항',
+  '원재료명', '원재료', '영양정보', '영양성분',
+  '소재지', '주소', '고객상담', '소비자상담',
+];
+
+/**
+ * "다음 라벨 키워드까지" 멈추는 lookahead 부분.
+ */
+const META_END_LOOKAHEAD = `(?=(?:${META_END_KEYWORDS.join('|')})|\\n|$)`;
+
+/**
+ * 라벨 ~ 다음 라벨 사이의 값을 잘라내는 헬퍼.
+ * @param {string} text - OCR 텍스트
+ * @param {string[]} labels - 매칭할 라벨 후보들 (예: ['제품명','상품명'])
+ */
+function extractByLabels(text, labels) {
+  for (const label of labels) {
+    // 라벨 + (콜론/슬래시/공백) + 값 + (다음 라벨 또는 줄바꿈)
+    const labelEsc = label.replace(/\s/g, '\\s*');
+    const re = new RegExp(`${labelEsc}\\s*[:\\/\\-]?\\s*(.+?)\\s*${META_END_LOOKAHEAD}`, 's');
+    const m = text.match(re);
+    if (m && m[1] && m[1].trim().length > 0) {
+      // 트리밍 + 끝의 쉼표·공백·콜론 정리
+      return m[1].replace(/[\s,:.\/\-]+$/, '').trim();
+    }
+  }
+  return null;
+}
+
+/**
+ * OCR 텍스트에서 제품 메타정보를 추출.
+ * @param {string} text - 교정된 OCR 텍스트
+ * @returns {Object} { product_name, food_type, brand, manufacturer, total_content, content_unit, report_no }
+ */
+function extractProductMeta(text) {
+  const meta = {};
+
+  // 제품명 (상품명) — 한국 라벨에서 일반적으로 가장 위에 위치
+  const productName = extractByLabels(text, ['제품명', '상품명']);
+  if (productName) meta.product_name = productName;
+
+  // 식품유형
+  const foodType = extractByLabels(text, ['식품유형']);
+  if (foodType) meta.food_type = foodType;
+
+  // 유통전문판매원 (브랜드 소유자) — 사용자에게 의미 있는 식별자
+  // \"유통전문판매원\" → \"판매원\" 순서로 시도 (긴 라벨 먼저)
+  const brand = extractByLabels(text, [
+    '유통전문판매원', '유통판매원', '판매원',
+  ]);
+  if (brand) meta.brand = brand;
+
+  // 제조원 (실제 제조 공장)
+  const manufacturer = extractByLabels(text, [
+    '제조원', '제조사', '제조/소분원', '제조 / 소분원', '소분원', '수입원',
+  ]);
+  if (manufacturer) meta.manufacturer = manufacturer;
+
+  // 내용량 (g, mL, kg, L, 개)
+  const contentMatch = text.match(
+    /(?:총\s*)?내용량\s*[:\/\-]?\s*(\d+(?:[.,]\d+)?)\s*(g|ml|mL|kg|L|개|정|포)/
+  );
+  if (contentMatch) {
+    meta.total_content = parseFloat(contentMatch[1].replace(',', '.'));
+    meta.content_unit = contentMatch[2].toLowerCase();
+  }
+
+  // 품목보고번호 (식약처 14자리 숫자)
+  const reportMatch = text.match(
+    /(?:품목\s*보고\s*번호|품목\s*제조\s*번호|품목제조보고번호)\s*[:\/\-]?\s*(\d{10,})/
+  );
+  if (reportMatch) meta.report_no = reportMatch[1];
+
+  // 짧은 값 정리 — \"에이스\" 같이 1글자도 OK이나 빈 문자열 검증
+  for (const k of ['product_name', 'food_type', 'brand', 'manufacturer']) {
+    if (meta[k] && (meta[k].length < 1 || meta[k].length > 200)) {
+      delete meta[k];
+    }
+  }
+
+  return meta;
+}
+
+// ============================================================
 // 6. 통합 분석 파이프라인
 // ============================================================
 
@@ -388,6 +483,9 @@ function analyzeText(correctedText) {
   // 알레르기
   const allergens = detectAllergens(correctedText);
 
+  // 제품 메타정보 (제품명·식품유형·브랜드·제조원·내용량·품목보고번호)
+  const product_meta = extractProductMeta(correctedText);
+
   return {
     ingredient_section: ingredientSection,
     ingredients: ingredients.map(i => ({
@@ -401,6 +499,7 @@ function analyzeText(correctedText) {
     additive_count: additives.length,
     nutrition,
     allergens,
+    product_meta,
   };
 }
 
@@ -410,6 +509,7 @@ module.exports = {
   identifyAdditives,
   parseNutrition,
   detectAllergens,
+  extractProductMeta,
   analyzeText,
   ADDITIVE_KEYWORDS,
   ALLERGEN_KEYWORDS,

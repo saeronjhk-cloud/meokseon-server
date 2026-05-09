@@ -173,6 +173,7 @@ router.post('/analyze', upload.single('image'), async (req, res) => {
         additive_count: analysis.additive_count,
         nutrition: analysis.nutrition,
         allergens: analysis.allergens,
+        product_meta: analysis.product_meta,
       },
       traffic_light: trafficLight,
       sanity_warnings: sanityWarnings,
@@ -180,6 +181,187 @@ router.post('/analyze', upload.single('image'), async (req, res) => {
     },
   });
 });
+
+// ============================================================
+// POST /api/ocr/multi-photo
+// 두 장의 사진을 받아 통합 분석:
+//   - label_image: 제품 라벨 (제품명·식품유형·판매원·원재료·알레르기)
+//   - nutrition_image: 영양성분표 (11개 영양소)
+// 두 장의 OCR 결과를 합쳐 사용자가 거의 수정 없이 등록할 수 있게 한다.
+// ============================================================
+
+router.post(
+  '/multi-photo',
+  upload.fields([
+    { name: 'label_image', maxCount: 1 },
+    { name: 'nutrition_image', maxCount: 1 },
+  ]),
+  async (req, res) => {
+    const labelFile = req.files?.label_image?.[0];
+    const nutritionFile = req.files?.nutrition_image?.[0];
+
+    if (!labelFile && !nutritionFile) {
+      throw new ValidationError('label_image 또는 nutrition_image 중 하나 이상은 필수입니다.');
+    }
+
+    let productInfo = req.body.product_info;
+    if (typeof productInfo === 'string') {
+      try { productInfo = JSON.parse(productInfo); } catch { productInfo = null; }
+    }
+
+    console.log('[OCR/multi] 두 사진 분석 시작', {
+      label: labelFile ? `${(labelFile.size / 1024).toFixed(0)}KB` : '없음',
+      nutrition: nutritionFile ? `${(nutritionFile.size / 1024).toFixed(0)}KB` : '없음',
+    });
+
+    // ─── 1. 라벨 사진 OCR (제품명·원재료·알레르기) ───
+    let labelAnalysis = null;
+    let labelOcr = null;
+    if (labelFile) {
+      const base64 = labelFile.buffer.toString('base64');
+      labelOcr = await callVisionAPI(base64);
+      const truncated = labelOcr.full_text.substring(0, MAX_OCR_TEXT_LENGTH);
+      const { corrected: c1, corrections: cor1 } = correctOcrText(truncated);
+      labelAnalysis = analyzeText(c1);
+      labelAnalysis._corrected_text = c1;
+      labelAnalysis._corrections = cor1;
+      labelAnalysis._avg_confidence = labelOcr.avg_confidence;
+    }
+
+    // ─── 2. 영양성분 사진 OCR (영양소만) ───
+    let nutritionAnalysis = null;
+    let nutritionOcr = null;
+    if (nutritionFile) {
+      const base64 = nutritionFile.buffer.toString('base64');
+      nutritionOcr = await callVisionAPI(base64);
+      const truncated = nutritionOcr.full_text.substring(0, MAX_OCR_TEXT_LENGTH);
+      const { corrected: c2, corrections: cor2 } = correctOcrText(truncated);
+      nutritionAnalysis = analyzeText(c2);
+      nutritionAnalysis._corrected_text = c2;
+      nutritionAnalysis._corrections = cor2;
+      nutritionAnalysis._avg_confidence = nutritionOcr.avg_confidence;
+    }
+
+    // ─── 3. 두 분석 결과 병합 ───
+    // 라벨 사진 → 메타·원재료·첨가물·알레르기 우선
+    // 영양표 사진 → 영양정보 우선
+    const merged = {
+      product_meta: labelAnalysis?.product_meta || nutritionAnalysis?.product_meta || {},
+      ingredients: labelAnalysis?.ingredients || [],
+      ingredient_count: labelAnalysis?.ingredient_count || 0,
+      additives: labelAnalysis?.additives || [],
+      additive_count: labelAnalysis?.additive_count || 0,
+      allergens: labelAnalysis?.allergens || [],
+      nutrition: nutritionAnalysis?.nutrition || labelAnalysis?.nutrition || {},
+    };
+
+    // 사용자 입력 우선 적용
+    if (productInfo?.nutrition) {
+      merged.nutrition = { ...merged.nutrition, ...productInfo.nutrition };
+    }
+    if (productInfo?.allergens && Array.isArray(productInfo.allergens)) {
+      merged.allergens = productInfo.allergens;
+    }
+
+    // ─── 4. 영양 신호등 판정 ───
+    const nutrition = merged.nutrition;
+    let trafficLight = null;
+    let sanityWarnings = [];
+
+    if (nutrition.calories || nutrition.sodium || nutrition.total_sugars) {
+      const productData = {
+        product_name: productInfo?.product_name || merged.product_meta.product_name || '(OCR 분석)',
+        food_type: productInfo?.food_type || merged.product_meta.food_type || '',
+        content_unit: nutrition.serving_unit || productInfo?.content_unit || merged.product_meta.content_unit || 'g',
+        serving_size: nutrition.serving_size || productInfo?.serving_size || 100,
+        total_content: productInfo?.total_content || merged.product_meta.total_content || null,
+      };
+      const nutritionData = {
+        calories: nutrition.calories ?? null,
+        sodium: nutrition.sodium ?? null,
+        sugars: nutrition.total_sugars ?? null,
+        sat_fat: nutrition.saturated_fat ?? null,
+        total_fat: nutrition.total_fat ?? null,
+        cholesterol: nutrition.cholesterol ?? null,
+        protein: nutrition.protein ?? null,
+        fiber: nutrition.dietary_fiber ?? null,
+        trans_fat: nutrition.trans_fat ?? null,
+      };
+      sanityWarnings = sanityCheck(nutritionData, productData.serving_size);
+      trafficLight = evaluateNutrition(productData, nutritionData);
+    }
+
+    // ─── 5. 등록 (선택) ───
+    let saveResult = null;
+    const shouldSave = req.body.save === true || req.body.save === 'true';
+
+    if (shouldSave) {
+      // 사용자 입력 + 메타 병합 → productInfo 로 saveOcrContribution 에 전달
+      const mergedProductInfo = {
+        ...merged.product_meta,
+        ...productInfo,
+        nutrition: merged.nutrition,
+        allergens: merged.allergens,
+      };
+      saveResult = await saveOcrContribution({
+        barcode: productInfo?.barcode || req.body.barcode || null,
+        productInfo: mergedProductInfo,
+        ocrResult: {
+          corrected_text: [
+            labelAnalysis?._corrected_text,
+            nutritionAnalysis?._corrected_text,
+          ].filter(Boolean).join('\n---LABEL/NUTRITION SPLIT---\n'),
+          corrections: [
+            ...(labelAnalysis?._corrections || []),
+            ...(nutritionAnalysis?._corrections || []),
+          ],
+        },
+        analysis: merged,
+        avgConfidence: Math.max(
+          labelAnalysis?._avg_confidence || 0,
+          nutritionAnalysis?._avg_confidence || 0,
+        ),
+        userId: req.body.user_id || null,
+        deviceId: req.body.device_id || null,
+      });
+    }
+
+    // ─── 6. 응답 ───
+    res.json({
+      success: true,
+      data: {
+        label_ocr: labelOcr ? {
+          block_count: labelOcr.block_count,
+          avg_confidence: labelOcr.avg_confidence,
+          elapsed_ms: labelOcr.elapsed_ms,
+          full_text_length: labelOcr.full_text.length,
+        } : null,
+        nutrition_ocr: nutritionOcr ? {
+          block_count: nutritionOcr.block_count,
+          avg_confidence: nutritionOcr.avg_confidence,
+          elapsed_ms: nutritionOcr.elapsed_ms,
+          full_text_length: nutritionOcr.full_text.length,
+        } : null,
+        analysis: {
+          product_meta: merged.product_meta,
+          ingredients: merged.ingredients,
+          ingredient_count: merged.ingredient_count,
+          additives: merged.additives,
+          additive_count: merged.additive_count,
+          nutrition: merged.nutrition,
+          allergens: merged.allergens,
+        },
+        traffic_light: trafficLight,
+        sanity_warnings: sanityWarnings,
+        save_result: saveResult,
+        corrected_text: {
+          label: labelAnalysis?._corrected_text || null,
+          nutrition: nutritionAnalysis?._corrected_text || null,
+        },
+      },
+    });
+  }
+);
 
 // ============================================================
 // POST /api/ocr/report — 제품 오류 신고

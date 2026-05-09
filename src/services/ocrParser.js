@@ -333,15 +333,46 @@ const NUTRIENT_PATTERNS = {
 };
 
 /**
+ * Dual-column 패턴 — 한국 라벨에 \"1회 30g당 | 총 73g당\" 두 컬럼이 모두 적힌 경우.
+ * \"나트륨 170 mg 420 mg\" 또는 \"나트륨\\n170 mg\\n420 mg\" 같이 OCR이 두 숫자를 연속으로 읽음.
+ * 첫 번째 매칭 = 1회분, 두 번째 매칭 = 전량.
+ * \"미만\" 표기 (예: \"0.5g 미만\") 도 허용.
+ */
+const NUTRIENT_PATTERNS_DUAL = {
+  calories:      /열량[:\s\n]*(\d+[.,]?\d*)\s*(?:kcal|Kcal|킬로칼로리)\D{0,30}?(\d+[.,]?\d*)\s*(?:kcal|Kcal|킬로칼로리)/i,
+  total_carbs:   /탄수화물[:\s\n]*(\d+[.,]?\d*)\s*g\D{0,40}?(\d+[.,]?\d*)\s*g/,
+  total_sugars:  /당류[:\s\n]*(\d+[.,]?\d*)\s*g\D{0,40}?(\d+[.,]?\d*)\s*g/,
+  protein:       /단백질[:\s\n]*(\d+[.,]?\d*)\s*g\D{0,40}?(\d+[.,]?\d*)\s*g/,
+  total_fat:     /(?<!포화)(?<!트랜스)지방[:\s\n]*(\d+[.,]?\d*)\s*g\D{0,40}?(\d+[.,]?\d*)\s*g/,
+  saturated_fat: /포화지방(?:산)?[:\s\n]*(\d+[.,]?\d*)\s*g\D{0,40}?(\d+[.,]?\d*)\s*g/,
+  trans_fat:     /트랜스지방(?:산)?[:\s\n]*(\d+[.,]?\d*)\s*g\D{0,40}?(\d+[.,]?\d*)\s*g/,
+  cholesterol:   /콜레스테롤[:\s\n]*(\d+[.,]?\d*)\s*m?g\D{0,40}?(\d+[.,]?\d*)\s*m?g/,
+  sodium:        /나트륨[:\s\n]*(\d+[.,]?\d*)\s*m?g\D{0,40}?(\d+[.,]?\d*)\s*m?g/,
+  dietary_fiber: /식이섬유[:\s\n]*(\d+[.,]?\d*)\s*g\D{0,40}?(\d+[.,]?\d*)\s*g/,
+};
+
+/**
  * OCR 텍스트에서 영양정보를 추출합니다.
  * @param {string} text
  * @returns {Object}
  */
 function parseNutrition(text) {
   const nutrition = {};
+  const nutritionTotal = {}; // 라벨에 명시된 전량 컬럼 값
 
-  // 1) 표준 영양소 (열량 라벨이 있는 경우)
+  // 1a) Dual-column 우선 시도 — 라벨에 \"1회분 | 전량\" 두 컬럼이 모두 있으면
+  //     첫 번째 = 1회분, 두 번째 = 전량으로 추출. 추출되면 둘 다 저장.
+  for (const [nutrient, pattern] of Object.entries(NUTRIENT_PATTERNS_DUAL)) {
+    const match = text.match(pattern);
+    if (match && match[1] && match[2]) {
+      nutrition[nutrient] = parseFloat(match[1].replace(',', '.'));
+      nutritionTotal[nutrient] = parseFloat(match[2].replace(',', '.'));
+    }
+  }
+
+  // 1b) Single-column — dual에서 못 잡은 영양소는 단일 패턴으로 보강
   for (const [nutrient, pattern] of Object.entries(NUTRIENT_PATTERNS)) {
+    if (nutrition[nutrient] !== undefined) continue;
     const match = text.match(pattern);
     if (match) {
       const value = match[1].replace(',', '.');
@@ -378,6 +409,12 @@ function parseNutrition(text) {
   if (totalMatch) {
     nutrition.total_content = parseFloat(totalMatch[1].replace(',', '.'));
     nutrition.content_unit = totalMatch[2].toLowerCase();
+  }
+
+  // 5) 라벨에서 추출된 전량 영양값들이 있으면 nutrition._total 형태로 함께 노출.
+  //    클라이언트는 이 값을 \"라벨 명시\" 로 신뢰하고, 없는 영양소는 1회분 × 배수로 자동 계산.
+  if (Object.keys(nutritionTotal).length > 0) {
+    nutrition._total = nutritionTotal;
   }
 
   return nutrition;

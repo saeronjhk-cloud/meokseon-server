@@ -303,6 +303,7 @@ const NUTRIENT_PATTERNS = {
 function parseNutrition(text) {
   const nutrition = {};
 
+  // 1) 표준 영양소 (열량 라벨이 있는 경우)
   for (const [nutrient, pattern] of Object.entries(NUTRIENT_PATTERNS)) {
     const match = text.match(pattern);
     if (match) {
@@ -311,13 +312,35 @@ function parseNutrition(text) {
     }
   }
 
-  // 1회 제공량 / 총 내용량
+  // 2) 칼로리 — \"열량\" 라벨 없이 \"1회(30g)당 160 kcal\" 같은 형식 추가 매칭
+  // 한국 라벨에 \"열량\" 없이 \"1회당 X kcal\" 만 적힌 경우가 흔함
+  if (nutrition.calories === undefined) {
+    const altCalorie = text.match(
+      /(?:1회[\s(]*\d+\s*g?[\s)]*당|1회\s*제공량\s*당|총?\s*내용량\s*당)\s*(\d+(?:[.,]\d+)?)\s*kcal/i
+    ) || text.match(/(\d+(?:[.,]\d+)?)\s*kcal/);
+    if (altCalorie) {
+      nutrition.calories = parseFloat(altCalorie[1].replace(',', '.'));
+    }
+  }
+
+  // 3) 1회 제공량 — \"1회 30g\" / \"1회(30g)\" / \"1회 제공량 30g\" / \"1회분 30g\"
+  // 기존 정규식이 \"1회 제공량\" 과 \"총 내용량\" 을 둘 다 매칭해 혼동되던 문제 수정
   const servingMatch = text.match(
-    /(?:1회\s*제공량|총\s*내용량)[:\s]*(\d+[.,]?\d*)\s*(g|ml|mL|kg|L)/
+    /1회\s*[(\[]?\s*(?:제공량|분|당)?\s*[:\s(]*(\d+(?:[.,]\d+)?)\s*(g|ml|mL|kg|L)/
   );
   if (servingMatch) {
     nutrition.serving_size = parseFloat(servingMatch[1].replace(',', '.'));
     nutrition.serving_unit = servingMatch[2].toLowerCase();
+  }
+
+  // 4) 총 내용량 — 별도 매칭. \"총 내용량 73g\" / \"내용량 73g\"
+  // \"1회\" 가 앞에 안 붙은 경우만 매칭하여 1회 제공량과 충돌 방지
+  const totalMatch = text.match(
+    /(?:^|[\s,.\n])(?:총\s*)?내용량\s*[:\s]*(\d+(?:[.,]\d+)?)\s*(g|ml|mL|kg|L)/
+  );
+  if (totalMatch) {
+    nutrition.total_content = parseFloat(totalMatch[1].replace(',', '.'));
+    nutrition.content_unit = totalMatch[2].toLowerCase();
   }
 
   return nutrition;
@@ -349,13 +372,69 @@ const ALLERGEN_KEYWORDS = {
 
 /**
  * 텍스트에서 알레르기 유발물질을 탐지합니다.
+ *
+ * 룰 (사용자 안전 우선):
+ *  1단계: 라벨에 명시된 알레르기 표기를 1차로 신뢰
+ *     - \"우유, 밀, 쇠고기 함유\"
+ *     - \"알레르기 유발물질: 대두, 밀\"
+ *     - \"♥ 우유, 밀, 쇠고기 함유 ♥\"
+ *  2단계: 명시 표기가 발견되지 않을 때만 원재료 키워드 추론으로 보조
+ *
+ * 이렇게 분리하는 이유 — 원재료 키워드 자동 추론(\"레시틴 → 대두\", \"케첩 → 토마토\" 등)은
+ * 위양성(false positive)이 흔하다. 알레르기는 사용자 안전과 직결되므로
+ * 라벨에 명시된 것만 표시하는 것이 가장 안전.
+ *
  * @param {string} text
  * @returns {string[]}
  */
 function detectAllergens(text) {
+  // 1단계: 명시적 알레르기 표기 추출
+  // \"함유\" 또는 \"알레르기 유발물질\" 또는 ♥/⚠ 같은 강조 마커가 있는 줄 찾기
+  const explicitPatterns = [
+    // \"알레르기 유발물질: 우유, 밀, 쇠고기\"
+    /알레르기\s*유발\s*물질\s*[:：]\s*([^\.\n]+)/,
+    // \"우유·밀·쇠고기 함유\" / \"우유, 밀, 쇠고기 함유\"
+    /([가-힣\(\)·,\s]+?)(?:\s*함유)/,
+    // \"♥ 우유, 밀, 쇠고기 함유 ♥\" 같이 ♥/⚠/⭐ 마커 감싸진 부분
+    /[♥⚠⭐][^♥⚠⭐]*?([가-힣\(\)·,\s]+?)함유[^♥⚠⭐]*[♥⚠⭐]/,
+  ];
+
+  const explicitText = [];
+  for (const re of explicitPatterns) {
+    const m = text.match(re);
+    if (m && m[1] && m[1].length < 200) {
+      explicitText.push(m[1]);
+    }
+  }
+
+  if (explicitText.length > 0) {
+    // 명시 표기가 있으면 그 안의 알레르기만 추출
+    const detected = new Set();
+    const blob = explicitText.join(' ');
+    for (const [allergen, keywords] of Object.entries(ALLERGEN_KEYWORDS)) {
+      for (const keyword of keywords) {
+        if (blob.includes(keyword)) {
+          detected.add(allergen);
+          break;
+        }
+      }
+    }
+    if (detected.size > 0) {
+      return [...detected].sort();
+    }
+    // 명시 표기 추출했지만 매칭된 알레르기가 0개면 — 텍스트가 \"함유\" 없는 일반 문장
+    // → 2단계로 폴백
+  }
+
+  // 2단계 (보조): 원재료 키워드 추론
+  // 명시 표기가 없는 경우에만 보조로 사용. 위양성 위험을 줄이기 위해
+  // 키워드 매칭은 \"독립 단어 경계\" 를 강제 — 부분 문자열 매칭 방지
   const detected = new Set();
   for (const [allergen, keywords] of Object.entries(ALLERGEN_KEYWORDS)) {
     for (const keyword of keywords) {
+      // \"대두레시틴\" 의 \"대두\" 같은 부분 문자열 매칭 방지를 위해
+      // 한국어는 단어 경계가 모호하므로 키워드 길이 ≥ 2 일 때만 부분 매칭 허용
+      if (keyword.length < 2) continue;
       if (text.includes(keyword)) {
         detected.add(allergen);
         break;

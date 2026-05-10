@@ -35,7 +35,7 @@ function extractIngredientSection(text) {
     const match = cleaned.match(pattern);
     // 임계값 10 → 3 으로 완화: OCR이 짧게 잘라도 \"밀가루\" 같은 한 단어라도 받음
     if (match && match[1].trim().length >= 3) {
-      return match[1].trim();
+      return _stripAllergenSuffix(match[1].trim());
     }
   }
 
@@ -43,11 +43,10 @@ function extractIngredientSection(text) {
   const ramenPattern = new RegExp(`\\*?면\\s*[:]\\s*(.+?)${endKeywords}`, 's');
   const ramenMatch = cleaned.match(ramenPattern);
   if (ramenMatch && ramenMatch[1].trim().length >= 3) {
-    return ramenMatch[1].trim();
+    return _stripAllergenSuffix(ramenMatch[1].trim());
   }
 
   // 종료 키워드가 텍스트에 전혀 없는 경우 — \"원재료명\" 시작 후 끝까지 추출
-  // (OCR이 라벨 일부만 읽고 \"내용량\" 같은 종료 키워드 못 읽은 케이스 대응)
   const fallbackPatterns = [
     /원재료명\s*(?:및\s*)?(?:함량)?\s*[:\s]\s*(.+)/s,
     /원재료\s*[:\s]\s*(.+)/s,
@@ -55,13 +54,47 @@ function extractIngredientSection(text) {
   for (const pattern of fallbackPatterns) {
     const match = cleaned.match(pattern);
     if (match && match[1].trim().length >= 3) {
-      // 너무 길면(>2000자) 일부만 — 영양정보 등 다른 섹션이 섞여있을 수 있어 제한
       const result = match[1].trim().substring(0, 2000);
-      return result;
+      return _stripAllergenSuffix(result);
     }
   }
 
   return null;
+}
+
+/**
+ * 원재료 텍스트 끝부분에서 알레르기 표기 부분을 잘라낸다.
+ * extractIngredientSection 의 종료 키워드가 OCR 오인식·표기 변형으로 못 잡은 경우
+ * 사후 정리로 \"X, Y, Z 함유\" 패턴을 제거.
+ *
+ * 예:
+ *  \"밀가루, 정제소금, 비타민B1염산염, 우유, 밀, 쇠고기 함유\"
+ *    → \"밀가루, 정제소금, 비타민B1염산염\"
+ *
+ *  \"밀가루, 정제소금 알레르기 유발물질: 우유, 밀, 쇠고기\"
+ *    → \"밀가루, 정제소금\"
+ */
+function _stripAllergenSuffix(text) {
+  if (!text) return text;
+  let result = text;
+
+  // 1) \"♥…함유♥\" 또는 \"… 함유\" 끝부분 제거
+  //    한글·괄호·쉼표·점·공백 + \"함유\" 가 끝에 있으면 그 패턴 통째로 제거
+  result = result.replace(
+    /[♥⚠★◆■▲]?\s*[가-힣\s,()·\.]+\s*함유\s*[♥⚠★◆■▲]?\s*$/g,
+    '',
+  );
+
+  // 2) \"알레르기 유발물질: …\" 끝부분 제거
+  result = result.replace(
+    /(?:알레르기|알러지)\s*(?:유발\s*물질)?\s*[:：]?\s*[가-힣\s,()·\.]+$/g,
+    '',
+  );
+
+  // 3) 끝부분 정리 (콜마·공백·점)
+  result = result.replace(/[\s,.\-/·]+$/, '').trim();
+
+  return result;
 }
 
 // ============================================================

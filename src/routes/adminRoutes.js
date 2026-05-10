@@ -7,8 +7,37 @@ const express = require('express');
 const db = require('../config/database');
 const logger = require('../config/logger');
 const { dictionaryCache } = require('../services/dictionaryCache');
+const { mergeAndApply, mergeContributions } = require('../services/mergeService');
 
 const router = express.Router();
+
+// ============================================================
+// Admin 인증 미들웨어 — Authorization: Bearer <ADMIN_TOKEN>
+// ADMIN_TOKEN 환경변수 미설정 시 모든 요청 차단 (의도적 fail-safe).
+// ============================================================
+function requireAdmin(req, res, next) {
+  const adminToken = process.env.ADMIN_TOKEN;
+  if (!adminToken) {
+    logger.warn('ADMIN_TOKEN 미설정 — admin 요청 차단', { ip: req.ip, path: req.path });
+    return res.status(503).json({
+      success: false,
+      error: { code: 'ADMIN_NOT_CONFIGURED', message: 'ADMIN_TOKEN 환경변수가 설정되어 있지 않습니다.' },
+    });
+  }
+  const auth = req.headers.authorization || '';
+  const match = auth.match(/^Bearer\s+(.+)$/i);
+  if (!match || match[1] !== adminToken) {
+    logger.warn('admin 인증 실패', { ip: req.ip, path: req.path });
+    return res.status(401).json({
+      success: false,
+      error: { code: 'UNAUTHORIZED', message: '관리자 인증이 필요합니다.' },
+    });
+  }
+  next();
+}
+
+// 모든 admin 라우트에 인증 적용
+router.use(requireAdmin);
 
 // ============================================================
 // GET /api/admin/pending — 미검증 데이터 목록
@@ -172,6 +201,69 @@ router.post('/cache/reload', async (req, res) => {
   const { loadFromDB, getCacheStatus } = require('../services/dictionaryCache');
   await loadFromDB();
   res.json({ success: true, data: getCacheStatus() });
+});
+
+// ============================================================
+// GET /api/admin/preview-merge/:productId
+// ── 같은 product 의 모든 contributions 를 가져와 merge 결과를 미리보기 (DB 변경 없음)
+// ── 관리자가 "이대로 적용할지" 확인용 dry-run
+// ============================================================
+router.get('/preview-merge/:productId', async (req, res) => {
+  try {
+    const productId = req.params.productId;
+    const result = await db.query(
+      `SELECT contribution_id, data, device_id, created_at
+       FROM contributions
+       WHERE product_id = $1
+         AND contribution_type IN ('ocr_nutrition', 'new_product', 'verify')
+       ORDER BY created_at ASC`,
+      [productId],
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        error: { message: '병합할 contribution 이 없습니다.' },
+      });
+    }
+    const merged = mergeContributions(result.rows);
+    res.json({
+      success: true,
+      data: {
+        productId: parseInt(productId),
+        contributionCount: result.rows.length,
+        merged,
+      },
+    });
+  } catch (e) {
+    logger.error('preview-merge 실패', { error: e.message, productId: req.params.productId });
+    res.status(500).json({ success: false, error: { message: e.message } });
+  }
+});
+
+// ============================================================
+// POST /api/admin/merge/:productId
+// ── 관리자가 수동으로 merge 트리거 (3건 미만이어도 강제 적용 가능)
+// ============================================================
+router.post('/merge/:productId', async (req, res) => {
+  try {
+    const productId = req.params.productId;
+    const result = await mergeAndApply(productId);
+    if (!result.applied) {
+      return res.status(400).json({
+        success: false,
+        error: { message: result.reason || 'merge 적용 불가' },
+      });
+    }
+    logger.info('관리자 수동 merge 적용', {
+      productId,
+      verification: result.verification,
+      sourceCount: result.sourceCount,
+    });
+    res.json({ success: true, data: result });
+  } catch (e) {
+    logger.error('admin merge 실패', { error: e.message, productId: req.params.productId });
+    res.status(500).json({ success: false, error: { message: e.message } });
+  }
 });
 
 module.exports = router;

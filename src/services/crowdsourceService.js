@@ -13,6 +13,7 @@
 const db = require('../config/database');
 const logger = require('../config/logger');
 const { sanityCheck } = require('./nutritionTrafficLight');
+const { mergeAndApply, AUTO_VERIFY_DISTINCT_DEVICES } = require('./mergeService');
 
 // 최소 OCR 신뢰도 (Gemini 피드백: 0.5→0.7 상향)
 const MIN_CONFIDENCE = 0.7;
@@ -276,8 +277,8 @@ async function saveOcrContribution(params) {
 
     // contributions 이력 기록 — 사용자가 입력·수정한 메타정보까지 보존
     await client.query(
-      `INSERT INTO contributions (user_id, product_id, contribution_type, data, status)
-       VALUES ($1, $2, $3, $4, 'pending')`,
+      `INSERT INTO contributions (user_id, product_id, contribution_type, data, status, device_id)
+       VALUES ($1, $2, $3, $4, 'pending', $5)`,
       [
         userId ? parseInt(userId) : null,
         productId,
@@ -305,6 +306,7 @@ async function saveOcrContribution(params) {
           device_id: deviceId || null,
           sanity_warnings: sanityWarnings,
         }),
+        deviceId || null,
       ]
     );
 
@@ -312,12 +314,38 @@ async function saveOcrContribution(params) {
       productId, barcode, verification, isNewProduct, avgConfidence,
     });
 
+    // ── 자동 merge 트리거 ──
+    // 같은 product 에 distinct device_id 가 AUTO_VERIFY_DISTINCT_DEVICES (=3) 모이면
+    // mergeAndApply 호출하여 마스터 갱신. 트랜잭션 밖에서 별도 실행 (실패해도 contribution 저장은 보존).
+    let mergeResult = null;
+    try {
+      const distinctCountResult = await client.query(
+        `SELECT COUNT(DISTINCT device_id)::int AS cnt
+         FROM contributions
+         WHERE product_id = $1
+           AND device_id IS NOT NULL
+           AND contribution_type IN ('ocr_nutrition', 'new_product', 'verify')`,
+        [productId]
+      );
+      const distinctCount = distinctCountResult.rows[0]?.cnt || 0;
+
+      if (distinctCount >= AUTO_VERIFY_DISTINCT_DEVICES) {
+        // 트랜잭션 닫기 전에는 별도 호출 안 함 — 트랜잭션 종료 후 호출하도록 표시만 남김
+        mergeResult = { trigger: true, distinctCount };
+      } else {
+        mergeResult = { trigger: false, distinctCount };
+      }
+    } catch (e) {
+      logger.warn('merge trigger 카운트 조회 실패', { productId, error: e.message });
+    }
+
     return {
       saved: true,
       productId,
       product_id: productId, // Flutter 측 호환 (snake_case)
       isNewProduct,
       verification,
+      mergeResult,    // 트랜잭션 외부에서 mergeAndApply 호출용
       message: isNewProduct
         ? '새 제품으로 등록되었습니다. 다른 사용자가 동일한 정보를 등록하면 검증됨으로 승격됩니다.'
         : '기존 제품에 정보가 추가되었습니다.',
@@ -326,6 +354,38 @@ async function saveOcrContribution(params) {
         ? '⚠️ 알레르기 정보는 관리자 검증 전까지 미확정 상태입니다. 반드시 실제 제품 패키지를 확인하세요.'
         : null,
     };
+  }).then(async (txResult) => {
+    // 트랜잭션 종료 후 자동 merge 호출 (트랜잭션 안에서 호출하면 nested 발생).
+    // merge 자체는 자체 트랜잭션을 사용함.
+    if (txResult.saved && txResult.mergeResult?.trigger) {
+      try {
+        const merged = await mergeAndApply(txResult.productId);
+        logger.info('자동 merge 적용 완료', {
+          productId: txResult.productId,
+          distinctDevices: merged.distinctDeviceCount,
+          verification: merged.verification,
+          outliers: merged.outliers?.length || 0,
+        });
+        txResult.autoMerged = {
+          applied: true,
+          verification: merged.verification,
+          distinctDeviceCount: merged.distinctDeviceCount,
+          outlierCount: merged.outliers?.length || 0,
+        };
+        // 응답 메시지에 반영
+        if (merged.verification === 'verified') {
+          txResult.message = `✓ ${merged.distinctDeviceCount}명의 사용자가 검증한 제품으로 승격되었습니다!`;
+        } else if (merged.verification === 'disputed') {
+          txResult.message = `⚠ 다수 등록되었으나 입력값에 큰 차이가 있어 관리자 검토 대기 상태입니다.`;
+        }
+      } catch (e) {
+        logger.error('자동 merge 실패 — contribution 은 저장됨', {
+          productId: txResult.productId,
+          error: e.message,
+        });
+      }
+    }
+    return txResult;
   });
 }
 

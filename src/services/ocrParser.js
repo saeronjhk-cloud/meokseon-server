@@ -17,10 +17,13 @@ function extractIngredientSection(text) {
   // 특수문자 bullet 제거
   const cleaned = text.replace(/[●▶■□◆◇▷▸•·|]/g, ' ');
 
-  // 종료 키워드
+  // 종료 키워드 — 한국 식품 라벨에서 원재료 다음에 자주 등장하는 섹션 시작어
+  // ♥/⚠/★ 같은 알레르기 표기 마커도 포함 (\"♥ 우유, 밀, 쇠고기 함유 ♥\" 가 원재료에 섞여 들어가는 것 차단)
+  // \"함유\", \"알레르기\" 도 알레르기 표기 시작이므로 종료
   const endKeywords = '(?=영양(?:정보|성분)|유통기한|보관방법|내용량|포장재질|' +
     '품목보고|※|주의사항|직사광선|부정\\s*[·.]|반품|고객상담|' +
-    '업소명|제조원|판매원|\\d{10,})';
+    '업소명|제조원|판매원|유통전문판매원|소분원|소비자상담|' +
+    '함유|알레르기|[♥⚠★◆■▲]|\\d{10,})';
 
   const patterns = [
     new RegExp(`원재료명\\s*(?:및\\s*)?(?:함량)?\\s*[:\\s]\\s*(.+?)${endKeywords}`, 's'),
@@ -587,8 +590,31 @@ function extractProductMeta(text) {
   const productName = extractByLabels(text, ['제품명', '상품명']);
   if (productName) meta.product_name = productName;
 
-  // 식품유형
-  const foodType = extractByLabels(text, ['식품유형']);
+  // 식품유형 — 다양한 라벨 변형 대응
+  // \"식품유형\", \"품목분류\", \"식품의 유형\" 등
+  let foodType = extractByLabels(text, ['식품유형', '식품의 유형', '품목분류', '품목유형', '식품 유형']);
+  if (!foodType) {
+    // 폴백: \"과자(유처리제품)\" 같이 \"식품유형\" 라벨 없이 곧바로 분류명만 OCR에 잡힌 케이스
+    // 알려진 한국 식품 분류 키워드를 직접 검색
+    const knownTypes = [
+      '스낵과자류', '캔디류', '초콜릿류', '빵류', '케이크류',
+      '유탕면', '국수', '라면', '과자',
+      '음료류', '탄산음료', '주스', '두유', '커피', '차류',
+      '발효유', '치즈', '아이스크림류', '우유',
+      '김치류', '장류', '젓갈류',
+      '복합조미식품', '소스류', '드레싱', '카레',
+      '유처리제품', '농축액', '건과류', '견과류',
+    ];
+    for (const t of knownTypes) {
+      // \"식품유형\" 라벨 없이도 단어 하나로 등장하면 가능성 높음
+      const re = new RegExp(`(?:^|[\\s,.\\n/])(${t}(?:\\([^)]+\\))?)(?:[\\s,.\\n/]|$)`);
+      const m = text.match(re);
+      if (m) {
+        foodType = m[1].trim();
+        break;
+      }
+    }
+  }
   if (foodType) meta.food_type = foodType;
 
   // 유통전문판매원 (브랜드 소유자) — 사용자에게 의미 있는 식별자

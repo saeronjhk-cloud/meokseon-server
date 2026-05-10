@@ -78,20 +78,52 @@ function _stripAllergenSuffix(text) {
   if (!text) return text;
   let result = text;
 
-  // 1) \"♥…함유♥\" 또는 \"… 함유\" 끝부분 제거
-  //    한글·괄호·쉼표·점·공백 + \"함유\" 가 끝에 있으면 그 패턴 통째로 제거
+  // 식약처 의무 표시 알레르기 19종 + 흔한 변형
+  // 끝부분에 콤마로 구분된 단독 항목으로 나오면 알레르기 표기로 간주하고 제거
+  const ALLERGEN_KEYWORDS = new Set([
+    '우유', '메밀', '땅콩', '대두', '밀', '고등어', '게', '새우', '돼지고기',
+    '복숭아', '토마토', '아황산류', '호두', '닭고기', '쇠고기', '오징어',
+    '조개류', '잣', '난류', '난백', '난황', '달걀', '계란', '연어', '전복', '홍합',
+  ]);
+
+  // 1) "♥…함유♥" 또는 "X, Y, Z 함유" 끝부분 제거 (함유 키워드가 살아있는 경우)
+  //    extractIngredientSection 의 endKeywords 가 "함유" 앞에서 잘랐다면 이 단계는
+  //    매치 안 함 → 4단계가 처리.
   result = result.replace(
-    /[♥⚠★◆■▲]?\s*[가-힣\s,()·\.]+\s*함유\s*[♥⚠★◆■▲]?\s*$/g,
+    /[♥⚠★◆■▲▼☆◎●○]?\s*[가-힣A-Za-z\s,()·\.0-9]+?\s*함유\s*[♥⚠★◆■▲▼☆◎●○]?\s*\.?\s*$/g,
     '',
   );
 
-  // 2) \"알레르기 유발물질: …\" 끝부분 제거
+  // 2) "알레르기 유발물질: …" 끝부분 제거
   result = result.replace(
     /(?:알레르기|알러지)\s*(?:유발\s*물질)?\s*[:：]?\s*[가-힣\s,()·\.]+$/g,
     '',
   );
 
-  // 3) 끝부분 정리 (콜마·공백·점)
+  // 3) 끝부분 정리 (콤마·공백·점)
+  result = result.replace(/[\s,.\-/·]+$/, '').trim();
+
+  // 4) 알레르기 19종 키워드가 끝부분에 콤마로 단독 항목으로 연속해 나오면 제거
+  //    핵심 케이스: extractIngredientSection 이 endKeywords 의 "함유" 앞에서 잘랐기 때문에
+  //    "함유" 키워드는 사라지고 "우유, 밀, 쇠고기" 같은 알레르기 나열만 남는 경우.
+  //
+  //    예) "밀가루, 정제소금, 비타민B1염산염, 우유, 밀, 쇠고기"
+  //         → "밀가루, 정제소금, 비타민B1염산염" (마지막 3개가 알레르기 키워드라서 제거)
+  //
+  //    안전장치: 콤마(,) 앞에 있을 때만 검사 → 첫 항목 "밀가루" 같은 단어는 보호.
+  //              5자 이하 정확 매칭만 → "밀가루"는 ALLERGEN_KEYWORDS 에 없으므로 안전.
+  let prev = '';
+  while (prev !== result) {
+    prev = result;
+    const lastItemMatch = result.match(/[,·\/]\s*([가-힣]{1,5})\s*\.?\s*$/);
+    if (lastItemMatch && ALLERGEN_KEYWORDS.has(lastItemMatch[1].trim())) {
+      result = result.substring(0, lastItemMatch.index).trim();
+    } else {
+      break;
+    }
+  }
+
+  // 5) 마무리 정리
   result = result.replace(/[\s,.\-/·]+$/, '').trim();
 
   return result;

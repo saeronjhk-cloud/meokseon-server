@@ -115,7 +115,10 @@ function _stripAllergenSuffix(text) {
   let prev = '';
   while (prev !== result) {
     prev = result;
-    const lastItemMatch = result.match(/[,·\/]\s*([가-힣]{1,5})\s*\.?\s*$/);
+    // 구분자: 콤마(,) · 가운데점(·) · 슬래시(/) · 공백(\s) · 닫는괄호()) 모두 허용
+    // OCR이 콤마를 빠뜨리고 공백만 남기는 경우, 또는 "(국내산) 밀, 우유" 처럼
+    // 괄호 직후 알레르기가 나열되는 경우까지 잡음
+    const lastItemMatch = result.match(/[,·\/\s)]+\s*([가-힣]{1,5})\s*\.?\s*$/);
     if (lastItemMatch && ALLERGEN_KEYWORDS.has(lastItemMatch[1].trim())) {
       result = result.substring(0, lastItemMatch.index).trim();
     } else {
@@ -323,7 +326,9 @@ const ADDITIVE_KEYWORDS = {
   // 카테고리 표기 (라벨에 \"팽창제\", \"영양강화제\" 같은 분류명만 적힌 경우)
   // 한국 식품 라벨에 흔히 등장
   '팽창제': '팽창제', '영양강화제': '영양강화제', '효소제': '효소제',
-  '효모': '효모', '제빵효소제': '효소제',
+  '제빵효소제': '효소제',
+  // 효모(Saccharomyces cerevisiae) 자체는 식약처 분류상 식품 원료(식품)이지 첨가물이 아니므로
+  // 첨가물 사전에서 제외. 효모 추출물·자가분해효모추출물(향미증진제)은 별도 키워드로 잡힘.
   '식물성유지': '식물성유지', '동물성유지': '동물성유지',
   '면류첨가알칼리제': '산도조절제', '주정': '용제',
 

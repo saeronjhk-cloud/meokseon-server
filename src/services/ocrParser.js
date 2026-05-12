@@ -2,6 +2,11 @@
  * OCR 텍스트 파서
  * 원재료명 파싱, 첨가물 식별, 영양정보 추출, 알레르기 탐지
  * Python 09_google_vision_ocr.py에서 포팅
+ *
+ * ⚠️ IP SOURCES (수정 시 OneDrive 원본 먼저 수정):
+ *   - OneDrive/MeokSeon/IP/korean_label_ocr_rules.md  (파싱 정규식 패턴)
+ *   - OneDrive/MeokSeon/IP/additive_keywords_dictionary.json  (ADDITIVE_KEYWORDS)
+ *   - OneDrive/MeokSeon/IP/allergens_19_korea.json  (알레르기 19종 + 후처리)
  */
 
 // ============================================================

@@ -1,6 +1,9 @@
 /**
  * 크라우드소싱 merge 서비스
  *
+ * ⚠️ IP SOURCE: OneDrive/MeokSeon/IP/merge_policy_v1.md
+ * 이 파일은 사본. 알고리즘 정책·임계값을 수정하려면 OneDrive 의 원본 먼저 수정 후 여기 반영.
+ *
  * 같은 제품에 대한 여러 사용자의 OCR 등록(contributions) 을 필드별 알고리즘으로
  * 병합하여 마스터 products / nutrition_data / product_ingredients / product_allergens
  * 테이블에 반영한다.

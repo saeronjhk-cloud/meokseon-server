@@ -76,6 +76,81 @@ router.get('/pending', async (req, res) => {
 });
 
 // ============================================================
+// GET /api/admin/products/:productId — 제품 상세 정보 (Admin UI 상세 페이지용)
+// products + nutrition_data + product_ingredients + product_allergens 통합 조회
+// ============================================================
+
+router.get('/products/:productId', async (req, res) => {
+  try {
+    const productId = req.params.productId;
+    const productResult = await db.query(
+      `SELECT p.*, n.calories, n.total_fat, n.saturated_fat, n.trans_fat,
+              n.cholesterol, n.sodium, n.total_carbs, n.total_sugars,
+              n.dietary_fiber, n.protein, n.added_sugars,
+              n.data_source AS nutrition_source, n.ocr_confidence
+       FROM products p
+       LEFT JOIN nutrition_data n ON p.product_id = n.product_id
+       WHERE p.product_id = $1`,
+      [productId]
+    );
+    if (productResult.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        error: { code: 'NOT_FOUND', message: '제품을 찾을 수 없습니다.' },
+      });
+    }
+    const product = productResult.rows[0];
+
+    // 원재료
+    const ingredientsResult = await db.query(
+      `SELECT raw_text, parsed_ingredients, data_source, created_at
+       FROM product_ingredients
+       WHERE product_id = $1
+       ORDER BY created_at DESC LIMIT 5`,
+      [productId]
+    );
+
+    // 첨가물
+    const additivesResult = await db.query(
+      `SELECT pa.detected_name, pa.confidence, a.name_ko, a.category, a.mfras_grade, a.mfras_total
+       FROM product_additives pa
+       LEFT JOIN additives a ON a.additive_id = pa.additive_id
+       WHERE pa.product_id = $1`,
+      [productId]
+    );
+
+    // 알레르기 (Phase 1 에서 추가된 product_allergens 테이블)
+    let allergens = [];
+    try {
+      const allergenResult = await db.query(
+        `SELECT allergen_name, source_count, status, detected_via
+         FROM product_allergens
+         WHERE product_id = $1
+         ORDER BY source_count DESC`,
+        [productId]
+      );
+      allergens = allergenResult.rows;
+    } catch (e) {
+      // 테이블 미존재 시 빈 배열 (마이그레이션 005 적용 안 됐을 가능성)
+      allergens = [];
+    }
+
+    res.json({
+      success: true,
+      data: {
+        product,
+        ingredients: ingredientsResult.rows,
+        additives: additivesResult.rows,
+        allergens,
+      },
+    });
+  } catch (e) {
+    logger.error('admin/products/:productId 실패', { error: e.message, productId: req.params.productId });
+    res.status(500).json({ success: false, error: { message: e.message } });
+  }
+});
+
+// ============================================================
 // GET /api/admin/contributions/:productId — 제품별 기여 이력
 // ============================================================
 

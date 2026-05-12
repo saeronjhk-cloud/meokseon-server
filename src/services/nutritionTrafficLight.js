@@ -1,6 +1,10 @@
 /**
  * 먹선(吃選) 영양 신호등 판정 서비스 v1.3
  *
+ * ⚠️ IP SOURCE: OneDrive/MeokSeon/IP/nutrition_traffic_light_v1.3.md
+ * 임계값·KDRI 기준 수정 시 OneDrive 원본 먼저 수정 후 nutrition_config 테이블 UPDATE.
+ * DEFAULT_CONFIG 은 DB 미접속 fallback 용이므로 OneDrive 와 동기화 유지.
+ *
  * 핵심 원칙:
  * - 7개 영양소 각각 독립적 3색 판정 (종합 점수 없음)
  * - 이중 기준: %DV + 100g/100mL 절대량 중 더 나쁜 쪽 적용

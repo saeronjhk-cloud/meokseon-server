@@ -83,11 +83,13 @@ router.get('/pending', async (req, res) => {
 router.get('/products/:productId', async (req, res) => {
   try {
     const productId = req.params.productId;
+    // 안전한 컬럼만 SELECT. production DB 에 ocr_confidence·added_sugars 등이 없을 수도 있어
+    // p.* + 영양성분 핵심 11개만 가져온다.
     const productResult = await db.query(
       `SELECT p.*, n.calories, n.total_fat, n.saturated_fat, n.trans_fat,
               n.cholesterol, n.sodium, n.total_carbs, n.total_sugars,
-              n.dietary_fiber, n.protein, n.added_sugars,
-              n.data_source AS nutrition_source, n.ocr_confidence
+              n.dietary_fiber, n.protein,
+              n.data_source AS nutrition_source
        FROM products p
        LEFT JOIN nutrition_data n ON p.product_id = n.product_id
        WHERE p.product_id = $1`,

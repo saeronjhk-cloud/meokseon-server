@@ -132,10 +132,13 @@ router.get('/products/:productId', async (req, res) => {
     );
 
     // ── product_additives + additives 사전 ──
-    // production 컬럼: product_id, additive_id, amount, unit (detected_name·confidence 없음)
+    // production product_additives 컬럼: product_id, additive_id, amount, unit
+    //   (detected_name·confidence 없음 — 마이그레이션 파일과 다름)
+    // production additives 컬럼: MFRAS v1.0 스키마 (risk_grade integer / risk_color varchar)
+    //   (v2.0 의 mfras_grade·mfras_total·dim1~5 컬럼은 production 에 없음)
     const additivesResult = await db.query(
-      `SELECT a.name_ko, a.name_en, a.category, a.mfras_grade, a.mfras_total,
-              a.dim1_adi, a.dim2_iarc, a.dim3_human, a.dim4_regulation, a.dim5_exposure,
+      `SELECT a.name_ko, a.name_en, a.e_number, a.cas_number, a.category,
+              a.risk_grade, a.risk_color, a.max_daily_intake, a.description,
               pa.amount, pa.unit
        FROM product_additives pa
        LEFT JOIN additives a ON a.additive_id = pa.additive_id

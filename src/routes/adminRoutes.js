@@ -83,12 +83,28 @@ router.get('/pending', async (req, res) => {
 router.get('/products/:productId', async (req, res) => {
   try {
     const productId = req.params.productId;
-    // production DB 스키마와 마이그레이션 파일이 불일치 — 영양 핵심 11개만 안전하게 SELECT.
-    // nutrition_data.data_source 가 production 에 없을 수 있어 제외.
+
+    // ── products + nutrition_data ──
+    // production DB 의 실제 컬럼 (2026-05-12 information_schema 확인):
+    //   nutrition_data: calories, total_fat, saturated_fat, trans_fat, cholesterol, sodium,
+    //                   total_carbs, total_sugars, added_sugars, dietary_fiber, protein,
+    //                   calcium, iron, vitamin_d, potassium, data_source, verified_at, created_at, serving_size
+    //   (per_serving, ocr_confidence, updated_at 없음)
     const productResult = await db.query(
-      `SELECT p.*, n.calories, n.total_fat, n.saturated_fat, n.trans_fat,
+      `SELECT p.product_id, p.barcode, p.product_name, p.brand, p.manufacturer,
+              p.food_type, p.food_category, p.serving_size, p.serving_unit,
+              p.total_content, p.content_unit, p.servings_per_container,
+              p.data_source AS product_data_source,
+              p.verification, p.verify_count, p.is_active,
+              p.created_at, p.updated_at,
+              p.c005_report_no, p.public_food_cd,
+              p.merged_at, p.merge_sources_count,
+              n.calories, n.total_fat, n.saturated_fat, n.trans_fat,
               n.cholesterol, n.sodium, n.total_carbs, n.total_sugars,
-              n.dietary_fiber, n.protein
+              n.added_sugars, n.dietary_fiber, n.protein,
+              n.calcium, n.iron, n.vitamin_d, n.potassium,
+              n.data_source AS nutrition_data_source,
+              n.verified_at AS nutrition_verified_at
        FROM products p
        LEFT JOIN nutrition_data n ON p.product_id = n.product_id
        WHERE p.product_id = $1`,
@@ -102,39 +118,39 @@ router.get('/products/:productId', async (req, res) => {
     }
     const product = productResult.rows[0];
 
-    // 원재료 — data_source 컬럼 없을 수도 있어 안전하게 raw_text·parsed_ingredients 만
+    // ── product_ingredients ──
+    // production 컬럼: id, product_id, raw_text, parsed_ingredients(jsonb),
+    //                  prdlst_report_no, source, created_at, updated_at
+    // (스키마 파일은 data_source 인데 production 은 source. 응답 키는 호환을 위해 data_source 로 매핑)
     const ingredientsResult = await db.query(
-      `SELECT raw_text, parsed_ingredients, created_at
+      `SELECT raw_text, parsed_ingredients,
+              source AS data_source, prdlst_report_no, created_at
        FROM product_ingredients
        WHERE product_id = $1
        ORDER BY created_at DESC LIMIT 5`,
       [productId]
     );
 
-    // 첨가물
+    // ── product_additives + additives 사전 ──
+    // production 컬럼: product_id, additive_id, amount, unit (detected_name·confidence 없음)
     const additivesResult = await db.query(
-      `SELECT pa.detected_name, pa.confidence, a.name_ko, a.category, a.mfras_grade, a.mfras_total
+      `SELECT a.name_ko, a.name_en, a.category, a.mfras_grade, a.mfras_total,
+              a.dim1_adi, a.dim2_iarc, a.dim3_human, a.dim4_regulation, a.dim5_exposure,
+              pa.amount, pa.unit
        FROM product_additives pa
        LEFT JOIN additives a ON a.additive_id = pa.additive_id
        WHERE pa.product_id = $1`,
       [productId]
     );
 
-    // 알레르기 (Phase 1 에서 추가된 product_allergens 테이블)
-    let allergens = [];
-    try {
-      const allergenResult = await db.query(
-        `SELECT allergen_name, source_count, status, detected_via
-         FROM product_allergens
-         WHERE product_id = $1
-         ORDER BY source_count DESC`,
-        [productId]
-      );
-      allergens = allergenResult.rows;
-    } catch (e) {
-      // 테이블 미존재 시 빈 배열 (마이그레이션 005 적용 안 됐을 가능성)
-      allergens = [];
-    }
+    // ── product_allergens (Phase 1 005 마이그레이션) ──
+    const allergenResult = await db.query(
+      `SELECT allergen_name, source_count, status, detected_via
+       FROM product_allergens
+       WHERE product_id = $1
+       ORDER BY source_count DESC`,
+      [productId]
+    );
 
     res.json({
       success: true,
@@ -142,11 +158,14 @@ router.get('/products/:productId', async (req, res) => {
         product,
         ingredients: ingredientsResult.rows,
         additives: additivesResult.rows,
-        allergens,
+        allergens: allergenResult.rows,
       },
     });
   } catch (e) {
-    logger.error('admin/products/:productId 실패', { error: e.message, productId: req.params.productId });
+    logger.error('admin/products/:productId 실패', {
+      error: e.message,
+      productId: req.params.productId,
+    });
     res.status(500).json({ success: false, error: { message: e.message } });
   }
 });

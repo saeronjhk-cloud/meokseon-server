@@ -83,13 +83,12 @@ router.get('/pending', async (req, res) => {
 router.get('/products/:productId', async (req, res) => {
   try {
     const productId = req.params.productId;
-    // 안전한 컬럼만 SELECT. production DB 에 ocr_confidence·added_sugars 등이 없을 수도 있어
-    // p.* + 영양성분 핵심 11개만 가져온다.
+    // production DB 스키마와 마이그레이션 파일이 불일치 — 영양 핵심 11개만 안전하게 SELECT.
+    // nutrition_data.data_source 가 production 에 없을 수 있어 제외.
     const productResult = await db.query(
       `SELECT p.*, n.calories, n.total_fat, n.saturated_fat, n.trans_fat,
               n.cholesterol, n.sodium, n.total_carbs, n.total_sugars,
-              n.dietary_fiber, n.protein,
-              n.data_source AS nutrition_source
+              n.dietary_fiber, n.protein
        FROM products p
        LEFT JOIN nutrition_data n ON p.product_id = n.product_id
        WHERE p.product_id = $1`,
@@ -103,9 +102,9 @@ router.get('/products/:productId', async (req, res) => {
     }
     const product = productResult.rows[0];
 
-    // 원재료
+    // 원재료 — data_source 컬럼 없을 수도 있어 안전하게 raw_text·parsed_ingredients 만
     const ingredientsResult = await db.query(
-      `SELECT raw_text, parsed_ingredients, data_source, created_at
+      `SELECT raw_text, parsed_ingredients, created_at
        FROM product_ingredients
        WHERE product_id = $1
        ORDER BY created_at DESC LIMIT 5`,

@@ -193,13 +193,14 @@ async function saveOcrContribution(params) {
     }
 
     // 영양정보 저장 (기존에 없는 경우만 — ON CONFLICT DO NOTHING)
+    // production 스키마 정렬: per_serving 제거 (TRUE 만 INSERT 라 무의미), ocr_confidence 는 006 마이그레이션으로 추가됨
     const hasNutrition = nutrition.calories || nutrition.sodium || nutrition.total_sugars;
     if (hasNutrition) {
       await client.query(
         `INSERT INTO nutrition_data (product_id, calories, total_fat, saturated_fat, trans_fat,
           cholesterol, sodium, total_carbs, total_sugars, dietary_fiber, protein,
-          per_serving, ocr_confidence, data_source)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, TRUE, $12, 'ocr_crowdsource')
+          ocr_confidence, data_source)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'ocr_crowdsource')
          ON CONFLICT (product_id) DO NOTHING`,
         [
           productId,
@@ -223,24 +224,26 @@ async function saveOcrContribution(params) {
       .map((i) => (typeof i === 'string' ? i : i?.name))
       .filter((s) => s && s.trim().length > 0);
     if (ingredientNames.length > 0 || productInfo.ingredients_text) {
+      // production 스키마: 컬럼명이 source (data_source 아님). enum 아닌 varchar 라 'ocr_crowdsource' 그대로 OK.
       await client.query(
-        `INSERT INTO product_ingredients (product_id, raw_text, parsed_ingredients, data_source)
+        `INSERT INTO product_ingredients (product_id, raw_text, parsed_ingredients, source)
          VALUES ($1, $2, $3, 'ocr_crowdsource')`,
         [
           productId,
           productInfo.ingredients_text || ocrResult?.corrected_text || null,
-          ingredientNames,
+          JSON.stringify(ingredientNames),  // production 은 jsonb 라 JSON 문자열로
         ]
       );
 
       // ── 첨가물 자동 매칭 (additives 사전과 비교) ──
-      // 원재료 이름이 additives 사전의 name_ko 와 정확히 일치하거나 포함되면 매칭
+      // 원재료 이름이 additives 사전의 name_ko 와 정확히 일치하면 매칭.
+      // production additives 에 is_active 컬럼 없음 (MFRAS v1.0 스키마라 비활성 개념 부재).
+      // detected_name·confidence 는 006 마이그레이션으로 추가됨.
       if (ingredientNames.length > 0) {
         const matchResult = await client.query(
           `SELECT additive_id, name_ko
            FROM additives
-           WHERE is_active = TRUE
-             AND name_ko = ANY($1::text[])`,
+           WHERE name_ko = ANY($1::text[])`,
           [ingredientNames]
         );
 

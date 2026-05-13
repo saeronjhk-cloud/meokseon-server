@@ -351,12 +351,17 @@ async function mergeAndApply(productId) {
       || !String(existingNut.rows[0].data_source || '').startsWith('public_');
 
     if (canOverwriteNutrition) {
+      // production 스키마 정렬:
+      // - per_serving 컬럼 없음 (TRUE 만 INSERT 라 무의미)
+      // - data_source enum 에 'ocr_crowdsource_merged' 값 없음 → 'ocr_crowdsource' 로 통일.
+      //   merge 적용 여부는 products.merged_at IS NOT NULL / merge_sources_count 로 판정.
+      // - production nutrition_data 에 updated_at 컬럼 없음 → ON CONFLICT 절에서 제거.
       await client.query(
         `INSERT INTO nutrition_data (
            product_id, calories, total_fat, saturated_fat, trans_fat,
            cholesterol, sodium, total_carbs, total_sugars, dietary_fiber, protein,
-           per_serving, data_source
-         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, TRUE, 'ocr_crowdsource_merged')
+           data_source
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'ocr_crowdsource')
          ON CONFLICT (product_id) DO UPDATE SET
            calories = EXCLUDED.calories,
            total_fat = EXCLUDED.total_fat,
@@ -368,8 +373,7 @@ async function mergeAndApply(productId) {
            total_sugars = EXCLUDED.total_sugars,
            dietary_fiber = EXCLUDED.dietary_fiber,
            protein = EXCLUDED.protein,
-           data_source = 'ocr_crowdsource_merged',
-           updated_at = NOW()`,
+           data_source = 'ocr_crowdsource'`,
         [
           productId,
           nutrition.calories, nutrition.total_fat, nutrition.saturated_fat, nutrition.trans_fat,
@@ -380,22 +384,26 @@ async function mergeAndApply(productId) {
     }
 
     // ── 3) product_ingredients 갱신 ──
-    // merge 결과 ingredient name 들로 새 row 추가 (raw_text 는 합본).
+    // production 스키마 정렬:
+    // - 컬럼명이 source (data_source 아님). varchar 라 'ocr_crowdsource' 그대로 OK.
+    // - parsed_ingredients 가 jsonb 라 JSON.stringify 명시.
     if (ingredients.length > 0) {
       const ingredientNames = ingredients.map((i) => i.name);
       await client.query(
-        `INSERT INTO product_ingredients (product_id, raw_text, parsed_ingredients, data_source)
-         VALUES ($1, $2, $3, 'ocr_crowdsource_merged')`,
-        [productId, ingredientNames.join(', '), ingredientNames],
+        `INSERT INTO product_ingredients (product_id, raw_text, parsed_ingredients, source)
+         VALUES ($1, $2, $3, 'ocr_crowdsource')`,
+        [productId, ingredientNames.join(', '), JSON.stringify(ingredientNames)],
       );
     }
 
     // ── 4) product_additives 자동 매칭 ──
+    // production additives 에 is_active 없음 → 조건 제거.
+    // detected_name·confidence 는 006 마이그레이션으로 추가됨.
     if (ingredients.length > 0) {
       const ingredientNames = ingredients.map((i) => i.name);
       const matchResult = await client.query(
         `SELECT additive_id, name_ko FROM additives
-         WHERE is_active = TRUE AND name_ko = ANY($1::text[])`,
+         WHERE name_ko = ANY($1::text[])`,
         [ingredientNames],
       );
       for (const row of matchResult.rows) {

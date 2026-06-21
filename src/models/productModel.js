@@ -68,6 +68,11 @@ async function searchByName(query, limit = 20, offset = 0) {
   //        food_type     매칭 → +0.3
   //        similarity   * 0.5 (search_text 정규화 텍스트 기반)
   //    - 두 단계 쿼리: 안쪽에서 DISTINCT ON, 바깥쪽에서 score 정렬
+  //
+  //    NOTE (2026-06-21): "농심" 같이 generic 한 키워드로 검색 시,
+  //    product_name 에 키워드가 포함된 제품(농심떡국면 등)이 자연스럽게 상위에 옴.
+  //    신라면 등 manufacturer-only 매칭 제품은 결과에는 포함되지만 페이지 아래쪽.
+  //    이는 의도된 동작 — 사용자가 "신라면" 같이 구체적으로 검색하면 직접 매칭됨.
   const result = await db.query(
     `SELECT * FROM (
        SELECT DISTINCT ON (lower(p.product_name), lower(COALESCE(p.manufacturer, '')))

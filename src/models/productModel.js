@@ -56,19 +56,28 @@ async function searchByName(query, limit = 20, offset = 0) {
     return [];
   }
 
-  // 3. 통합 검색:
-  //    - WHERE: trigram(%) + ILIKE 부분 매칭 OR 결합
-  //    - ORDER:
-  //      a) similarity 점수 DESC
-  //      b) verification 수준 DESC (admin_verified > verified > partial > unverified)
-  //      c) verify_count DESC (교차 검증 횟수)
-  //      d) product_name 사전순 (안정 정렬)
+  // 3. 통합 검색 (v2 — 다중 필드 가중치):
+  //    - WHERE: search_text 트리그램(%) + ILIKE 부분 매칭 OR 결합
+  //    - SCORE: 어느 필드에 매칭됐는지 + similarity 합산
+  //        product_name  매칭 → +1.0
+  //        manufacturer  매칭 → +0.5
+  //        brand         매칭 → +0.3
+  //        food_type     매칭 → +0.2
+  //        similarity   * 0.5 (search_text 정규화 텍스트 기반)
+  //      → product_name 매칭과 manufacturer-only 매칭이 함께 첫 페이지에 노출됨
+  //    - ORDER: score DESC → verification DESC → verify_count DESC → product_name
   const result = await db.query(
     `SELECT
        p.product_id, p.barcode, p.product_name, p.brand, p.manufacturer,
        p.food_type, p.food_category, p.serving_size, p.content_unit,
        p.image_url, p.verification, p.verify_count,
-       similarity(p.search_text, $1) AS score
+       (
+         CASE WHEN COALESCE(p.product_name,  '') ILIKE '%' || $1 || '%' THEN 1.0 ELSE 0 END
+       + CASE WHEN COALESCE(p.manufacturer,  '') ILIKE '%' || $1 || '%' THEN 0.5 ELSE 0 END
+       + CASE WHEN COALESCE(p.brand,         '') ILIKE '%' || $1 || '%' THEN 0.3 ELSE 0 END
+       + CASE WHEN COALESCE(p.food_type,     '') ILIKE '%' || $1 || '%' THEN 0.2 ELSE 0 END
+       + similarity(p.search_text, $1) * 0.5
+       ) AS score
      FROM products p
      WHERE p.is_active = TRUE
        AND (
@@ -76,7 +85,13 @@ async function searchByName(query, limit = 20, offset = 0) {
          OR p.search_text ILIKE '%' || $1 || '%'
        )
      ORDER BY
-       similarity(p.search_text, $1) DESC,
+       (
+         CASE WHEN COALESCE(p.product_name,  '') ILIKE '%' || $1 || '%' THEN 1.0 ELSE 0 END
+       + CASE WHEN COALESCE(p.manufacturer,  '') ILIKE '%' || $1 || '%' THEN 0.5 ELSE 0 END
+       + CASE WHEN COALESCE(p.brand,         '') ILIKE '%' || $1 || '%' THEN 0.3 ELSE 0 END
+       + CASE WHEN COALESCE(p.food_type,     '') ILIKE '%' || $1 || '%' THEN 0.2 ELSE 0 END
+       + similarity(p.search_text, $1) * 0.5
+       ) DESC,
        CASE p.verification
          WHEN 'admin_verified' THEN 4
          WHEN 'verified'       THEN 3

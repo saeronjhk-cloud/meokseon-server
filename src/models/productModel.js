@@ -4,6 +4,7 @@
  */
 
 const db = require('../config/database');
+const { normalizeSearchQuery, isSearchable } = require('../utils/searchNormalize');
 
 /**
  * 바코드로 제품 + 영양정보 조회
@@ -31,25 +32,61 @@ async function findByBarcode(barcode) {
 }
 
 /**
- * 제품명 퍼지 검색 (trigram)
- * @param {string} query - 검색어
+ * 제품 통합 검색 (search_text 정규화 컬럼 기반)
+ *
+ * Migration 009 의 products.search_text 컬럼을 사용하여
+ *   - product_name + manufacturer + brand + food_type 4개 필드 통합 검색
+ *   - 띄어쓰기·특수문자·대소문자 변형 흡수
+ *   - similarity + verification + verify_count 가중 정렬
+ *
+ * SOURCE: OneDrive/MeokSeon/IP/search_normalization_v1.md (예정)
+ * 트리거: 사용자 검색 미스매치 분석 (Notion §8, 2026-06-21)
+ *
+ * @param {string} query - 사용자 원본 검색어
  * @param {number} limit - 최대 결과 수
  * @param {number} offset - 오프셋
  * @returns {Promise<Array>}
  */
 async function searchByName(query, limit = 20, offset = 0) {
+  // 1. 검색어 정규화 (search_text 컬럼과 동일 규칙)
+  const qn = normalizeSearchQuery(query);
+
+  // 2. 검색 의미 없는 입력은 빈 결과 (성능 보호)
+  if (!isSearchable(qn)) {
+    return [];
+  }
+
+  // 3. 통합 검색:
+  //    - WHERE: trigram(%) + ILIKE 부분 매칭 OR 결합
+  //    - ORDER:
+  //      a) similarity 점수 DESC
+  //      b) verification 수준 DESC (admin_verified > verified > partial > unverified)
+  //      c) verify_count DESC (교차 검증 횟수)
+  //      d) product_name 사전순 (안정 정렬)
   const result = await db.query(
     `SELECT
        p.product_id, p.barcode, p.product_name, p.brand, p.manufacturer,
        p.food_type, p.food_category, p.serving_size, p.content_unit,
-       p.image_url, p.verification,
-       similarity(p.product_name, $1) AS score
+       p.image_url, p.verification, p.verify_count,
+       similarity(p.search_text, $1) AS score
      FROM products p
-     WHERE p.product_name % $1
-        OR p.product_name ILIKE '%' || $1 || '%'
-     ORDER BY similarity(p.product_name, $1) DESC, p.product_name
+     WHERE p.is_active = TRUE
+       AND (
+         p.search_text % $1
+         OR p.search_text ILIKE '%' || $1 || '%'
+       )
+     ORDER BY
+       similarity(p.search_text, $1) DESC,
+       CASE p.verification
+         WHEN 'admin_verified' THEN 4
+         WHEN 'verified'       THEN 3
+         WHEN 'partial'        THEN 2
+         ELSE 1
+       END DESC,
+       COALESCE(p.verify_count, 0) DESC,
+       p.product_name
      LIMIT $2 OFFSET $3`,
-    [query, limit, offset]
+    [qn, limit, offset]
   );
   return result.rows;
 }

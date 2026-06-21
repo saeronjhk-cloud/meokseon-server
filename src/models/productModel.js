@@ -56,50 +56,50 @@ async function searchByName(query, limit = 20, offset = 0) {
     return [];
   }
 
-  // 3. 통합 검색 (v2 — 다중 필드 가중치):
+  // 3. 통합 검색 (v3 — 다중 필드 가중치 + 중복 제거):
   //    - WHERE: search_text 트리그램(%) + ILIKE 부분 매칭 OR 결합
+  //    - DEDUP: 같은 (product_name, manufacturer) 의 여러 바코드 → 1건만 노출
+  //             (예: "농심감자면" x 8개 바코드 → 1개로 압축)
+  //             그룹 내 verification 높은 것 → verify_count 많은 것 → 첫 바코드 선택
   //    - SCORE: 어느 필드에 매칭됐는지 + similarity 합산
   //        product_name  매칭 → +1.0
-  //        manufacturer  매칭 → +0.5
-  //        brand         매칭 → +0.3
-  //        food_type     매칭 → +0.2
+  //        manufacturer  매칭 → +1.0 (대표 제조사 검색 시 균형)
+  //        brand         매칭 → +0.5
+  //        food_type     매칭 → +0.3
   //        similarity   * 0.5 (search_text 정규화 텍스트 기반)
-  //      → product_name 매칭과 manufacturer-only 매칭이 함께 첫 페이지에 노출됨
-  //    - ORDER: score DESC → verification DESC → verify_count DESC → product_name
+  //    - 두 단계 쿼리: 안쪽에서 DISTINCT ON, 바깥쪽에서 score 정렬
   const result = await db.query(
-    `SELECT
-       p.product_id, p.barcode, p.product_name, p.brand, p.manufacturer,
-       p.food_type, p.food_category, p.serving_size, p.content_unit,
-       p.image_url, p.verification, p.verify_count,
-       (
-         CASE WHEN COALESCE(p.product_name,  '') ILIKE '%' || $1 || '%' THEN 1.0 ELSE 0 END
-       + CASE WHEN COALESCE(p.manufacturer,  '') ILIKE '%' || $1 || '%' THEN 0.5 ELSE 0 END
-       + CASE WHEN COALESCE(p.brand,         '') ILIKE '%' || $1 || '%' THEN 0.3 ELSE 0 END
-       + CASE WHEN COALESCE(p.food_type,     '') ILIKE '%' || $1 || '%' THEN 0.2 ELSE 0 END
-       + similarity(p.search_text, $1) * 0.5
-       ) AS score
-     FROM products p
-     WHERE p.is_active = TRUE
-       AND (
-         p.search_text % $1
-         OR p.search_text ILIKE '%' || $1 || '%'
-       )
-     ORDER BY
-       (
-         CASE WHEN COALESCE(p.product_name,  '') ILIKE '%' || $1 || '%' THEN 1.0 ELSE 0 END
-       + CASE WHEN COALESCE(p.manufacturer,  '') ILIKE '%' || $1 || '%' THEN 0.5 ELSE 0 END
-       + CASE WHEN COALESCE(p.brand,         '') ILIKE '%' || $1 || '%' THEN 0.3 ELSE 0 END
-       + CASE WHEN COALESCE(p.food_type,     '') ILIKE '%' || $1 || '%' THEN 0.2 ELSE 0 END
-       + similarity(p.search_text, $1) * 0.5
-       ) DESC,
-       CASE p.verification
-         WHEN 'admin_verified' THEN 4
-         WHEN 'verified'       THEN 3
-         WHEN 'partial'        THEN 2
-         ELSE 1
-       END DESC,
-       COALESCE(p.verify_count, 0) DESC,
-       p.product_name
+    `SELECT * FROM (
+       SELECT DISTINCT ON (lower(p.product_name), lower(COALESCE(p.manufacturer, '')))
+         p.product_id, p.barcode, p.product_name, p.brand, p.manufacturer,
+         p.food_type, p.food_category, p.serving_size, p.content_unit,
+         p.image_url, p.verification, p.verify_count,
+         (
+           CASE WHEN COALESCE(p.product_name,  '') ILIKE '%' || $1 || '%' THEN 1.0 ELSE 0 END
+         + CASE WHEN COALESCE(p.manufacturer,  '') ILIKE '%' || $1 || '%' THEN 1.0 ELSE 0 END
+         + CASE WHEN COALESCE(p.brand,         '') ILIKE '%' || $1 || '%' THEN 0.5 ELSE 0 END
+         + CASE WHEN COALESCE(p.food_type,     '') ILIKE '%' || $1 || '%' THEN 0.3 ELSE 0 END
+         + similarity(p.search_text, $1) * 0.5
+         ) AS score
+       FROM products p
+       WHERE p.is_active = TRUE
+         AND (
+           p.search_text % $1
+           OR p.search_text ILIKE '%' || $1 || '%'
+         )
+       ORDER BY
+         lower(p.product_name),
+         lower(COALESCE(p.manufacturer, '')),
+         CASE p.verification
+           WHEN 'admin_verified' THEN 4
+           WHEN 'verified'       THEN 3
+           WHEN 'partial'        THEN 2
+           ELSE 1
+         END DESC,
+         COALESCE(p.verify_count, 0) DESC,
+         p.product_id
+     ) sub
+     ORDER BY score DESC, product_name
      LIMIT $2 OFFSET $3`,
     [qn, limit, offset]
   );

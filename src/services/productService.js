@@ -73,12 +73,22 @@ function humanizeAdditiveDescription(text) {
 function buildMfras(additivesRows) {
   if (!additivesRows || additivesRows.length === 0) return null;
 
-  // dominant_color 산출
+  // dominant_color 산출 — v2 mfras_grade 우선, v1 risk_color fallback
   let dominant = 'green';
   for (const row of additivesRows) {
-    if ((COLOR_RANK[row.risk_color] || 0) > (COLOR_RANK[dominant] || 0)) {
-      dominant = row.risk_color || 'green';
+    const rowColor = row.mfras_grade || row.risk_color || 'green';
+    if ((COLOR_RANK[rowColor] || 0) > (COLOR_RANK[dominant] || 0)) {
+      dominant = rowColor;
     }
+  }
+
+  // 종합 점수 — v2 mfras_total 가중 평균 (max 사용 — dominant 첨가물 기준)
+  // 향후 가중 평균·HI 산출 로직 도입 가능. 현 시점은 max 가 가장 직관적.
+  let aggregateScore = null;
+  const scoresV2 = additivesRows.map(a => a.mfras_total).filter(s => s !== null && s !== undefined);
+  if (scoresV2.length > 0) {
+    aggregateScore = Math.max(...scoresV2.map(s => parseFloat(s)));
+    aggregateScore = Math.round(aggregateScore * 100) / 100;
   }
 
   // 색상별 라벨 (Flutter 측 mfrasLabel 헬퍼와 일치)
@@ -86,9 +96,9 @@ function buildMfras(additivesRows) {
 
   return {
     dominant_color: dominant,
-    score: null,             // TODO: 5차원 점수 산출 도입 시 채움 (현재 risk_grade만 보유)
+    score: aggregateScore,              // v2: 0~10 (max of mfras_total)
     score_label: SCORE_LABEL[dominant] || null,
-    cocktail_hi: null,       // TODO: HI 산출 도입 시 채움
+    cocktail_hi: null,                  // TODO: HI 산출 도입 시 채움
     cocktail_penalty: null,
     auxiliary_penalty: null,
     override_applied: null,
@@ -99,11 +109,37 @@ function buildMfras(additivesRows) {
       id: a.additive_id,
       name: a.name_ko,
       name_en: a.name_en,
-      ins_no: a.e_number,           // INS = E number 동일 체계
-      cas_number: null,             // additives 테이블에 cas_number 컬럼 없으면 null
-      function: a.category,          // additives.category = '향미증진제' 등 기능 분류
-      color: a.risk_color || 'gray',
-      score: a.risk_grade,           // 1.0~10.0 (DB의 risk_grade 직접 노출)
+      ins_no: a.ins_no || a.e_number,    // v2 ins_no 우선, e_number fallback
+      e_number: a.e_number,
+      cas_number: null,
+      function: a.category,
+      // v2 색상·점수 우선
+      color: a.mfras_grade || a.risk_color || 'gray',
+      score: a.mfras_total !== null && a.mfras_total !== undefined
+        ? parseFloat(a.mfras_total)
+        : a.risk_grade,
+      // v2 5차원 점수 (null 인 경우 객체 자체를 null 로)
+      dimensions: a.dim_a_toxicity !== null && a.dim_a_toxicity !== undefined ? {
+        a_toxicity: parseFloat(a.dim_a_toxicity),
+        b_exposure: parseFloat(a.dim_b_exposure),
+        c_genotox: parseFloat(a.dim_c_genotox),
+        d_regulation: parseFloat(a.dim_d_regulation),
+        e_data_quality: parseFloat(a.dim_e_data_quality),
+      } : null,
+      // v2 근거·메타
+      iarc_group: a.iarc_group || null,
+      adi_value: a.adi_value || null,
+      adi_type: a.adi_type || null,
+      edi: a.edi || null,
+      genotox_status: a.genotox_status || null,
+      regulatory_status: a.regulatory_status || null,
+      last_eval_year: a.last_eval_year || null,
+      purposes: a.purposes || null,
+      usage_type: a.usage_type || null,
+      rationales: a.mfras_rationales || null,
+      // v1 호환
+      v1_risk_grade: a.risk_grade,
+      v1_risk_color: a.risk_color,
       order_in_product: null,
       order_weight: null,
       summary: humanizeAdditiveDescription(a.description),
@@ -266,6 +302,9 @@ async function getProductAdditives(barcode) {
 
   const additives = await productModel.getAdditives(product.product_id);
 
+  // 색상 우선순위: v2 mfras_grade > v1 risk_color
+  const colorOf = (a) => a.mfras_grade || a.risk_color;
+
   return {
     product_id: product.product_id,
     product_name: product.product_name,
@@ -273,11 +312,12 @@ async function getProductAdditives(barcode) {
     risk_summary: {
       total: additives.length,
       by_color: {
-        green: additives.filter(a => a.risk_color === 'green').length,
-        yellow: additives.filter(a => a.risk_color === 'yellow').length,
-        orange: additives.filter(a => a.risk_color === 'orange').length,
-        red: additives.filter(a => a.risk_color === 'red').length,
+        green: additives.filter(a => colorOf(a) === 'green').length,
+        yellow: additives.filter(a => colorOf(a) === 'yellow').length,
+        orange: additives.filter(a => colorOf(a) === 'orange').length,
+        red: additives.filter(a => colorOf(a) === 'red').length,
       },
+      with_v2_data: additives.filter(a => a.mfras_total !== null && a.mfras_total !== undefined).length,
     },
   };
 }

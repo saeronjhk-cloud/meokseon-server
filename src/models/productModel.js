@@ -130,16 +130,26 @@ async function getNutrition(productId) {
  * @returns {Promise<Array>}
  */
 async function getAdditives(productId) {
+  // MFRAS v2.0 컬럼까지 모두 SELECT.
+  // SOURCE: OneDrive/MeokSeon/IP/MFRAS_v2.0_dictionary_spec.md
   const result = await db.query(
     `SELECT
-       a.additive_id, a.name_ko, a.name_en, a.e_number,
-       a.risk_grade, a.risk_color, a.category,
-       a.description, a.max_daily_intake,
+       a.additive_id, a.name_ko, a.name_en, a.e_number, a.ins_no,
+       a.category, a.description, a.max_daily_intake,
+       -- v1 (호환용)
+       a.risk_grade, a.risk_color,
+       -- v2 MFRAS (5차원·4색)
+       a.mfras_total, a.mfras_grade,
+       a.dim_a_toxicity, a.dim_b_exposure, a.dim_c_genotox,
+       a.dim_d_regulation, a.dim_e_data_quality,
+       a.iarc_group, a.adi_value, a.adi_type, a.edi,
+       a.genotox_status, a.regulatory_status, a.last_eval_year,
+       a.purposes, a.usage_type, a.mfras_rationales,
        pa.amount, pa.unit
      FROM product_additives pa
      JOIN additives a ON pa.additive_id = a.additive_id
      WHERE pa.product_id = $1
-     ORDER BY a.risk_grade DESC, a.name_ko`,
+     ORDER BY COALESCE(a.mfras_total, 0) DESC, a.risk_grade DESC NULLS LAST, a.name_ko`,
     [productId]
   );
   return result.rows;

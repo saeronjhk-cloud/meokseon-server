@@ -21,6 +21,7 @@ async function findByBarcode(barcode) {
        n.calories, n.total_fat, n.saturated_fat, n.trans_fat,
        n.cholesterol, n.sodium, n.total_carbs, n.total_sugars,
        n.dietary_fiber, n.protein, n.data_source AS nutrition_source,
+       n.serving_size AS nutrition_serving_size,
        n.verified_at
      FROM products p
      LEFT JOIN nutrition_data n ON p.product_id = n.product_id

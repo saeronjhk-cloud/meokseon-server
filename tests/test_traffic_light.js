@@ -347,6 +347,35 @@ assert(warnings.some(w => w.nutrient === 'sat_fat' && w.type === 'exceeds_total_
 console.log(`  경고 목록: ${JSON.stringify(warnings, null, 2)}`);
 
 // ============================================================
+// 테스트 11: basis-aware 판정 (per-100g 공공 영양 데이터) — 2026-06-24
+// ============================================================
+console.log('\n📦 테스트 11: basis-aware 판정 (per_100g)');
+
+const prod30 = { product_name: '테스트과자', food_type: '과자', content_unit: 'g', serving_size: 30, total_content: 90 };
+
+const rA = evaluateNutrition(prod30, { sodium: 200, basis: 'per_100g' });
+assert(rA.nutrients.sodium.per_100 === 200, '11a per_100g: per_100 환산 없이 200 그대로');
+assert(rA.nutrients.sodium.color === 'yellow', '11a per_100g: 200mg/100g -> 노랑(빨강 아님)');
+
+const rB = evaluateNutrition(prod30, { sodium: 200 });
+assert(rB.nutrients.sodium.color === 'red', '11b 회귀: per_serving 200/30g -> 빨강 유지');
+
+const prod100 = { product_name: 'x', food_type: '과자', content_unit: 'g', serving_size: 100, total_content: 200 };
+const e1 = evaluateNutrition(prod100, { sodium: 300 });
+const e2 = evaluateNutrition(prod100, { sodium: 300, basis: 'per_100g' });
+assert(e1.nutrients.sodium.color === e2.nutrients.sodium.color, '11c serving=100: 두 basis 결과 동일');
+
+const calRow = { calories: 800 };
+const wPerServing = sanityCheck(calRow, 30);
+const wPer100 = sanityCheck(calRow, 30, false, 'per_100g');
+assert(wPerServing.some(w => w.nutrient === 'calories' && w.type === 'per_100g_exceeded'), '11d 대조군: per_serving 해석 헛경보 발생');
+assert(!wPer100.some(w => w.nutrient === 'calories' && w.type === 'per_100g_exceeded'), '11d per_100g basis 헛경보 없음');
+
+const { deriveBasis } = require('../src/services/nutritionTrafficLight');
+assert(deriveBasis('100g') === 'per_100g', '11e deriveBasis 100g -> per_100g');
+assert(deriveBasis('') === 'per_serving' && deriveBasis(null) === 'per_serving', '11e deriveBasis 빈값 -> per_serving');
+
+// ============================================================
 // 결과 요약
 // ============================================================
 console.log(`\n${'='.repeat(50)}`);

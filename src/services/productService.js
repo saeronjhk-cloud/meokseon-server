@@ -12,7 +12,7 @@
  */
 
 const productModel = require('../models/productModel');
-const { evaluateNutrition } = require('./nutritionTrafficLight');
+const { evaluateNutrition, deriveBasis } = require('./nutritionTrafficLight');
 const { NotFoundError } = require('../middleware/errorHandler');
 const { getContext } = require('../utils/foodCategory');
 
@@ -240,6 +240,7 @@ async function getProductWithTrafficLight(barcode) {
         protein: product.protein,
         fiber: product.dietary_fiber,
         trans_fat: product.trans_fat,
+        basis: deriveBasis(product.nutrition_serving_size),
       }
     );
   }

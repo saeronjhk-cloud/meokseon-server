@@ -184,6 +184,15 @@ function calcPer100(amountPerServing, servingSize) {
   return (amountPerServing / servingSize) * 100;
 }
 
+function deriveBasis(servingSizeRaw) {
+  if (typeof servingSizeRaw === 'string') {
+    const s = servingSizeRaw.replace(/\s/g, '').toLowerCase();
+    if (/^100ml/.test(s)) return 'per_100ml';
+    if (/^100g/.test(s)) return 'per_100g';
+  }
+  return 'per_serving';
+}
+
 /**
  * 제한 영양성분(negative)의 색상을 판정한다.
  *
@@ -258,10 +267,16 @@ const SANITY_LIMITS = {
 
 /**
  * OCR 데이터 Sanity Check.
+ * @param {Object} nutritionData - 영양정보 객체
+ * @param {number} servingSize - 1회 제공량(g 또는 mL)
+ * @param {boolean} isDried - 건조식품 여부. true면 per_100g 체크 면제 (김·육포·미역·다시마 등 작은 serving 제품의 100g 환산 자연 초과 케이스 보호). 2026-05-27 추가.
  * @returns {Array} 경고 목록 [{ nutrient, value, limit, type }]
  */
-function sanityCheck(nutritionData, servingSize) {
+function sanityCheck(nutritionData, servingSize, isDried = false, basis = 'per_serving') {
   const warnings = [];
+  const _isPer100 = basis === 'per_100g' || basis === 'per_100ml';
+  const _toServing = (amt) => _isPer100 ? (servingSize > 0 ? (amt * servingSize) / 100 : amt) : amt;
+  const _toPer100 = (amt) => _isPer100 ? amt : (servingSize > 0 ? calcPer100(amt, servingSize) : null);
 
   for (const [nutrient, limits] of Object.entries(SANITY_LIMITS)) {
     const value = nutritionData[nutrient];
@@ -273,15 +288,15 @@ function sanityCheck(nutritionData, servingSize) {
       continue;
     }
 
-    // 1회 제공량 상한
-    if (limits.per_serving !== null && value > limits.per_serving) {
-      warnings.push({ nutrient, value, limit: limits.per_serving, type: 'per_serving_exceeded' });
+    const perServingVal = _toServing(value);
+    if (limits.per_serving !== null && perServingVal > limits.per_serving) {
+      warnings.push({ nutrient, value: perServingVal, limit: limits.per_serving, type: 'per_serving_exceeded' });
     }
 
-    // 100g당 상한
-    if (limits.per_100g !== null && servingSize > 0) {
-      const per100 = calcPer100(value, servingSize);
-      if (per100 > limits.per_100g) {
+    // 100g당 상한 — 건조식품은 면제 (신호등 평가와 동일 정책. evaluateNutrition의 is_dried_exception과 일관)
+    if (!isDried && limits.per_100g !== null) {
+      const per100 = _toPer100(value);
+      if (per100 !== null && per100 > limits.per_100g) {
         warnings.push({ nutrient, value: per100, limit: limits.per_100g, type: 'per_100g_exceeded' });
       }
     }
@@ -307,7 +322,8 @@ function sanityCheck(nutritionData, servingSize) {
 
   if (carbs !== null && protein !== null && fat !== null && servingSize > 0) {
     const macroSum = carbs + protein + fat;
-    const maxAllowed = servingSize * 1.1;
+    const massBase = _isPer100 ? 100 : servingSize;
+    const maxAllowed = massBase * 1.1;
 
     if (macroSum > maxAllowed) {
       warnings.push({
@@ -392,14 +408,20 @@ function evaluateNutrition(product, nutrition, config = DEFAULT_CONFIG) {
   result.is_dried_exception = isDried;
 
   // ----------------------------------------------------------
-  // Sanity Check
+  // Sanity Check (건조식품은 per_100g 면제 — 신호등과 일관)
   // ----------------------------------------------------------
-  result.sanity_warnings = sanityCheck(nutrition, product.serving_size);
+  const basis = nutrition.basis || 'per_serving';
+  const isPer100 = basis === 'per_100g' || basis === 'per_100ml';
+  const _serving = product.serving_size || 100;
+  const toPerServing = (amt) => (amt === null || amt === undefined) ? amt : (isPer100 ? (amt * _serving) / 100 : amt);
+  const toPer100 = (amt) => (amt === null || amt === undefined) ? null : (isPer100 ? amt : calcPer100(amt, _serving));
+
+  result.sanity_warnings = sanityCheck(nutrition, product.serving_size, isDried, basis);
 
   // ----------------------------------------------------------
   // Step 2-4: 각 영양성분별 판정
   // ----------------------------------------------------------
-  const servingSize = product.serving_size || 100;
+  const servingSize = _serving;
   const dv = config.dv;
 
   // --- 제한 영양성분 (Negative) ---
@@ -413,8 +435,8 @@ function evaluateNutrition(product, nutrition, config = DEFAULT_CONFIG) {
       continue;
     }
 
-    // 기준 A: %DV
-    const pctDV = calcPctDV(amount, dv[nutrient]);
+    // basis-aware %DV
+    const pctDV = calcPctDV(toPerServing(amount), dv[nutrient]);
     const colorA = judgeNegativeByPctDV(pctDV, config.negative_pct_dv[nutrient]);
 
     // 기준 B: 100g/100mL 절대량 (콜레스테롤은 제외)
@@ -425,7 +447,7 @@ function evaluateNutrition(product, nutrition, config = DEFAULT_CONFIG) {
     const hasAbsoluteThreshold = nutrient !== 'cholesterol' && absoluteBasis[nutrient];
 
     if (hasAbsoluteThreshold && !isDried) {
-      per100 = calcPer100(amount, servingSize);
+      per100 = toPer100(amount);
       colorB = judgeByAbsolute(per100, absoluteBasis[nutrient]);
     }
 
@@ -460,7 +482,7 @@ function evaluateNutrition(product, nutrition, config = DEFAULT_CONFIG) {
       continue;
     }
 
-    const pctDV = calcPctDV(amount, dv[nutrient]);
+    const pctDV = calcPctDV(toPerServing(amount), dv[nutrient]);
     const color = judgePositive(pctDV, config.positive_pct_dv[nutrient]);
 
     result.nutrients[nutrient] = {
@@ -474,7 +496,7 @@ function evaluateNutrition(product, nutrition, config = DEFAULT_CONFIG) {
   // --- 트랜스지방 (별도 규칙) ---
   const transFatAmount = nutrition.trans_fat;
   if (transFatAmount !== null && transFatAmount !== undefined) {
-    const tfColor = judgeTransFat(transFatAmount, config.trans_fat);
+    const tfColor = judgeTransFat(toPerServing(transFatAmount), config.trans_fat);
     result.nutrients.trans_fat = {
       color: tfColor,
       amount: transFatAmount,
@@ -491,7 +513,7 @@ function evaluateNutrition(product, nutrition, config = DEFAULT_CONFIG) {
 
   // --- 열량 (색상 판정 없음) ---
   if (nutrition.calories !== null && nutrition.calories !== undefined) {
-    const calPctDV = calcPctDV(nutrition.calories, dv.calories);
+    const calPctDV = calcPctDV(toPerServing(nutrition.calories), dv.calories);
     result.calories = {
       amount: nutrition.calories,
       pct_dv: calPctDV !== null ? Math.round(calPctDV * 10) / 10 : null,
@@ -612,6 +634,7 @@ module.exports = {
   detectFoodCategory,
   calcPctDV,
   calcPer100,
+  deriveBasis,
   evaluateNutrition,
   sanityCheck,
   formatResult,

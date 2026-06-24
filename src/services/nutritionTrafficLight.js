@@ -371,7 +371,7 @@ function sanityCheck(nutritionData, servingSize, isDried = false, basis = 'per_s
  * @param {Object} [config] - 기준값 (없으면 DEFAULT_CONFIG 사용)
  * @returns {Object} 판정 결과
  */
-function evaluateNutrition(product, nutrition, config = DEFAULT_CONFIG) {
+function evaluateNutrition(product, nutrition, config = DEFAULT_CONFIG, raccPolicy = null) {
   const result = {
     product_name: product.product_name,
     food_category: null,
@@ -412,7 +412,9 @@ function evaluateNutrition(product, nutrition, config = DEFAULT_CONFIG) {
   // ----------------------------------------------------------
   const basis = nutrition.basis || 'per_serving';
   const isPer100 = basis === 'per_100g' || basis === 'per_100ml';
-  const _serving = product.serving_size || 100;
+  const _serving = (raccPolicy && raccPolicy.racc)
+    ? ((product.serving_size && product.serving_size > 0 && product.serving_size >= 0.5 * raccPolicy.racc) ? product.serving_size : raccPolicy.racc)
+    : (product.serving_size || 100);
   const toPerServing = (amt) => (amt === null || amt === undefined) ? amt : (isPer100 ? (amt * _serving) / 100 : amt);
   const toPer100 = (amt) => (amt === null || amt === undefined) ? null : (isPer100 ? amt : calcPer100(amt, _serving));
 
@@ -451,9 +453,23 @@ function evaluateNutrition(product, nutrition, config = DEFAULT_CONFIG) {
       colorB = judgeByAbsolute(per100, absoluteBasis[nutrient]);
     }
 
-    // Step 3: 더 나쁜 쪽 적용
+    // Step 3: RACC 정책(소량섭취 면제 + 농축가드) 우선, 아니면 이중기준 worse-of
+    const _guards = (raccPolicy && raccPolicy.guards) ? raccPolicy.guards : [];
+    const _exempt = !!(raccPolicy && raccPolicy.exempt);
     let finalColor;
-    if (colorB !== null) {
+    if (_exempt && nutrient === 'sodium' && _guards.indexOf('sodium') !== -1) {
+      finalColor = (pctDV !== null && pctDV >= 20) ? 'red' : 'yellow';   // 나트륨 농축가드: floor Y, >=20% R
+      finalBasis = 'racc_sodium_guard';
+    } else if (_exempt && nutrient === 'sugars' && _guards.indexOf('sugar') !== -1) {
+      finalColor = (pctDV !== null && pctDV >= 20) ? 'red' : 'yellow';   // 당류 농축가드: floor Y, >=20% R
+      finalBasis = 'racc_sugar_guard';
+    } else if (_exempt && (nutrient === 'total_fat' || nutrient === 'sat_fat') && _guards.indexOf('oil') !== -1) {
+      finalColor = worseColor(colorA, 'yellow');                          // 유지 가드: 지방 Green 금지(floor Y)
+      finalBasis = 'racc_oil_guard';
+    } else if (_exempt) {
+      finalColor = colorA;                                                // 소량섭취 면제: per-100g 끄고 %DV(RACC)만
+      finalBasis = 'pct_dv_racc';
+    } else if (colorB !== null) {
       finalColor = worseColor(colorA, colorB);
       const orderMap = { green: 0, yellow: 1, red: 2 };
       finalBasis = (orderMap[colorB] || 0) > (orderMap[colorA] || 0) ? (isBeverage ? 'per_100ml' : 'per_100g') : 'pct_dv';

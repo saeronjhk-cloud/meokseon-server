@@ -13,6 +13,7 @@
 
 const productModel = require('../models/productModel');
 const { evaluateNutrition, deriveBasis } = require('./nutritionTrafficLight');
+const { getRaccPolicy } = require('./raccPolicy');
 const { NotFoundError } = require('../middleware/errorHandler');
 const { getContext } = require('../utils/foodCategory');
 
@@ -241,7 +242,9 @@ async function getProductWithTrafficLight(barcode) {
         fiber: product.dietary_fiber,
         trans_fat: product.trans_fat,
         basis: deriveBasis(product.nutrition_serving_size),
-      }
+      },
+      undefined,
+      getRaccPolicy(product.food_type)
     );
   }
 

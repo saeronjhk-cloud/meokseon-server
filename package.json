@@ -5,13 +5,17 @@
   "main": "src/server.js",
   "scripts": {
     "start": "node src/server.js",
-    "dev": "NODE_ENV=development node src/server.js",
-    "test": "NODE_ENV=test node tests/test_traffic_light.js && node tests/test_100_products.js && node tests/test_ocr_parser.js && node tests/test_api.js",
-    "test:unit": "node tests/test_traffic_light.js",
+    "dev": "cross-env NODE_ENV=development node src/server.js",
+    "test": "cross-env NODE_ENV=test node tests/test_traffic_light.js && cross-env NODE_ENV=test node tests/test_racc_policy.js && cross-env NODE_ENV=test node tests/test_100_products.js && cross-env NODE_ENV=test node tests/test_ocr_parser.js && cross-env NODE_ENV=test node tests/test_api.js && cross-env NODE_ENV=test node tests/test_firebase_auth.js && cross-env NODE_ENV=test node tests/test_pulse_consent_service.js && cross-env NODE_ENV=test node tests/test_user_routes.js && cross-env NODE_ENV=test node tests/test_scan_routes.js",
+    "test:unit": "cross-env NODE_ENV=test node tests/test_traffic_light.js",
     "test:integration": "node tests/test_100_products.js",
     "test:api": "node tests/test_api.js",
     "test:ocr": "node tests/test_ocr_parser.js",
-    "migrate": "psql $DATABASE_URL -f scripts/migrations/001_init_schema.sql && psql $DATABASE_URL -f scripts/migrations/002_seed_config.sql && psql $DATABASE_URL -f scripts/migrations/004_add_disputed.sql",
+    "test:auth": "cross-env NODE_ENV=test node tests/test_firebase_auth.js",
+    "test:pulse-consent": "cross-env NODE_ENV=test node tests/test_pulse_consent_service.js",
+    "test:user-routes": "cross-env NODE_ENV=test node tests/test_user_routes.js",
+    "test:scan-routes": "cross-env NODE_ENV=test node tests/test_scan_routes.js",
+    "migrate": "psql $DATABASE_URL -f scripts/migrations/001_init_schema.sql && psql $DATABASE_URL -f scripts/migrations/002_seed_config.sql && psql $DATABASE_URL -f scripts/migrations/004_add_disputed.sql && psql $DATABASE_URL -f scripts/migrations/005_crowdsource_merge.sql && psql $DATABASE_URL -f scripts/migrations/006_align_schema_with_production.sql && psql $DATABASE_URL -f scripts/migrations/007_pulse_hooks.sql && psql $DATABASE_URL -f scripts/migrations/008_mfras_v2.sql",
     "migrate:all": "npm run migrate && psql $DATABASE_URL -f scripts/migrations/003_seed_products.sql"
   },
   "keywords": [
@@ -32,6 +36,7 @@
     "express-async-errors": "^3.1.1",
     "express-rate-limit": "^8.3.2",
     "express-validator": "^7.3.2",
+    "firebase-admin": "^12.7.0",
     "helmet": "^8.1.0",
     "morgan": "^1.10.1",
     "multer": "^2.1.1",
@@ -39,5 +44,8 @@
     "swagger-ui-express": "^5.0.1",
     "winston": "^3.19.0",
     "winston-daily-rotate-file": "^5.0.0"
+  },
+  "devDependencies": {
+    "cross-env": "^10.1.0"
   }
 }

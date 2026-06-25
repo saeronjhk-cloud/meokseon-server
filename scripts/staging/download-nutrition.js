@@ -24,13 +24,19 @@ const getArg = (name, def) => {
 const START_PAGE = getArg('start', 1);
 const MAX_PAGES = getArg('max-pages', 0);
 
-const pool = new Pool({
-  host: process.env.DB_HOST || 'localhost',
-  port: parseInt(process.env.DB_PORT) || 5432,
-  database: process.env.DB_NAME || 'meokseon',
-  user: process.env.DB_USER || 'postgres',
-  password: process.env.DB_PASSWORD || '',
-});
+// DATABASE_URL 이 있으면 그것을 사용 (Railway 등 원격 DB)
+const pool = process.env.DATABASE_URL
+  ? new Pool({
+      connectionString: process.env.DATABASE_URL,
+      ssl: { rejectUnauthorized: false },
+    })
+  : new Pool({
+      host: process.env.DB_HOST || 'localhost',
+      port: parseInt(process.env.DB_PORT) || 5432,
+      database: process.env.DB_NAME || 'meokseon',
+      user: process.env.DB_USER || 'postgres',
+      password: process.env.DB_PASSWORD || '',
+    });
 
 function fetchAPI(pageNo) {
   return new Promise((resolve, reject) => {
@@ -47,9 +53,14 @@ function fetchAPI(pageNo) {
 }
 
 function parseNum(val) {
-  if (!val || val === '' || val === 'N/A' || val === '-') return null;
-  const num = parseFloat(val);
-  return isNaN(num) ? null : num;
+  if (val === null || val === undefined) return null;
+  const s = String(val).trim().toLowerCase();
+  if (['tr', 'trace', '미량'].includes(s)) return 0;
+  if (['', '-', 'n/a', 'na', 'null', 'nd', '불검출', '해당없음'].includes(s)) return null;
+  const cleaned = s.replace(/[^0-9.]/g, ''); // 콤마·단위 제거 (식약처 천단위 콤마 방어)
+  if (cleaned === '') return null;
+  const num = parseFloat(cleaned);
+  return Number.isFinite(num) ? num : null;
 }
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
@@ -95,34 +106,45 @@ async function main() {
         const items = body.items;
         errors = 0; // 성공하면 에러 카운트 리셋
 
-        for (const item of items) {
-          await client.query(
-            `INSERT INTO staging_nutrition
-             (food_cd, food_nm_kr, db_class_nm, food_or_nm, maker_nm, serving_size,
-              calories, protein, total_fat, total_carbs, total_sugars,
-              sodium, cholesterol, saturated_fat, trans_fat, dietary_fiber, raw_data)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)`,
-            [
+        // 배치 INSERT (페이지당 1 SQL — ~10배 빠름)
+        if (items.length > 0) {
+          const placeholders = [];
+          const values = [];
+          for (let i = 0; i < items.length; i++) {
+            const item = items[i];
+            const offset = i * 17;
+            placeholders.push(
+              `($${offset+1},$${offset+2},$${offset+3},$${offset+4},$${offset+5},$${offset+6},$${offset+7},$${offset+8},$${offset+9},$${offset+10},$${offset+11},$${offset+12},$${offset+13},$${offset+14},$${offset+15},$${offset+16},$${offset+17})`
+            );
+            values.push(
               item.FOOD_CD || null,
               item.FOOD_NM_KR?.trim() || null,
               item.DB_CLASS_NM?.trim() || null,
               item.FOOD_OR_NM?.trim() || null,
               item.MAKER_NM?.trim() || null,
               item.SERVING_SIZE || null,
-              parseNum(item.AMT_NUM1),   // 에너지
-              parseNum(item.AMT_NUM3),   // 단백질
-              parseNum(item.AMT_NUM4),   // 지방
-              parseNum(item.AMT_NUM7),   // 탄수화물
-              parseNum(item.AMT_NUM8),   // 총당류
-              parseNum(item.AMT_NUM13),  // 나트륨
-              parseNum(item.AMT_NUM14),  // 콜레스테롤
-              parseNum(item.AMT_NUM25),  // 포화지방산
-              parseNum(item.AMT_NUM26),  // 트랜스지방산
-              parseNum(item.AMT_NUM9),   // 식이섬유
-              JSON.stringify(item),
-            ]
+              parseNum(item.AMT_NUM1),   // calories
+              parseNum(item.AMT_NUM3),   // protein
+              parseNum(item.AMT_NUM4),   // total_fat
+              parseNum(item.AMT_NUM6),   // total_carbs (식약처 6=탄수화물)
+              parseNum(item.AMT_NUM7),   // total_sugars (7=당류)
+              parseNum(item.AMT_NUM13),  // sodium (13=나트륨)
+              parseNum(item.AMT_NUM23),  // cholesterol (23=콜레스테롤)
+              parseNum(item.AMT_NUM24),  // saturated_fat (24=포화지방)
+              parseNum(item.AMT_NUM25),  // trans_fat (25=트랜스지방)
+              parseNum(item.AMT_NUM8),   // dietary_fiber (8=식이섬유)
+              JSON.stringify(item)
+            );
+          }
+          await client.query(
+            `INSERT INTO staging_nutrition
+             (food_cd, food_nm_kr, db_class_nm, food_or_nm, maker_nm, serving_size,
+              calories, protein, total_fat, total_carbs, total_sugars,
+              sodium, cholesterol, saturated_fat, trans_fat, dietary_fiber, raw_data)
+             VALUES ${placeholders.join(',')}`,
+            values
           );
-          totalInserted++;
+          totalInserted += items.length;
         }
 
         // 총 건수 표시 (첫 응답에서)

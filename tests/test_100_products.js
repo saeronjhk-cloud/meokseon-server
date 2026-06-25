@@ -168,8 +168,8 @@ for (const product of mergeResult.matched) {
     });
   }
 
-  // OCR Sanity Check
-  const warnings = sanityCheck(nutritionInput, product.serving_size);
+  // OCR Sanity Check (건조식품은 per_100g 면제 — 2026-05-27 보강)
+  const warnings = sanityCheck(nutritionInput, product.serving_size, result.is_dried_exception);
   if (warnings.length > 0) {
     sanityWarnings.push({ name: product.product_name, warnings });
   }

@@ -22,13 +22,19 @@ const getArg = (name, def) => {
 const START_PAGE = getArg('start', 1);
 const MAX_PAGES = getArg('max-pages', 0);
 
-const pool = new Pool({
-  host: process.env.DB_HOST || 'localhost',
-  port: parseInt(process.env.DB_PORT) || 5432,
-  database: process.env.DB_NAME || 'meokseon',
-  user: process.env.DB_USER || 'postgres',
-  password: process.env.DB_PASSWORD || '',
-});
+// DATABASE_URL 이 있으면 그것을 사용 (Railway 등 원격 DB)
+const pool = process.env.DATABASE_URL
+  ? new Pool({
+      connectionString: process.env.DATABASE_URL,
+      ssl: { rejectUnauthorized: false },
+    })
+  : new Pool({
+      host: process.env.DB_HOST || 'localhost',
+      port: parseInt(process.env.DB_PORT) || 5432,
+      database: process.env.DB_NAME || 'meokseon',
+      user: process.env.DB_USER || 'postgres',
+      password: process.env.DB_PASSWORD || '',
+    });
 
 function fetchAPI(startIdx, endIdx) {
   return new Promise((resolve, reject) => {
@@ -91,20 +97,31 @@ async function main() {
         const rows = result.row;
         errors = 0;
 
-        for (const row of rows) {
-          await client.query(
-            `INSERT INTO staging_ingredients (prdlst_report_no, prdlst_nm, rawmtrl_nm, bssh_nm, prms_dt, raw_data)
-             VALUES ($1, $2, $3, $4, $5, $6)`,
-            [
+        // 배치 INSERT (페이지당 1 SQL — ~10배 빠름)
+        if (rows.length > 0) {
+          const placeholders = [];
+          const values = [];
+          for (let i = 0; i < rows.length; i++) {
+            const row = rows[i];
+            const offset = i * 6;
+            placeholders.push(
+              `($${offset+1}, $${offset+2}, $${offset+3}, $${offset+4}, $${offset+5}, $${offset+6})`
+            );
+            values.push(
               row.PRDLST_REPORT_NO?.trim() || null,
               row.PRDLST_NM?.trim() || null,
               row.RAWMTRL_NM?.trim() || null,
               row.BSSH_NM?.trim() || null,
               row.PRMS_DT?.trim() || null,
-              JSON.stringify(row),
-            ]
+              JSON.stringify(row)
+            );
+          }
+          await client.query(
+            `INSERT INTO staging_ingredients (prdlst_report_no, prdlst_nm, rawmtrl_nm, bssh_nm, prms_dt, raw_data)
+             VALUES ${placeholders.join(',')}`,
+            values
           );
-          totalInserted++;
+          totalInserted += rows.length;
         }
 
         process.stdout.write(`\r  페이지 ${page} | 이번: ${rows.length}건 | 누적: ${totalInserted}건`);

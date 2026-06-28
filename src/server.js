@@ -7,10 +7,15 @@ const app = require('./app');
 const config = require('./config');
 const logger = require('./config/logger');
 const dictionaryCache = require('./services/dictionaryCache');
+// SOURCE: IP/pulse/auth_routes_design_2026-05-20.md §2-3 + cursor_prompts/01_firebase_admin.md §3-3
+const { initFirebase } = require('./config/firebase');
 
 const PORT = config.port;
 
 async function startServer() {
+  // Firebase Admin SDK 초기화 (환경변수 누락 시 throw → fail-fast 의도).
+  initFirebase();
+
   // 사전 데이터 캐시 로드
   await dictionaryCache.loadFromDB();
 

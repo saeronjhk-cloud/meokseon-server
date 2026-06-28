@@ -189,6 +189,7 @@ function deriveBasis(servingSizeRaw) {
     const s = servingSizeRaw.replace(/\s/g, '').toLowerCase();
     if (/^100ml/.test(s)) return 'per_100ml';
     if (/^100g/.test(s)) return 'per_100g';
+    if (/^100unknown/.test(s)) return 'per_100_unknown';  // OFF: per-100 이나 단위(g/mL) 불명(#2 reconcile §7)
   }
   return 'per_serving';
 }
@@ -411,7 +412,8 @@ function evaluateNutrition(product, nutrition, config = DEFAULT_CONFIG, raccPoli
   // Sanity Check (건조식품은 per_100g 면제 — 신호등과 일관)
   // ----------------------------------------------------------
   const basis = nutrition.basis || 'per_serving';
-  const isPer100 = basis === 'per_100g' || basis === 'per_100ml';
+  // per_100_unknown: 값은 per-100(이중변환 방지 위해 isPer100 취급), 단 단위불명이라 절대량 컷오프는 스킵.
+  const isPer100 = basis === 'per_100g' || basis === 'per_100ml' || basis === 'per_100_unknown';
   const _serving = (raccPolicy && raccPolicy.racc)
     ? ((product.serving_size && product.serving_size > 0 && product.serving_size >= 0.5 * raccPolicy.racc) ? product.serving_size : raccPolicy.racc)
     : (product.serving_size || 100);
@@ -448,7 +450,8 @@ function evaluateNutrition(product, nutrition, config = DEFAULT_CONFIG, raccPoli
 
     const hasAbsoluteThreshold = nutrient !== 'cholesterol' && absoluteBasis[nutrient];
 
-    if (hasAbsoluteThreshold && !isDried) {
+    // per_100_unknown: 단위(g/mL) 불명 → 절대량 컷오프 스킵, %DV 만으로 판정(#2 reconcile §7)
+    if (hasAbsoluteThreshold && !isDried && basis !== 'per_100_unknown') {
       per100 = toPer100(amount);
       colorB = judgeByAbsolute(per100, absoluteBasis[nutrient]);
     }

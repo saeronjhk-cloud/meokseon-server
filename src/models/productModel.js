@@ -12,19 +12,24 @@ const { normalizeSearchQuery, isSearchable } = require('../utils/searchNormalize
  * @returns {Promise<Object|null>}
  */
 async function findByBarcode(barcode) {
+  // 영양은 product_nutrition_resolved view 로 결합(식약처/OCR 우선 + OFF(A/B) 보강, ODbL 격리).
+  // SOURCE: scripts/migrations/011·012 (#2 OFF 통합). nutrition_data 직접조회 → view 전환(2026-06-28).
+  // off_grade/confidence/source_license/basis_confident 는 OFF 출처배지(§11)·신호등 신뢰도용.
   const result = await db.query(
     `SELECT
        p.product_id, p.barcode, p.product_name, p.brand, p.manufacturer,
        p.food_type, p.food_category, p.serving_size, p.total_content,
        p.content_unit, p.data_source, p.image_url,
        p.verification, p.verify_count,
-       n.calories, n.total_fat, n.saturated_fat, n.trans_fat,
-       n.cholesterol, n.sodium, n.total_carbs, n.total_sugars,
-       n.dietary_fiber, n.protein, n.data_source AS nutrition_source,
-       n.serving_size AS nutrition_serving_size,
-       n.verified_at
+       r.calories, r.total_fat, r.saturated_fat, r.trans_fat,
+       r.cholesterol, r.sodium, r.total_carbs, r.total_sugars,
+       r.dietary_fiber, r.protein,
+       r.resolved_source AS nutrition_source,
+       r.serving_size AS nutrition_serving_size,
+       r.verified_at,
+       r.off_grade, r.confidence, r.source_license, r.basis_confident
      FROM products p
-     LEFT JOIN nutrition_data n ON p.product_id = n.product_id
+     LEFT JOIN product_nutrition_resolved r ON r.product_id = p.product_id
      WHERE p.barcode = $1
      LIMIT 1`,
     [barcode]

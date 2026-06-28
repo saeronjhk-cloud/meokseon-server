@@ -283,6 +283,13 @@ async function getProductWithTrafficLight(barcode) {
       protein: product.protein,
       source: product.nutrition_source,
       verified_at: product.verified_at,
+      // OFF(#2) 출처배지(§11)용 메타데이터. 식약처/OCR 이면 NULL.
+      //   source='openfoodfacts'(+confidence='low', source_license='ODbL-1.0') → '오픈DB 참고 ⓘ' + 하단 ODbL attribution.
+      //   off_grade A/B, basis_confident=false 면 '기준 불확실'(절대량 신호등 제한) 표기에 사용.
+      off_grade: product.off_grade || null,
+      confidence: product.confidence || null,
+      source_license: product.source_license || null,
+      basis_confident: (product.basis_confident === undefined ? null : product.basis_confident),
     } : null,
     traffic_light: trafficLight,
     mfras,

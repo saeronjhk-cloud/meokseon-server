@@ -1,0 +1,19 @@
+{
+  "_comment": "SOURCE: D:\\먹선\\IP\\off_alias\\brand_aliases.json (SSOT). 그룹사 분리 보존. 짧은토큰 단독 substring 금지(로직에서 키 단위).",
+  "농심": ["nongshim"],
+  "오뚜기": ["ottogi"],
+  "삼양": ["samyang"],
+  "롯데칠성": ["lotte chilsung", "lottechilsung"],
+  "롯데웰푸드": ["lotte wellfood", "lottewellfood"],
+  "해태제과": ["haitai", "haetae"],
+  "샘표": ["sempio"],
+  "대상": ["daesang", "chungjungone", "청정원"],
+  "대상웰라이프": ["daesang wellife"],
+  "동서식품": ["dongseo", "dongsuh"],
+  "남양유업": ["namyang"],
+  "매일유업": ["maeil"],
+  "CJ제일제당": ["cj cheiljedang", "cheiljedang", "beksul", "백설"],
+  "동원": ["dongwon"],
+  "동원F&B": ["dongwon fnb", "dongwon f&b"],
+  "코카콜라": ["coca-cola", "coca cola", "cocacola"]
+}

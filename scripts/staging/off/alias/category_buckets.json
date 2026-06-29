@@ -1,0 +1,16 @@
+{
+  "_comment": "SOURCE: IP/off_alias/category_buckets.json. 장류 vs 해조류 분리. 일반영문(can/water/milk/chip/pie) 단독 키 제외(로직에서 단어경계).",
+  "라면": ["라면", "noodle", "ramyun", "ramen"],
+  "음료": ["음료", "주스", "콜라", "사이다", "beverage", "drink", "juice", "soda", "cola"],
+  "과자": ["과자", "스낵", "snack", "biscuit", "cookie", "cracker", "감자칩", "포테이토"],
+  "아이스크림": ["아이스크림", "ice cream", "icecream", "빙과"],
+  "유제품": ["우유", "요거트", "yogurt", "치즈", "cheese"],
+  "장류": ["간장", "된장", "고추장", "쌈장", "춘장", "soy sauce", "gochujang", "doenjang", "ssamjang"],
+  "소스": ["소스", "케첩", "마요", "드레싱", "ketchup", "mayo", "dressing"],
+  "조미료": ["조미료", "다시다", "msg", "seasoning", "스톡"],
+  "해조류": ["김", "미역", "다시마", "laver", "seaweed", "kelp"],
+  "커피": ["커피", "coffee", "라떼", "latte", "espresso", "아메리카노"],
+  "빵": ["빵", "베이커리", "bread", "bakery", "케이크", "cake"],
+  "가공육": ["햄", "소시지", "ham", "sausage", "spam", "luncheon", "베이컨", "bacon"],
+  "통조림": ["통조림", "참치", "tuna", "canned"]
+}

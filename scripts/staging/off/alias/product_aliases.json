@@ -1,0 +1,28 @@
+{
+  "_comment": "SOURCE: IP/off_alias/product_aliases.json. specific=강(단독 accept 가능), generic=약(단독 accept 금지).",
+  "specific": {
+    "신라면": ["shin ramyun", "shin ramen"],
+    "진라면": ["jin ramen", "jin ramyun"],
+    "새우깡": ["saewookkang"],
+    "초코에몽": ["choco emong", "chocoemong"],
+    "맥심": ["maxim"],
+    "모카골드": ["mocha gold"],
+    "스팸": ["spam"],
+    "피크닉": ["picnic"],
+    "홈런볼": ["homerun ball", "homerun"]
+  },
+  "generic": {
+    "양조간장": ["brewed soy sauce", "soy sauce"],
+    "진간장": ["jin soy sauce", "soy sauce"],
+    "간장": ["soy sauce"],
+    "쌈장": ["ssamjang"],
+    "고추장": ["gochujang"],
+    "된장": ["doenjang"],
+    "우유": ["milk"],
+    "커피": ["coffee"],
+    "소스": ["sauce"],
+    "빵": ["bread"],
+    "햄": ["ham"],
+    "통조림": ["canned"]
+  }
+}

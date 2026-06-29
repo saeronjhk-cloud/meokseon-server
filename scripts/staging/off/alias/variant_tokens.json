@@ -1,0 +1,30 @@
+{
+  "_comment": "SOURCE: IP/off_alias/variant_tokens.json. diet=critical(코드 격리).",
+  "flavor": {
+    "banana": ["바나나", "banana"],
+    "strawberry": ["딸기", "strawberry"],
+    "choco": ["초코", "choco", "chocolate"],
+    "green_tea": ["녹차", "green tea", "matcha"],
+    "apple": ["사과", "apple"],
+    "grape": ["포도", "grape"],
+    "peach": ["복숭아", "peach"]
+  },
+  "spicy": {
+    "hot": ["매운맛", "hot", "spicy"],
+    "mild": ["순한맛", "mild"]
+  },
+  "diet": {
+    "zero": ["제로", "zero"],
+    "light": ["라이트", "light"],
+    "low_sugar": ["저당"],
+    "low_sodium": ["저염"]
+  },
+  "form": {
+    "cup": ["컵", "cup"],
+    "bag": ["봉지", "bag"],
+    "can": ["캔"],
+    "bottle": ["병", "bottle", "pet"],
+    "stick": ["스틱", "stick"],
+    "multi": ["멀티팩", "multipack", "번들", "bundle"]
+  }
+}

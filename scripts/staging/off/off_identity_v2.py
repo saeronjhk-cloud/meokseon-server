@@ -64,7 +64,11 @@ _VARIANTS = {g: {lab: sorted({_norm(t) for t in toks}) for lab, toks in labs.ite
              for g, labs in _VT.items()}
 
 CORP_SUFFIX = ["(주)", "㈜", "주식회사", "(유)", "식품", "제과", "음료", "유업"]  # ⚠ 'F&B' 제외(동원F&B 보존)
-CAT_COMPATIBLE = [frozenset({"음료", "유제품"})]
+# 수출용/글로벌 전용 규칙은 제거(2026-06-29 결정): 수출SKU는 내국인 미스캔이라 실효 없고,
+# 내수제품↔OFF해외기여 위험은 countries_tags 노이즈로 신뢰탐지 불가 + OFF가 이미 low-confidence/경고로 완화.
+CAT_COMPATIBLE = [frozenset({"음료", "유제품"}),
+                  frozenset({"음료", "커피"}),    # 커피는 음료의 하위 — grounding(Maxim 커피믹스 오거부)에서 발견
+                  frozenset({"유제품", "커피"})]  # 라떼류(커피+유제품)
 # 제품 핵심명 → 버킷(코어충돌 판정용)
 _CORE_BUCKET = {}
 for _b, _kws in _BUCKETS.items():
@@ -133,6 +137,27 @@ def _brand_match(our_brand, our_name, off_brands, off_name, table):
     return any(v and v in target for v in variants)
 
 
+# ── 이름 거의 동일(same-SKU 확신) 판정 — v2.3 ───────────────────────────────
+def _strip_for_match(name):
+    """정규화 + 법인접미·한글 브랜드 토큰 제거 후 영숫자/한글만. (브랜드만 다른 동일제품 매칭용)"""
+    n = _norm(name)
+    for suf in CORP_SUFFIX:
+        n = n.replace(_norm(suf), "")
+    for key, aliases in _BRANDS.items():
+        for tok in [key] + aliases:
+            if tok and any("가" <= ch <= "힣" for ch in tok):  # 한글 브랜드 토큰만 제거
+                n = n.replace(tok, "")
+    return re.sub(r"[^0-9a-z가-힣]", "", n)
+
+
+def _name_match_strong(our_name, off_name, name_sim):
+    """same-SKU 확신: 브랜드 제거 후 완전일치 or name_sim>=0.88."""
+    a, b = _strip_for_match(our_name), _strip_for_match(off_name)
+    if a and b and len(a) >= 2 and a == b:
+        return True
+    return name_sim >= 0.88
+
+
 # ── 제품 코어(specific/generic) ──────────────────────────────────────────────
 def _cores(text, table):
     """text(한글 또는 로마자)에 존재하는 코어 키 집합."""
@@ -154,10 +179,13 @@ def _variant_labels(text, group):
     return labs
 
 
-def _variant_conflict(our_name, off_name):
-    """(conflict_bool, critical_bool). 같은 그룹에서 양쪽 다 토큰 있고 다르면 충돌."""
-    conflict = False
-    critical = False
+def _variant_status(our_name, off_name):
+    """(conflict, critical, one_sided). 자문 2차: 한쪽만 명시(OFF generic)도 '확정 불가' → review.
+    conflict  : 양쪽 다 토큰 있고 다름
+    one_sided : 한쪽에만 토큰 있음(예: 우리 '매운맛' ↔ OFF generic)
+    critical  : diet(제로/라이트/저당/저염) 충돌·한쪽 — 영양 직접영향, 운영 후 reject 승격 후보
+    """
+    conflict = one_sided = critical = False
     for g in _VARIANTS:
         o = _variant_labels(our_name, g)
         f = _variant_labels(off_name, g)
@@ -165,7 +193,16 @@ def _variant_conflict(our_name, off_name):
             conflict = True
             if g == "diet":
                 critical = True
-    return conflict, critical
+        elif bool(o) != bool(f):  # 정확히 한쪽만
+            one_sided = True
+            if g == "diet":
+                critical = True
+    return conflict, critical, one_sided
+
+
+def _has_any(text, tokens):
+    nt = _norm(text)
+    return any(_norm(t) in nt for t in tokens)
 
 
 # ── 용량 ─────────────────────────────────────────────────────────────────────
@@ -242,7 +279,7 @@ def extract_signals(our_name, our_brand, our_category, off_name, off_brands,
     is_korea = any(k in countries for k in ("korea", "southkorea", "대한민국", "한국")) or str(barcode or "").startswith("880")
     s.foreign = bool(countries) and not is_korea
 
-    s.variant_conflict, s.critical_variant = _variant_conflict(our_name, off_name)
+    s.variant_conflict, s.critical_variant, s.variant_one_sided = _variant_status(our_name, off_name)
 
     s.qty = _qty_signal(our_qty, off_qty, off_name)
     s.quantity_match = (s.qty == "match")
@@ -250,16 +287,17 @@ def extract_signals(our_name, our_brand, our_category, off_name, off_brands,
     if s.qty == "review":
         s.variant_conflict = True  # 용량 리뉴얼 의심 → variant 취급
 
-    # accept_eligible (교차입증)
+    # accept_eligible (v2.3) — same-SKU 확신만. 이름 거의 동일 OR 강신호+용량일치.
+    # specific/brand/generic/로마자 '단독'은 accept 아님 → review (SKU 미확정).
+    s.strong_alias = s.brand_match or s.specific_match
+    s.name_match_strong = _name_match_strong(our_name, off_name, s.name_sim)
     s.accept_eligible = (
         not s.core_conflict and not s.cat_conflict and not s.foreign
-        and not s.variant_conflict and not s.multipack_hard
+        and not s.variant_conflict and not s.variant_one_sided
+        and not s.critical_variant and not s.multipack_hard
         and (
-            (s.brand_match and (s.specific_match or s.generic_match))
-            or (s.brand_match and s.name_sim >= 0.45)
-            or (s.brand_match and s.category_agree and s.quantity_match)
-            or s.specific_match
-            or s.name_sim >= 0.80
+            s.name_match_strong
+            or (s.strong_alias and s.quantity_match)
         )
     )
     s.review_eligible = (
@@ -283,10 +321,13 @@ def identity_check_v2(our_name, our_brand, our_category, off_name, off_brands,
         return "reject"
     if s.multipack_hard:
         return "reject"
-    # 2) VARIANT CONFLICT → review (critical 격리, 초기 review)
-    if s.variant_conflict:
+    # 2) diet(제로/라이트/저당/저염) 충돌·불확실 → reject (제로에 일반 수치는 '참고'가 아니라 위해)
+    if s.critical_variant:
+        return "reject"
+    # 3) 그 외 variant 충돌 OR 한쪽-variant(맛·매운정도·용기/SKU) → review (확정 불가)
+    if s.variant_conflict or s.variant_one_sided:
         return "review"
-    # 3) ACCEPT (교차입증)
+    # 4) ACCEPT — same-SKU 확신(이름 거의 동일 OR 강신호+용량일치)만
     if s.accept_eligible:
         return "accept"
     # 4) weak positive → review

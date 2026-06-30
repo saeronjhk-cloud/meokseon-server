@@ -10,8 +10,8 @@
     "peach": ["복숭아", "peach"]
   },
   "spicy": {
-    "hot": ["매운맛", "hot", "spicy"],
-    "mild": ["순한맛", "mild"]
+    "hot": ["매운맛", "hot", "spicy", "핫", "스파이시"],
+    "mild": ["순한맛", "mild", "마일드"]
   },
   "diet": {
     "zero": ["제로", "zero"],
@@ -20,11 +20,14 @@
     "low_sodium": ["저염"]
   },
   "form": {
+    "bowl": ["사발", "큰사발", "용기", "컵라면"],
     "cup": ["컵", "cup"],
-    "bag": ["봉지", "bag"],
+    "bag": ["봉지", "봉지면", "bag"],
     "can": ["캔"],
-    "bottle": ["병", "bottle", "pet"],
+    "bottle": ["병", "bottle", "pet", "페트", "파우치", "pouch"],
     "stick": ["스틱", "stick"],
+    "large": ["대용량"],
+    "mini": ["미니", "mini"],
     "multi": ["멀티팩", "multipack", "번들", "bundle"]
   }
 }

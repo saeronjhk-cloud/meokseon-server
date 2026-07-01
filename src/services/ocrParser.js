@@ -612,6 +612,104 @@ function detectAllergens(text) {
   return [...detected].sort();
 }
 
+// ------------------------------------------------------------
+// 5a. detectAllergensV2 — 직접함유/혼입가능/추정 3분리 (#114, 교차자문 반영)
+// SOURCE: D:\먹선\IP\korean_label_ocr_rules.md §4 + 자문/알레르기_직접함유_혼입가능_분리_자문_2026-06-29.md
+// 마스킹 파이프라인: mayContain 문장 먼저 분류(함유보다 우선) → 명시함유 → 원재료 추론.
+// ------------------------------------------------------------
+
+// 명시 표기·혼입 문장에서 쓰는 '공식 19종 이름' 매칭셋(원재료 형태 아님)
+const ALLERGEN_NAMES = {
+  '난류': ['난류', '계란', '달걀', '알류', '난백', '난황'],
+  '우유': ['우유'],
+  '메밀': ['메밀'],
+  '땅콩': ['땅콩'],
+  '대두': ['대두'],
+  '밀': ['밀'],
+  '고등어': ['고등어'],
+  '게': ['게'],
+  '새우': ['새우'],
+  '돼지고기': ['돼지고기'],
+  '복숭아': ['복숭아'],
+  '토마토': ['토마토'],
+  '아황산류': ['아황산', '이산화황'],
+  '호두': ['호두'],
+  '닭고기': ['닭고기'],
+  '쇠고기': ['쇠고기', '소고기'],
+  '오징어': ['오징어'],
+  '조개류': ['조개', '굴', '홍합', '전복', '바지락'],
+  '잣': ['잣'],
+};
+
+// compact: NFKC + 공백/구두점 제거 (OCR 띄어쓰기 붕괴 방어)
+function _compact(s) {
+  return (s || '').normalize('NFKC').replace(/\s+/g, '').replace(/[·ㆍ,，.。:：;；]/g, '');
+}
+
+// 혼입(교차오염) 신호 — compact 기준.
+const MAY_CONTAIN_SIGNALS = [
+  /같은제조시설/, /동일제조시설/, /같은시설/, /같은제조라인/, /같은라인/, /동일라인/,
+  /사용한제품과/, /사용제품과/, /제품과같은/, /혼입가능/, /혼입될수/, /혼입/, /교차오염/,
+];
+const EXPLICIT_MARKERS = [/함유/, /포함/, /알레르기유발물질/, /알레르기유발성분/, /알레르기정보/, /알러지/];
+const INGREDIENT_MARKERS = [/원재료명/, /원재료/, /성분명/, /배합비/];
+
+function _splitSegments(text) {
+  // 라벨 키워드 앞에 개행 삽입 → 문장부호·개행으로 분리
+  const t = (text || '').replace(
+    /(원재료명|원재료|성분명|알레르기\s*유발\s*물질|알레르기\s*유발\s*성분|알레르기\s*정보|영양정보|영양성분|제품명|내용량)/g,
+    '\n$1');
+  return t.split(/[\n.。!?]+/).map(s => s.trim()).filter(s => s.length >= 2);
+}
+
+function _matchSet(segment, table) {
+  // 긴 키워드 먼저 매칭·제거 → 짧은 이름의 부분문자열 오탐 방지(예: '메밀'을 먼저 잡아 '밀' 오탐 차단)
+  const pairs = [];
+  for (const [allergen, kws] of Object.entries(table)) for (const kw of kws) pairs.push([allergen, kw]);
+  pairs.sort((a, b) => b[1].length - a[1].length);
+  let work = segment;
+  const detected = new Set();
+  for (const [allergen, kw] of pairs) {
+    if (kw && work.includes(kw)) { detected.add(allergen); work = work.split(kw).join(' '); }
+  }
+  return detected;
+}
+
+function _classifySegment(seg) {
+  const c = _compact(seg);
+  if (MAY_CONTAIN_SIGNALS.some(re => re.test(c))) return 'mayContain';   // ★ 함유보다 먼저
+  if (EXPLICIT_MARKERS.some(re => re.test(c))) return 'contains';
+  if (INGREDIENT_MARKERS.some(re => re.test(c))) return 'ingredients';
+  return 'other';
+}
+
+/**
+ * @returns {{contains:string[], mayContain:string[], inferred:string[], evidence:object[]}}
+ */
+function detectAllergensV2(text) {
+  const segs = _splitSegments(text || '');
+  const contains = new Set(), mayContain = new Set(), inferred = new Set();
+  const evidence = [];
+  for (const seg of segs) {
+    const kind = _classifySegment(seg);
+    if (kind === 'other') continue;                 // 전체 텍스트 fallback contains 금지
+    const table = kind === 'ingredients' ? ALLERGEN_KEYWORDS : ALLERGEN_NAMES;
+    const found = _matchSet(seg, table);
+    if (!found.size) continue;
+    const bucket = kind === 'mayContain' ? mayContain : kind === 'contains' ? contains : inferred;
+    const level = kind === 'ingredients' ? 'inferred' : kind;
+    for (const a of found) { bucket.add(a); evidence.push({ allergen: a, level, textSpan: seg.slice(0, 60) }); }
+  }
+  // 병합 우선순위: contains > inferred(원재료 실제존재) > mayContain(혼입).
+  // ★ 원재료에 있는(inferred) 알레르겐을 혼입경고로 강등 금지(누락 방지).
+  for (const a of contains) { mayContain.delete(a); inferred.delete(a); }
+  for (const a of inferred) { mayContain.delete(a); }
+  return {
+    contains: [...contains].sort(), mayContain: [...mayContain].sort(),
+    inferred: [...inferred].sort(), evidence,
+  };
+}
+
 // ============================================================
 // 5b. 제품 메타정보 추출 (제품명·식품유형·판매원·제조원·내용량·품목보고번호)
 // ============================================================
@@ -750,8 +848,9 @@ function analyzeText(correctedText) {
   // 영양정보
   const nutrition = parseNutrition(correctedText);
 
-  // 알레르기
+  // 알레르기 (기존 flat = 하위호환 유지) + v2 3분리(#114: 직접함유/혼입가능/추정)
   const allergens = detectAllergens(correctedText);
+  const allergens_v2 = detectAllergensV2(correctedText);
 
   // 제품 메타정보 (제품명·식품유형·브랜드·제조원·내용량·품목보고번호)
   const product_meta = extractProductMeta(correctedText);
@@ -769,6 +868,7 @@ function analyzeText(correctedText) {
     additive_count: additives.length,
     nutrition,
     allergens,
+    allergens_v2,
     product_meta,
   };
 }
@@ -779,6 +879,7 @@ module.exports = {
   identifyAdditives,
   parseNutrition,
   detectAllergens,
+  detectAllergensV2,
   extractProductMeta,
   analyzeText,
   ADDITIVE_KEYWORDS,

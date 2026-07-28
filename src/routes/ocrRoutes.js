@@ -135,8 +135,26 @@ router.post('/analyze', upload.single('image'), async (req, res) => {
       trans_fat: nutrition.trans_fat ?? null,
     };
 
-    sanityWarnings = sanityCheck(nutritionData, productData.serving_size);
+    // ★ 세션39: 표기 기준(basis)을 신호등에 전달한다.
+    //   evaluateNutrition(nutritionTrafficLight.js L414)은 `nutrition.basis` 를 읽고,
+    //   sanityCheck 는 4번째 인자로 받는다 — 그런데 여기서 아무것도 안 넘겨
+    //   **모든 OCR 라벨이 per_serving 으로 판정**되고 있었다.
+    //   실물 반례: 해표 콩기름은 "100g당 지방 100g" → 1회분으로 읽히면 판정이 무의미해진다.
+    const BASIS_OK = { per_serving: 'per_serving', per_100g: 'per_100g', per_100ml: 'per_100ml' };
+    const basisRaw = nutrition._basis || 'unknown';
+    const basis = BASIS_OK[basisRaw] || 'per_serving';
+    // per_total(총 내용량당) · unknown 은 신호등이 모르는 값이다. 지금은 기존 동작(per_serving)을
+    // 유지하되 **불확실 플래그를 남긴다.** 실측으로 unknown 비율을 본 뒤 '판정 없음' 전환을 결정한다
+    // (IP/manual_capture_pipeline_v1 §4-E). 데이터 없이 판정 정책을 바꾸는 것이 더 위험하다.
+    const basisUncertain = !BASIS_OK[basisRaw];
+    nutritionData.basis = basis;
+
+    sanityWarnings = sanityCheck(nutritionData, productData.serving_size, false, basis);
     trafficLight = evaluateNutrition(productData, nutritionData);
+    if (trafficLight) {
+      trafficLight.basis_detected = basisRaw;
+      if (basisUncertain) trafficLight.basis_uncertain = true;
+    }
   }
 
   // Step 5: DB 저장 (save=true 시 크라우드소싱 파이프라인)

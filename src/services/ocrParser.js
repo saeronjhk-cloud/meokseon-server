@@ -413,6 +413,49 @@ function identifyAdditives(ingredients) {
 // 4. 영양정보 파싱
 // ============================================================
 
+/**
+ * ★★ 숫자 파싱 — 천단위 콤마와 소수점 콤마를 구분한다. (2026-07-28 세션39)
+ *
+ * 왜 생겼나: 기존 코드가 `.replace(',', '.')` 로 콤마를 소수점으로 바꿨다.
+ * 한국 라벨의 나트륨은 "1,790 mg" 처럼 **천단위 콤마**를 쓴다.
+ *   1,790 → "1.790" → parseFloat → **1.79**  (1000배 축소)
+ * sanityCheck 는 상한만 보므로 1.79 는 그대로 통과하고 신호등이 초록으로 뒤집힌다.
+ * = "거짓 초록". 캡처 001(신라면) 실물로 재현 확인.
+ *
+ * 규칙: `1,790` `2,500` `1,500` = 천단위 / `1,5` = OCR이 소수점을 콤마로 읽은 것.
+ * 검증: eval_set/capture_label_eval_v1.jsonl (scripts/63-eval-capture-parser.js)
+ */
+function parseNum(s) {
+  if (s == null) return null;
+  const t = String(s).trim();
+  if (!/\d/.test(t)) return null;
+  if (/^\d{1,3}(,\d{3})+(\.\d+)?$/.test(t)) return parseFloat(t.replace(/,/g, ''));  // 1,790 / 2,500
+  if (/^\d+,\d{1,2}$/.test(t)) return parseFloat(t.replace(',', '.'));               // 1,5 → 1.5
+  return parseFloat(t.replace(/,/g, ''));
+}
+
+/**
+ * ★ 표기 기준 판정 (2026-07-28) — 무엇을 읽었는지 모르면 값이 무의미하다.
+ * 실물 확인: 신라면 "1봉지(120g)당" · 맥심 "1개(12g)당" · 해표콩기름 "100g당".
+ * 100g당 라벨을 1회분으로 취급하면 콩기름이 "한 번에 지방 100g" 이 된다.
+ * 반환값은 nutritionTrafficLight.sanityCheck / evaluateNutrition 의 basis 인자와 같은 어휘.
+ */
+const BASIS_PER100 = /100\s*(g|㎖|ml|mL|㎎|mg)\s*당/;
+const BASIS_SERVING = /1\s*(?:회\s*제공량|회분|회|봉지|봉|개입|개|포|스틱|컵|캔|병|조각|장|인분)\s*\(?\s*(\d[\d,.]*)\s*(g|㎖|ml|mL|kg|L)\s*\)?\s*당/;
+const BASIS_TOTAL = /총\s*내용량\s*당/;
+
+function detectNutritionBasis(text) {
+  const m100 = text.match(BASIS_PER100);
+  if (m100) {
+    const u = m100[1].toLowerCase();
+    return { basis: (u === 'ml' || u === '㎖') ? 'per_100ml' : 'per_100g', amount: 100, unit: u };
+  }
+  const ms = text.match(BASIS_SERVING);
+  if (ms) return { basis: 'per_serving', amount: parseNum(ms[1]), unit: ms[2].toLowerCase() };
+  if (BASIS_TOTAL.test(text)) return { basis: 'per_total', amount: null, unit: null };
+  return { basis: 'unknown', amount: null, unit: null };
+}
+
 const NUTRIENT_PATTERNS = {
   calories:      /열량[:\s]*(\d+[.,]?\d*)\s*(kcal|킬로칼로리|Kcal)/,
   total_carbs:   /탄수화물[:\s]*(\d+[.,]?\d*)\s*g/,
@@ -459,8 +502,8 @@ function parseNutrition(text) {
   for (const [nutrient, pattern] of Object.entries(NUTRIENT_PATTERNS_DUAL)) {
     const match = text.match(pattern);
     if (match && match[1] && match[2]) {
-      nutrition[nutrient] = parseFloat(match[1].replace(',', '.'));
-      nutritionTotal[nutrient] = parseFloat(match[2].replace(',', '.'));
+      nutrition[nutrient] = parseNum(match[1]);        // ★ 천단위 콤마 방어(세션39)
+      nutritionTotal[nutrient] = parseNum(match[2]);
     }
   }
 
@@ -469,19 +512,29 @@ function parseNutrition(text) {
     if (nutrition[nutrient] !== undefined) continue;
     const match = text.match(pattern);
     if (match) {
-      const value = match[1].replace(',', '.');
-      nutrition[nutrient] = parseFloat(value);
+      nutrition[nutrient] = parseNum(match[1]);        // ★ 천단위 콤마 방어(세션39)
     }
   }
 
   // 2) 칼로리 — \"열량\" 라벨 없이 \"1회(30g)당 160 kcal\" 같은 형식 추가 매칭
   // 한국 라벨에 \"열량\" 없이 \"1회당 X kcal\" 만 적힌 경우가 흔함
   if (nutrition.calories === undefined) {
-    const altCalorie = text.match(
+    // ★ 세션39: 한 라벨에 kcal 후보가 여럿이다.
+    //   맥심 실물 = 정답 50 · 기준치 "2,000 kcal" · 총량 "총 2,500 kcal/50개".
+    //   최후 fallback(/(\d+)\s*kcal/)이 무엇을 잡을지 텍스트 순서에 달려 있었다.
+    //   → 기준치·총량 문구를 먼저 제거하고 찾는다.
+    const cleaned = text
+      .replace(/1\s*일\s*영양성분\s*기준치[^\n]*/g, ' ')
+      .replace(/[\d,]+\s*kcal\s*기준[^\n]*/g, ' ')
+      .replace(/총\s*[\d,.]+\s*kcal[^\n]*/g, ' ');
+    const altCalorie = cleaned.match(
       /(?:1회[\s(]*\d+\s*g?[\s)]*당|1회\s*제공량\s*당|총?\s*내용량\s*당)\s*(\d+(?:[.,]\d+)?)\s*kcal/i
-    ) || text.match(/(\d+(?:[.,]\d+)?)\s*kcal/);
+    )
+      // "1봉지(120g)당 500 kcal" · "1개(12g)당 50 kcal" — '1회' 가 아닌 실제 표기(세션39 실물)
+      || cleaned.match(/당\s*(\d[\d,.]*)\s*kcal/i)
+      || cleaned.match(/(\d+(?:[.,]\d+)?)\s*kcal/);
     if (altCalorie) {
-      nutrition.calories = parseFloat(altCalorie[1].replace(',', '.'));
+      nutrition.calories = parseNum(altCalorie[1]);
     }
   }
 
@@ -491,19 +544,38 @@ function parseNutrition(text) {
     /1회\s*[(\[]?\s*(?:제공량|분|당)?\s*[:\s(]*(\d+(?:[.,]\d+)?)\s*(g|ml|mL|kg|L)/
   );
   if (servingMatch) {
-    nutrition.serving_size = parseFloat(servingMatch[1].replace(',', '.'));
+    nutrition.serving_size = parseNum(servingMatch[1]);
     nutrition.serving_unit = servingMatch[2].toLowerCase();
+  }
+
+  // 3b) ★ 세션39: 실물 라벨은 "1회" 라고 안 쓴다. "1봉지(120g)당"·"1개(12g)당"·"1스틱(12g)당".
+  //     위 정규식이 '1회' 를 요구해 serving 이 통째로 비었고, 환산 기준이 사라졌다.
+  const basisInfo = detectNutritionBasis(text);
+  if (nutrition.serving_size === undefined && basisInfo.basis === 'per_serving' && basisInfo.amount) {
+    nutrition.serving_size = basisInfo.amount;
+    nutrition.serving_unit = basisInfo.unit;
   }
 
   // 4) 총 내용량 — 별도 매칭. \"총 내용량 73g\" / \"내용량 73g\"
   // \"1회\" 가 앞에 안 붙은 경우만 매칭하여 1회 제공량과 충돌 방지
+  // ★ 세션39: "총 내용량" 을 먼저 찾는다.
+  //   해표 콩기름 실물은 위쪽에 "내용량 1.5L(25℃)", 아래 영양정보에 "총 내용량 1,500 mL" 가 있다.
+  //   기존 정규식은 `총` 이 optional 이라 위쪽 1.5L 를 먼저 집어 단위가 L 로 들어갔다.
   const totalMatch = text.match(
-    /(?:^|[\s,.\n])(?:총\s*)?내용량\s*[:\s]*(\d+(?:[.,]\d+)?)\s*(g|ml|mL|kg|L)/
+    /총\s*내용량\s*[:\s]*(\d[\d,.]*)\s*(g|㎖|ml|mL|kg|L)/
+  ) || text.match(
+    /(?:^|[\s,.\n])내용량\s*[:\s]*(\d+(?:[.,]\d+)?)\s*(g|ml|mL|kg|L)/
   );
   if (totalMatch) {
-    nutrition.total_content = parseFloat(totalMatch[1].replace(',', '.'));
+    nutrition.total_content = parseNum(totalMatch[1]);   // ★ "1,500 mL" → 1500 (세션39)
     nutrition.content_unit = totalMatch[2].toLowerCase();
   }
+
+  // 4b) ★ 표기 기준을 응답에 실어 보낸다 (세션39).
+  //     sanityCheck / evaluateNutrition 은 basis 인자를 이미 받는데 호출부가 안 넘기고 있었다.
+  //     per_100g 라벨을 per_serving 으로 판정하면 결과가 무의미해진다(해표 콩기름: 100g당 지방 100g).
+  nutrition._basis = basisInfo.basis;                    // per_serving | per_100g | per_100ml | per_total | unknown
+  if (basisInfo.amount != null) nutrition._basis_amount = basisInfo.amount;
 
   // 5) 라벨에서 추출된 전량 영양값들이 있으면 nutrition._total 형태로 함께 노출.
   //    클라이언트는 이 값을 \"라벨 명시\" 로 신뢰하고, 없는 영양소는 1회분 × 배수로 자동 계산.
@@ -804,11 +876,20 @@ function extractProductMeta(text) {
   if (manufacturer) meta.manufacturer = manufacturer;
 
   // 내용량 (g, mL, kg, L, 개)
+  // ★★ 세션40: 세션39가 parseNutrition(L564)만 고치고 **여기를 놓쳤다**.
+  //   같은 결함 2개가 그대로 남아 있었다:
+  //     ① `.replace(',', '.')` → "총 내용량 1,500 mL" 를 1.5 로 축소 (1000배 축소, §거짓 초록과 동일 원인)
+  //     ② `총` optional → "내용량 1.5L(25℃)" 를 "총 내용량 1,500 mL" 보다 먼저 집음 (해표 콩기름 실물)
+  //   이 값은 사장되지 않는다: ocrRoutes L295 → productInfo.total_content
+  //     → crowdsourceService → products.total_content 및 servings_per_container(=총량/1회분)
+  //   즉 **DB 영구 저장 경로**다. 1.5/120 = 0.0125 인분 같은 값이 들어간다.
   const contentMatch = text.match(
-    /(?:총\s*)?내용량\s*[:\/\-]?\s*(\d+(?:[.,]\d+)?)\s*(g|ml|mL|kg|L|개|정|포)/
+    /총\s*내용량\s*[:\/\-]?\s*(\d[\d,.]*)\s*(g|ml|mL|kg|L|개|정|포)/
+  ) || text.match(
+    /(?:^|[\s,.\n])내용량\s*[:\/\-]?\s*(\d[\d,.]*)\s*(g|ml|mL|kg|L|개|정|포)/
   );
   if (contentMatch) {
-    meta.total_content = parseFloat(contentMatch[1].replace(',', '.'));
+    meta.total_content = parseNum(contentMatch[1]);
     meta.content_unit = contentMatch[2].toLowerCase();
   }
 

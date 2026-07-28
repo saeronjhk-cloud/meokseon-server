@@ -66,7 +66,24 @@ async function saveOcrContribution(params) {
     trans_fat: nutrition.trans_fat ?? null,
   };
 
-  const sanityWarnings = sanityCheck(nutritionForCheck, servingSize);
+  // ★ 세션39: 표기 기준(basis)을 게이트에 반영한다.
+  //   여기는 화면 표시가 아니라 **DB 영구 저장** 관문이다. 기준을 모르는 값을 넣으면
+  //   되돌리기 어렵다. per_100g 라벨을 per_serving 으로 검사하면 게이트 자체가 헛돈다
+  //   (해표 콩기름 실물: 100g당 지방 100g).
+  const BASIS_OK = { per_serving: 'per_serving', per_100g: 'per_100g', per_100ml: 'per_100ml' };
+  const basisRaw = nutrition._basis || 'unknown';
+  const basis = BASIS_OK[basisRaw];
+  if (!basis) {
+    // 판정 불가는 저장하지 않는다 — `null = 판정 없음 ≠ 안전` 도크트린.
+    return {
+      saved: false,
+      rejectReason: '영양성분의 표기 기준(1회 제공량당 / 100g당 / 총 내용량당)을 판별하지 못했습니다. '
+        + '영양정보 표 상단의 기준 문구가 함께 보이도록 다시 촬영해주세요.',
+      basis_detected: basisRaw,
+    };
+  }
+
+  const sanityWarnings = sanityCheck(nutritionForCheck, servingSize, false, basis);
   const criticalWarnings = sanityWarnings.filter(w =>
     w.type === 'per_serving_exceeded' || w.type === 'per_100g_exceeded' || w.type === 'negative_value'
   );

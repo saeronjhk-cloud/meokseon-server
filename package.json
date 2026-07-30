@@ -10,11 +10,20 @@
     "test:unit": "cross-env NODE_ENV=test node tests/test_traffic_light.js",
     "test:integration": "node tests/test_100_products.js",
     "test:api": "node tests/test_api.js",
-    "test:ocr": "node tests/test_ocr_parser.js",
+    "test:ocr": "node tests/test_ocr_parser.js && cross-env NODE_ENV=test node tests/test_ocr_nutrition_regression.js && cross-env NODE_ENV=test node tests/test_paren_total_calories.js",
     "test:auth": "cross-env NODE_ENV=test node tests/test_firebase_auth.js",
     "test:pulse-consent": "cross-env NODE_ENV=test node tests/test_pulse_consent_service.js",
     "test:user-routes": "cross-env NODE_ENV=test node tests/test_user_routes.js",
     "test:scan-routes": "cross-env NODE_ENV=test node tests/test_scan_routes.js",
+    "test:racc-table": "cross-env NODE_ENV=test node tests/test_racc_table.js",
+    "test:serving-resolver": "cross-env NODE_ENV=test node tests/test_serving_resolver.js",
+    "test:official-source": "cross-env NODE_ENV=test node tests/test_official_source.js",
+    "test:per-total": "cross-env NODE_ENV=test node tests/test_per_total_wiring.js",
+    "test:withheld-client": "cross-env NODE_ENV=test node tests/test_withheld_client_render.js",
+    "test:paren-total": "cross-env NODE_ENV=test node tests/test_paren_total_calories.js",
+    "test:allergen": "cross-env NODE_ENV=test node tests/test_allergen_v2.js && cross-env NODE_ENV=test node tests/test_allergen_declared.js",
+    "test:parity": "cross-env NODE_ENV=test node tests/test_parser_parity.js",
+    "test:serving": "npm run test:racc-table && npm run test:serving-resolver && npm run test:official-source && npm run test:per-total && npm run test:withheld-client",
     "migrate": "psql $DATABASE_URL -f scripts/migrations/001_init_schema.sql && psql $DATABASE_URL -f scripts/migrations/002_seed_config.sql && psql $DATABASE_URL -f scripts/migrations/004_add_disputed.sql && psql $DATABASE_URL -f scripts/migrations/005_crowdsource_merge.sql && psql $DATABASE_URL -f scripts/migrations/006_align_schema_with_production.sql && psql $DATABASE_URL -f scripts/migrations/007_pulse_hooks.sql && psql $DATABASE_URL -f scripts/migrations/008_mfras_v2.sql",
     "migrate:all": "npm run migrate && psql $DATABASE_URL -f scripts/migrations/003_seed_products.sql"
   },
@@ -46,6 +55,7 @@
     "winston-daily-rotate-file": "^5.0.0"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.5.4",
     "cross-env": "^10.1.0"
   }
 }

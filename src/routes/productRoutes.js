@@ -80,8 +80,15 @@ router.post('/evaluate', async (req, res) => {
     throw new ValidationError('serving_size는 양수여야 합니다.');
   }
 
-  const warnings = sanityCheck(nutrition, product.serving_size);
+  // ★ 세션42: basis 를 안 넘겨 evaluateNutrition 과 **서로 다른 기준으로** 계산되고 있었다.
+  //   per_total 라벨이면 evaluation 은 1회분 환산값, sanity_warnings 는 총량 기준 —
+  //   같은 응답 안에서 모순된 값이 나간다. (세션39가 /multi-photo 를 놓친 것과 같은 유형)
+  //   per_total 은 신호등이 환산 후 자체 sanityCheck 를 돌리므로 그 결과를 그대로 쓴다.
   const result = evaluateNutrition(product, nutrition);
+  const basis = nutrition.basis || 'per_serving';
+  const warnings = (basis === 'per_total')
+    ? (result.sanity_warnings || [])
+    : sanityCheck(nutrition, product.serving_size, false, basis);
   res.json({ success: true, data: { evaluation: result, sanity_warnings: warnings } });
 });
 

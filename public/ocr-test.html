@@ -53,10 +53,38 @@
     .color-red { background: #ffebee; border-left: 4px solid #f44336; }
     .color-gray { background: #f5f5f5; border-left: 4px solid #9e9e9e; }
 
+    /* ★ 세션43: 판정 보류 / 데이터 없음.
+       color-gray 를 재사용하면 안 된다 — gray 는 **실제 판정 색**이다(⚪ = 판정됨).
+       판정 보류는 "판정하지 않았다" 이므로 색이 아니라 **점선**으로 구분한다.
+       `null = 판정 없음 ≠ 안전` 도크트린을 화면에서도 지키는 것이다. */
+    .nutrient-withheld { background: repeating-linear-gradient(45deg, #fafafa, #fafafa 6px, #f0f0f0 6px, #f0f0f0 12px);
+      border: 1px dashed #9e9e9e; border-left: 4px dashed #757575; color: #555; }
+    .nutrient-missing { background: #fff; border: 1px dashed #e0e0e0; color: #9e9e9e; }
+    .nutrient-item .value.muted { color: #888; font-weight: 400; font-size: 13px; }
+
+    .withhold-banner { background: #eceff1; border: 1px solid #b0bec5; border-left: 5px solid #546e7a;
+      border-radius: 8px; padding: 14px; margin-bottom: 12px; font-size: 14px; line-height: 1.7; }
+    .withhold-banner .wb-title { font-weight: 700; color: #37474f; display: block; margin-bottom: 6px; }
+    .withhold-banner .wb-action { display: block; margin-top: 8px; font-weight: 600; color: #01579b; }
+    .withhold-banner .wb-meta { display: block; margin-top: 6px; font-size: 12px; color: #607d8b; }
+
+    .pertotal-banner { background: #e3f2fd; border: 1px solid #90caf9; border-left: 5px solid #1976d2;
+      border-radius: 8px; padding: 12px; margin-bottom: 12px; font-size: 13px; line-height: 1.6; }
+
+    .context-msg { background: #f5f5f5; border-radius: 8px; padding: 10px 12px; margin-top: 8px;
+      font-size: 13px; color: #555; line-height: 1.6; }
+
     .ingredient-list { display: flex; flex-wrap: wrap; gap: 6px; }
     .ingredient-tag { background: #e3f2fd; padding: 4px 10px; border-radius: 16px; font-size: 13px; }
     .additive-tag { background: #fff3e0; padding: 4px 10px; border-radius: 16px; font-size: 13px; }
     .allergen-tag { background: #ffebee; padding: 4px 10px; border-radius: 16px; font-size: 13px; font-weight: 600; }
+    /* ★ 세션44 — 「직접 함유」와 「혼입 가능」은 사용자 행동이 다르므로 같은 모양을 쓰지 않는다.
+       혼입: 채우지 않고 점선 테두리(= 확정이 아니라는 신호). 추정: 옅은 채움. */
+    .allergen-tag.may-contain { background: transparent; border: 1px dashed #e57373; color: #c62828; font-weight: 500; }
+    .allergen-tag.inferred { background: #fff8e1; color: #8d6e00; }
+    .allergen-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 8px; }
+    .allergen-label { font-size: 12px; font-weight: 700; color: #555; min-width: 74px; }
+    .allergen-note { font-size: 12px; color: #666; line-height: 1.5; margin-top: 2px; }
 
     .text-preview { background: #fafafa; border: 1px solid #eee; border-radius: 8px;
       padding: 12px; font-size: 13px; white-space: pre-wrap; max-height: 200px;
@@ -102,8 +130,11 @@
       <div class="card" id="trafficCard" style="display:none">
         <h3>🚦 영양 신호등 판정</h3>
         <div id="trafficCategory" style="margin-bottom:12px"></div>
+        <div id="withholdBanner"></div>
+        <div id="perTotalBanner"></div>
         <div class="nutrient-grid" id="nutrientGrid"></div>
         <div id="multiServing" style="margin-top:12px"></div>
+        <div id="contextMessages"></div>
       </div>
 
       <!-- 원재료 -->
@@ -201,6 +232,34 @@
       }
     });
 
+    // HTML 이스케이프. 라벨 텍스트·제품명이 서버를 거쳐 그대로 들어오므로 innerHTML 에는 반드시 통과시킨다.
+    function esc(v) {
+      if (v === null || v === undefined) return '';
+      return String(v).replace(/[&<>"']/g, c => (
+        { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+      ));
+    }
+
+    // 서버가 문자열 하나만 보내거나 아무것도 안 보내도 렌더가 죽지 않게 한다.
+    function toMsgArray(v) {
+      if (Array.isArray(v)) return v.filter(x => x != null && String(x).trim() !== '');
+      if (typeof v === 'string' && v.trim() !== '') return [v];
+      return [];
+    }
+
+    // 판정 보류 사유 → 사용자 문구. 서버 WITHHOLD_MESSAGES 와 짝이다.
+    // ★ 서버가 이미 context_messages 로 같은 내용을 보내지만, 클라이언트가 그것에만 의존하면
+    //   서버 문구가 비었을 때 배너가 백지가 된다. 보류는 백지로 두면 안 되는 상태다.
+    const WITHHOLD_REASON_TEXT = {
+      multi_serving_but_count_unknown:
+        '총 내용량 기준 라벨이고 여러 회분이 확실하지만, 1회 섭취량을 확인하지 못했습니다. '
+        + '총량을 1회분으로 계산하면 실제보다 훨씬 나쁘게 보이기 때문에(잘못된 빨강) 판정하지 않았습니다.',
+      racc_says_single_but_pct_dv_says_multi:
+        '식품유형 기준 1회 섭취참고량으로는 1회분인데, 라벨에 인쇄된 1일 영양성분 기준치가 그와 맞지 않습니다. '
+        + '어느 쪽이 맞는지 확정하지 못해 판정하지 않았습니다.',
+      _default: '1회 섭취량 기준을 확정하지 못해 판정하지 않았습니다. 색이 없는 것은 "안전" 이 아니라 "판정 안 함" 입니다.',
+    };
+
     // 결과 렌더링
     function renderResult(data) {
       // OCR 정보
@@ -215,6 +274,15 @@
       // 영양 신호등
       const tl = data.traffic_light;
       const tlCard = document.getElementById('trafficCard');
+
+      // ★ 세션43: 배너는 매 분석마다 반드시 비운다.
+      //   비우지 않으면 판정 보류 제품을 본 뒤 정상 제품을 분석했을 때
+      //   **이전 제품의 보류 안내가 남아** 정상 제품이 보류로 보인다. 반대도 마찬가지다.
+      document.getElementById('withholdBanner').innerHTML = '';
+      document.getElementById('perTotalBanner').innerHTML = '';
+      document.getElementById('multiServing').innerHTML = '';
+      document.getElementById('contextMessages').innerHTML = '';
+
       if (tl && !tl.is_excluded) {
         tlCard.style.display = 'block';
         document.getElementById('trafficCategory').innerHTML =
@@ -223,34 +291,98 @@
 
         const grid = document.getElementById('nutrientGrid');
         grid.innerHTML = '';
-        const nutrients = tl.nutrients;
+        // ★ 세션43: 서버 계약을 방어한다. nutrients 나 context_messages 가 비어 오면
+        //   렌더가 예외로 죽고 **판정 결과가 통째로 화면에서 사라진다** — 판정 보류보다 나쁘다.
+        const nutrients = tl.nutrients || {};
         const nameMap = { sodium: '나트륨', sugars: '당류', sat_fat: '포화지방', total_fat: '총지방',
           cholesterol: '콜레스테롤', protein: '단백질', fiber: '식이섬유', trans_fat: '트랜스지방' };
 
+        // ★★ 세션43: 이전 코드는 `if (!info || !info.color) continue;` 였다.
+        //   판정 보류(color:null, data:'withheld')와 데이터 없음(data:'missing')이
+        //   **화면에서 그냥 사라졌다.** 8개 영양소가 전부 보류인 제품은 빈 카드가 되고,
+        //   빈 카드는 사용자에게 "문제 없음" 으로 읽힌다 — 거짓 초록과 같은 결과다.
+        //   `null = 판정 없음 ≠ 안전` 도크트린은 화면까지 지켜져야 의미가 있다.
         for (const [key, info] of Object.entries(nutrients)) {
-          if (!info || !info.color) continue;
+          if (!info) continue;
+          const label = nameMap[key] || key;
           const item = document.createElement('div');
-          item.className = `nutrient-item color-${info.color}`;
-          item.innerHTML = `<span class="label">${nameMap[key] || key}</span>` +
-            `<span class="value">${info.pct_dv != null ? info.pct_dv + '%DV' : ''}</span>`;
+
+          if (info.data === 'withheld') {
+            item.className = 'nutrient-item nutrient-withheld';
+            item.innerHTML = `<span class="label">${esc(label)}</span>` +
+              '<span class="value muted">판정 보류</span>';
+          } else if (info.data === 'missing' || !info.color) {
+            item.className = 'nutrient-item nutrient-missing';
+            item.innerHTML = `<span class="label">${esc(label)}</span>` +
+              '<span class="value muted">데이터 없음</span>';
+          } else {
+            item.className = `nutrient-item color-${esc(info.color)}`;
+            item.innerHTML = `<span class="label">${esc(label)}</span>` +
+              `<span class="value">${info.pct_dv != null ? esc(info.pct_dv) + '%DV' : ''}</span>`;
+          }
           grid.appendChild(item);
+        }
+
+        // ★ 판정 보류 배너 — 왜 색이 없는지, 무엇을 하면 되는지를 반드시 말한다.
+        let contextShownInBanner = false;
+        if (tl.is_withheld) {
+          const pt = tl.per_total || {};
+          // 서버 문구가 있으면 그것을 쓴다(정본은 서버다). 비어 있으면 클라이언트 문구로 메운다.
+          // 보류 상태에서 배너가 백지가 되는 것은 허용하지 않는다.
+          const serverText = toMsgArray(tl.context_messages).join(' ').trim();
+          const reasonText = serverText
+            || WITHHOLD_REASON_TEXT[tl.withhold_reason]
+            || WITHHOLD_REASON_TEXT._default;
+          contextShownInBanner = !!serverText;   // 아래에서 중복 출력하지 않는다
+          document.getElementById('withholdBanner').innerHTML =
+            '<div class="withhold-banner">' +
+            '<span class="wb-title">⚪ 판정 보류 — 신호등을 표시하지 않았습니다</span>' +
+            esc(reasonText) +
+            '<span class="wb-action">📷 라벨에 「○인분」 또는 「1회 제공량」 표기가 보이도록 다시 촬영해 주세요.</span>' +
+            `<span class="wb-meta">사유코드: ${esc(tl.withhold_reason || '-')}` +
+            (pt.reason ? ` / 환산: ${esc(pt.reason)}` : '') +
+            (pt.lookup_reasons && pt.lookup_reasons.length ? ` / 조회필요: ${esc(pt.lookup_reasons.join(', '))}` : '') +
+            '</span></div>';
+        } else if (tl.per_total) {
+          // 보류가 아니어도 per_total 이면 **환산해서 판정했다는 사실**을 밝힌다.
+          // 밝히지 않으면 divisor 가 틀렸을 때(제이가 눈으로 잡을 수 있는 유일한 지점) 아무도 모른다.
+          const pt = tl.per_total;
+          const how = pt.divisor > 1
+            ? `총 내용량을 ${esc(pt.divisor)}회분으로 나눠 1회분 기준으로 판정했습니다.`
+            : '총 내용량을 1회분으로 보고 판정했습니다.';
+          document.getElementById('perTotalBanner').innerHTML =
+            '<div class="pertotal-banner">ℹ️ 이 라벨은 <b>총 내용량 기준</b>입니다. ' + how +
+            `<br><span style="color:#607d8b;font-size:12px">근거: ${esc(pt.reason || '-')}` +
+            (pt.tier ? ` (tier ${esc(pt.tier)}${pt.source ? ' · ' + esc(pt.source) : ''})` : '') +
+            '</span></div>';
         }
 
         const ms = tl.multi_serving;
         if (ms && ms.servings_per_container > 1) {
           document.getElementById('multiServing').innerHTML =
-            `<span class="stat warn">${ms.message}</span>`;
+            `<span class="stat warn">${esc(ms.message)}</span>`;
+        }
+
+        // 맥락 메시지 — 서버가 만들고 있었지만 화면에 한 번도 출력되지 않던 값이다.
+        const ctxMsgs = toMsgArray(tl.context_messages);
+        if (!contextShownInBanner && ctxMsgs.length > 0) {
+          document.getElementById('contextMessages').innerHTML = ctxMsgs
+            .map(m => `<div class="context-msg">💬 ${esc(m)}</div>`).join('');
         }
       } else {
         tlCard.style.display = tl?.is_excluded ? 'block' : 'none';
         if (tl?.is_excluded) {
           document.getElementById('trafficCategory').innerHTML =
-            `<span class="stat">평가 제외: ${tl.exclude_reason}</span>`;
+            `<span class="stat">평가 제외: ${esc(tl.exclude_reason)}</span>`;
           document.getElementById('nutrientGrid').innerHTML = '';
         }
       }
 
-      // 원재료
+      // ★★ 세션43 검증에서 잡힌 결함 — 아래 4곳이 raw innerHTML 이었다.
+      //   esc() 를 신호등 블록에만 적용했는데, **OCR 자유 텍스트가 실제로 들어오는 곳은 여기**다.
+      //   원재료명은 라벨 사진이나 `ingredients_text` 로 완전히 외부 입력이다.
+      //   `설탕<img src=x onerror=eval&lpar;name&rpar;>` 같은 값이 그대로 실행됐다.
+      //   (`&lpar;`/`&rpar;` 는 HTML 속성에서 디코드되므로 괄호 필터링으로는 못 막는다.)
       const analysis = data.analysis;
       const ingCard = document.getElementById('ingredientCard');
       if (analysis.ingredient_count > 0) {
@@ -258,9 +390,9 @@
         document.getElementById('ingredientCount').textContent = analysis.ingredient_count;
         document.getElementById('ingredientList').innerHTML = analysis.ingredients
           .map(i => {
-            let label = i.name;
-            if (i.origin) label += ` [${i.origin}]`;
-            if (i.percentage) label += ` ${i.percentage}%`;
+            let label = esc(i.name);
+            if (i.origin) label += ` [${esc(i.origin)}]`;
+            if (i.percentage) label += ` ${esc(i.percentage)}%`;
             return `<span class="ingredient-tag">${label}</span>`;
           }).join('');
       } else { ingCard.style.display = 'none'; }
@@ -271,15 +403,47 @@
         addCard.style.display = 'block';
         document.getElementById('additiveCount').textContent = analysis.additive_count;
         document.getElementById('additiveList').innerHTML = analysis.additives
-          .map(a => `<span class="additive-tag">${a.name} (${a.category})</span>`).join('');
+          .map(a => `<span class="additive-tag">${esc(a.name)} (${esc(a.category)})</span>`).join('');
       } else { addCard.style.display = 'none'; }
 
       // 알레르기
+      // ★★★ 세션44 — `allergens_v2`(직접함유/혼입가능/추정 3분리)를 처음으로 화면에 쓴다.
+      //   알레르기 #114 부터 서버가 계산하고 있었지만 응답에도 없었고 화면에도 없었다.
+      //   flat `allergens` 만 쓰면 두 방향으로 다 틀린다:
+      //     · 「혼입가능」을 「직접 함유」로 표시 → 과잉 경고 (캡처 032·060 실측)
+      //     · flat 목록에 혼입이 안 들어오면 혼입 경고가 통째로 사라진다
+      //   ★ 색을 같게 쓰지 않는다 — 판정 보류에 `.color-gray` 를 쓰지 않은 것과 같은 이유.
+      //     「직접 함유」와 「혼입가능」은 사용자 행동이 다르므로 시각적으로 구분되어야 한다.
       const allCard = document.getElementById('allergenCard');
-      if (analysis.allergens.length > 0) {
+      const v2 = analysis.allergens_v2;
+      const arr = (x) => Array.isArray(x) ? x : [];
+      const tags = (list, cls) => list.map(a => `<span class="${cls}">${esc(a)}</span>`).join('');
+
+      if (v2 && (arr(v2.contains).length || arr(v2.mayContain).length || arr(v2.inferred).length)) {
         allCard.style.display = 'block';
-        document.getElementById('allergenList').innerHTML = analysis.allergens
-          .map(a => `<span class="allergen-tag">${a}</span>`).join('');
+        const parts = [];
+        if (arr(v2.contains).length) {
+          parts.push(`<div class="allergen-row"><span class="allergen-label">직접 함유</span>`
+            + tags(arr(v2.contains), 'allergen-tag') + `</div>`);
+        }
+        if (arr(v2.inferred).length) {
+          parts.push(`<div class="allergen-row"><span class="allergen-label">원재료 추정</span>`
+            + tags(arr(v2.inferred), 'allergen-tag inferred') + `</div>`);
+        }
+        if (arr(v2.mayContain).length) {
+          parts.push(`<div class="allergen-row"><span class="allergen-label">혼입 가능</span>`
+            + tags(arr(v2.mayContain), 'allergen-tag may-contain') + `</div>`
+            + `<div class="allergen-note">같은 제조시설·라인에서 만든 제품에 들어 있는 물질입니다. `
+            + `제품에 직접 들어 있다는 뜻은 아니지만, 알레르기가 있으면 주의하세요.</div>`);
+        }
+        document.getElementById('allergenList').innerHTML = parts.join('');
+      } else if (arr(analysis.allergens).length > 0) {
+        // 폴백 — 서버가 3분리를 못 보낸 경우(사용자가 목록을 직접 덮어쓴 경우 포함).
+        // ★ 이때 「직접 함유」라고 단정하지 않는다. 근거가 없으므로 구분 없이 나열한다.
+        allCard.style.display = 'block';
+        document.getElementById('allergenList').innerHTML =
+          `<div class="allergen-row">` + tags(arr(analysis.allergens), 'allergen-tag') + `</div>`
+          + `<div class="allergen-note">직접 함유와 혼입 가능이 구분되지 않은 목록입니다.</div>`;
       } else { allCard.style.display = 'none'; }
 
       // Sanity 경고
@@ -287,7 +451,7 @@
       if (data.sanity_warnings && data.sanity_warnings.length > 0) {
         sanCard.style.display = 'block';
         document.getElementById('sanityList').innerHTML = data.sanity_warnings
-          .map(w => `<span class="stat danger">${w.nutrient}: ${w.message}</span>`).join('');
+          .map(w => `<span class="stat danger">${esc(w.nutrient)}: ${esc(w.message)}</span>`).join('');
       } else { sanCard.style.display = 'none'; }
 
       document.getElementById('result').classList.add('show');

@@ -12,7 +12,9 @@
 
 const db = require('../config/database');
 const logger = require('../config/logger');
-const { sanityCheck } = require('./nutritionTrafficLight');
+const { sanityCheck, scaleNutrition } = require('./nutritionTrafficLight');
+// 세션42: per_total 라벨을 저장 게이트 **통과 전에** 1회분으로 환산하기 위해 사용
+const { resolveServings, totalToServingDivisor } = require('./servingResolver');
 const { mergeAndApply, AUTO_VERIFY_DISTINCT_DEVICES } = require('./mergeService');
 
 // 최소 OCR 신뢰도 (Gemini 피드백: 0.5→0.7 상향)
@@ -20,6 +22,26 @@ const MIN_CONFIDENCE = 0.7;
 
 // 자동 승격 신뢰도 (partial)
 const AUTO_PROMOTE_CONFIDENCE = 0.9;
+
+// ★ 세션42: DB 저장용 키 이름은 라벨 파서 키 이름과 다르다(total_sugars / saturated_fat / dietary_fiber).
+//   nutritionTrafficLight.scaleNutrition 은 판정용 키(sugars / sat_fat / fiber)를 다루므로
+//   저장 경로에는 그대로 쓸 수 없다. 키 목록을 분리해 둔다 — 합치면 조용히 안 나눠진다.
+const STORED_NUTRIENT_KEYS = [
+  'calories', 'total_fat', 'saturated_fat', 'trans_fat', 'cholesterol',
+  'sodium', 'total_carbs', 'total_sugars', 'dietary_fiber', 'protein',
+];
+
+function scaleStoredNutrition(nutrition, divisor) {
+  if (!divisor || divisor <= 1) return nutrition;
+  const out = { ...nutrition };
+  for (const k of STORED_NUTRIENT_KEYS) {
+    const v = out[k];
+    if (typeof v === 'number' && Number.isFinite(v)) {
+      out[k] = Math.round((v / divisor) * 1000) / 1000;
+    }
+  }
+  return out;
+}
 
 /**
  * OCR 분석 결과를 DB에 저장합니다.
@@ -70,7 +92,15 @@ async function saveOcrContribution(params) {
   //   여기는 화면 표시가 아니라 **DB 영구 저장** 관문이다. 기준을 모르는 값을 넣으면
   //   되돌리기 어렵다. per_100g 라벨을 per_serving 으로 검사하면 게이트 자체가 헛돈다
   //   (해표 콩기름 실물: 100g당 지방 100g).
-  const BASIS_OK = { per_serving: 'per_serving', per_100g: 'per_100g', per_100ml: 'per_100ml' };
+  // ★★ 세션42: per_total 을 열었다. **순서가 안전장치였다.**
+  //   먼저 신호등(evaluateNutrition)에 RACC 환산을 배선한 뒤에 여는 것이다.
+  //   그냥 열면 sanityCheck 가 총량을 1회분으로 검사해 032 떡국떡(500 g / 1,530 mg)이
+  //   `per_serving_exceeded` 로 **거짓 거부**되거나, 통과해도 신호등이 거짓 빨강을 낸다.
+  //   → 여기서도 검사 **전에** 1회분으로 환산한다. 환산 못 하면 저장하지 않는다.
+  const BASIS_OK = {
+    per_serving: 'per_serving', per_100g: 'per_100g', per_100ml: 'per_100ml',
+    per_total: 'per_total',
+  };
   const basisRaw = nutrition._basis || 'unknown';
   const basis = BASIS_OK[basisRaw];
   if (!basis) {
@@ -83,7 +113,54 @@ async function saveOcrContribution(params) {
     };
   }
 
-  const sanityWarnings = sanityCheck(nutritionForCheck, servingSize, false, basis);
+  // ── per_total → 1회분 환산 (세션42) ──
+  let checkBasis = basis;
+  let checkServing = servingSize;
+  let checkNutrition = nutritionForCheck;
+  let perTotalResolved = null;
+  let perTotalDivisor = 1;
+  let perTotalServingSize = null;   // per_total 라벨에서 계산한 진짜 1회분(없으면 null 로 남긴다)
+
+  if (basis === 'per_total') {
+    const totalContent = productInfo.total_content ?? nutrition.total_content ?? null;
+    perTotalResolved = resolveServings({
+      text: ocrResult?.corrected_text || '',
+      basis,
+      totalContent,
+      contentUnit: productInfo.content_unit ?? nutrition.content_unit ?? null,
+      servingSize: productInfo.serving_size ?? null,
+      foodType: productInfo.food_type ?? analysis?.product_meta?.food_type ?? null,
+    });
+    const div = totalToServingDivisor(perTotalResolved);
+
+    if (!div.safe) {
+      // 여러 회분인 게 확실한데 몇 인분인지 모른다(017 골든카레형).
+      // 총량을 1회분으로 저장하면 **모든 후속 판정이 거짓 빨강**이 된다. 저장하지 않는다.
+      return {
+        saved: false,
+        rejectReason: '총 내용량 기준으로 표시된 라벨입니다. 여러 회분이 확실하지만 1회 섭취량을 확인하지 못했습니다. '
+          + '"○인분" 또는 "1회 제공량" 표기가 함께 보이도록 다시 촬영해주세요.',
+        basis_detected: basisRaw,
+        needs_lookup: true,
+        lookup_reasons: perTotalResolved.lookupReasons,
+      };
+    }
+
+    perTotalDivisor = div.divisor;
+    if (totalContent) {
+      // ★ 세션42 검증 — divisor === 1 이어도 1회분은 **총 내용량**이지 기본값 100 이 아니다.
+      //   여기서 100 이 남으면 per-100 환산이 어긋나고(거짓 초록), 그 100 이 products.serving_size 로
+      //   **영구 저장**된다. DB 오염은 되돌리기가 가장 어렵다.
+      perTotalServingSize = Math.round((totalContent / div.divisor) * 100) / 100;
+      checkServing = perTotalServingSize;
+    }
+    if (div.divisor > 1) {
+      checkNutrition = scaleNutrition(nutritionForCheck, div.divisor);
+    }
+    checkBasis = 'per_serving';   // 환산 완료
+  }
+
+  const sanityWarnings = sanityCheck(checkNutrition, checkServing, false, checkBasis);
   const criticalWarnings = sanityWarnings.filter(w =>
     w.type === 'per_serving_exceeded' || w.type === 'per_100g_exceeded' || w.type === 'negative_value'
   );
@@ -166,7 +243,13 @@ async function saveOcrContribution(params) {
     const manufacturer = (productInfo.manufacturer || '').trim() || null;
     const brand = (productInfo.brand || '').trim() || null;
     const foodType = (productInfo.food_type || '').trim() || null;
-    const servingSize = productInfo.serving_size ?? nutrition.serving_size ?? null;
+    // ★★ 세션42 — per_total 라벨은 **환산본을 저장한다.**
+    //   총량 값을 그대로 넣으면 nutrition_data 는 1회분 테이블처럼 읽히므로
+    //   이후 모든 조회가 거짓 빨강이 된다. DB 오염은 되돌리기가 가장 어렵다.
+    //   serving_size 도 환산과 짝을 맞춰야 한다(총량 ÷ 인분 수).
+    // ★ 사용자 입력 > per_total 환산값 > 라벨 1회 제공량 > null.
+    //   **기본값 100 을 절대 저장하지 않는다** — 근거 없는 값이 DB 에 박히면 되돌릴 신호가 남지 않는다.
+    const servingSize = productInfo.serving_size ?? perTotalServingSize ?? nutrition.serving_size ?? null;
     const servingUnit = productInfo.serving_unit || nutrition.serving_unit || 'g';
     const totalContent = productInfo.total_content ?? null;
     const contentUnit = productInfo.content_unit || servingUnit || 'g';
@@ -212,6 +295,8 @@ async function saveOcrContribution(params) {
     // 영양정보 저장 (기존에 없는 경우만 — ON CONFLICT DO NOTHING)
     // production 스키마 정렬: per_serving 제거 (TRUE 만 INSERT 라 무의미), ocr_confidence 는 006 마이그레이션으로 추가됨
     const hasNutrition = nutrition.calories || nutrition.sodium || nutrition.total_sugars;
+    // per_total 환산본 (divisor <= 1 이면 원본 그대로 — 새 객체도 만들지 않는다)
+    const nutritionToStore = scaleStoredNutrition(nutrition, perTotalDivisor);
     if (hasNutrition) {
       await client.query(
         `INSERT INTO nutrition_data (product_id, calories, total_fat, saturated_fat, trans_fat,
@@ -221,16 +306,16 @@ async function saveOcrContribution(params) {
          ON CONFLICT (product_id) DO NOTHING`,
         [
           productId,
-          nutrition.calories ?? null,
-          nutrition.total_fat ?? null,
-          nutrition.saturated_fat ?? null,
-          nutrition.trans_fat ?? null,
-          nutrition.cholesterol ?? null,
-          nutrition.sodium ?? null,
-          nutrition.total_carbs ?? null,
-          nutrition.total_sugars ?? null,
-          nutrition.dietary_fiber ?? null,
-          nutrition.protein ?? null,
+          nutritionToStore.calories ?? null,
+          nutritionToStore.total_fat ?? null,
+          nutritionToStore.saturated_fat ?? null,
+          nutritionToStore.trans_fat ?? null,
+          nutritionToStore.cholesterol ?? null,
+          nutritionToStore.sodium ?? null,
+          nutritionToStore.total_carbs ?? null,
+          nutritionToStore.total_sugars ?? null,
+          nutritionToStore.dietary_fiber ?? null,
+          nutritionToStore.protein ?? null,
           Math.round(avgConfidence * 100),
         ]
       );
@@ -310,6 +395,16 @@ async function saveOcrContribution(params) {
           parsed_nutrition: nutrition,
           parsed_ingredients: analysis.ingredients || [],
           allergens: analysis.allergens || [],
+          // ★★★ 세션44 2차 검증(중대F) — `allergens_v2` 가 **저장 경로에 전혀 없었다.**
+          //   flat `allergens` 만 저장되는데, 세션44가 flat 에서 혼입 항목을 정확히 제거했기 때문에
+          //   **혼입 정보가 화면에만 있고 DB 에는 남지 않는다.**
+          //   실측: 캡처 032 는 `대두·우유`, 060 은 `난류·대두·메밀` 이 저장 경로에서 사라진다.
+          //   나중에 같은 바코드를 조회한 대두 알레르기 사용자는 아무 경고를 받지 못한다.
+          //   flat 에서 빼는 것 자체는 옳지만(직접 함유가 아니므로), **경고 총량이 순감**하면 안 된다.
+          //   → 3분리를 그대로 함께 저장한다. 등급 정보가 있으므로 조회 시 구분해 표시할 수 있다.
+          //   ⚠ `products.allergens` 컬럼은 여전히 flat 이다. 상품 레코드에 3분리를 반영하는 것은
+          //     스키마 변경이 필요하므로 별건이다(인수인계 이월).
+          allergens_v2: analysis.allergens_v2 || null,
           user_input: {
             product_name: productInfo?.product_name || null,
             manufacturer: productInfo?.manufacturer || null,
@@ -446,4 +541,6 @@ module.exports = {
   reportError,
   MIN_CONFIDENCE,
   AUTO_PROMOTE_CONFIDENCE,
+  scaleStoredNutrition,          // 세션42: 저장 경로 per_total 환산 (테스트용 노출)
+  STORED_NUTRIENT_KEYS,
 };

@@ -13,6 +13,11 @@
  * - Config DB에서 기준값 로드 (하드코딩 금지)
  */
 
+// ★ 세션42: per_total(총 내용량 기준) 라벨을 1회분으로 환산하기 위해 사용한다.
+//   servingResolver → raccTable → src/data/food_type_racc_v1.json (파일 없으면 degrade, throw 안 함)
+//   순환참조 없음: servingResolver 는 이 파일을 require 하지 않는다.
+const servingResolver = require('./servingResolver');
+
 // ============================================================
 // 1. Config 로더 (DB 또는 인메모리)
 // ============================================================
@@ -361,6 +366,69 @@ function sanityCheck(nutritionData, servingSize, isDried = false, basis = 'per_s
 }
 
 // ============================================================
+// 5b. per_total 환산 보조 (세션42)
+// ============================================================
+
+/** per_total 값을 1회분으로 나눈 새 객체를 만든다. 원본은 건드리지 않는다. */
+const SCALABLE_NUTRIENTS = [
+  'calories', 'sodium', 'sugars', 'sat_fat', 'total_fat', 'cholesterol',
+  'protein', 'fiber', 'trans_fat', 'total_carbs', 'carbs',
+];
+
+function scaleNutrition(nutrition, divisor) {
+  if (!divisor || divisor <= 1) return nutrition;
+  const out = { ...nutrition };
+  for (const k of SCALABLE_NUTRIENTS) {
+    const v = out[k];
+    if (typeof v === 'number' && Number.isFinite(v)) {
+      out[k] = Math.round((v / divisor) * 1000) / 1000;
+    }
+  }
+  return out;
+}
+
+/**
+ * 판정 보류 결과. 여러 회분인 게 확실한데 인분 수를 모르는 경우다.
+ * 색을 칠하지 않는다 — 여기서 총량을 1회분으로 칠하면 거짓 빨강이 된다(017 골든카레 458%).
+ * 열량은 **총량이라고 명시해서** 그대로 보여준다. 정보 자체는 사실이기 때문.
+ */
+const WITHHELD_KEYS = ['sodium', 'sugars', 'sat_fat', 'total_fat', 'cholesterol', 'protein', 'fiber', 'trans_fat'];
+
+// 판정 보류 사유별 사용자 문구. `totalToServingDivisor` 의 safe:false 사유는 2종이다.
+// ★ 세션43: 이전에는 두 사유가 전부 'multi_serving_but_count_unknown' 으로 하드코딩돼 나갔다.
+//   racc_says_single_but_pct_dv_says_multi(RACC 는 1회분이라는데 라벨 %기준치는 여러 회분)와
+//   구분되지 않으면, 클라이언트가 원인별 안내를 할 수 없고 72 배치의 큐 분류도 뭉개진다.
+const WITHHOLD_MESSAGES = {
+  multi_serving_but_count_unknown:
+    '이 제품은 총 내용량 기준으로 표시된 라벨이며, 여러 회분이 확실하지만 1회 섭취량을 확인하지 못했습니다. '
+    + '잘못된 경고를 드리지 않기 위해 판정을 보류합니다.',
+  racc_says_single_but_pct_dv_says_multi:
+    '이 제품은 총 내용량 기준으로 표시된 라벨입니다. 식품유형 기준 1회 섭취참고량으로는 1회분이지만, '
+    + '라벨의 1일 영양성분 기준치가 그와 맞지 않습니다. 어느 쪽이 맞는지 확정하지 못해 판정을 보류합니다.',
+};
+
+function buildWithheldResult(result, product, nutrition, resolved, reason) {
+  result.nutrients = {};
+  for (const k of WITHHELD_KEYS) {
+    result.nutrients[k] = { color: null, pct_dv: null, per_100: null, basis: 'per_total', data: 'withheld' };
+  }
+  result.calories = (nutrition.calories !== null && nutrition.calories !== undefined)
+    ? { amount: nutrition.calories, pct_dv: null, unit: 'kcal', basis: 'per_total' }
+    : null;
+
+  result.is_withheld = true;
+  result.withhold_reason = reason || 'multi_serving_but_count_unknown';
+  result.sanity_warnings = [];
+  result.context_messages.push(
+    WITHHOLD_MESSAGES[result.withhold_reason] || WITHHOLD_MESSAGES.multi_serving_but_count_unknown
+  );
+  if (resolved && resolved.maxPctDV != null) {
+    result.context_messages.push(`라벨의 1일 영양성분 기준치 최대값이 ${resolved.maxPctDV}% 입니다.`);
+  }
+  return result;
+}
+
+// ============================================================
 // 6. 메인 판정 함수
 // ============================================================
 
@@ -407,6 +475,65 @@ function evaluateNutrition(product, nutrition, config = DEFAULT_CONFIG, raccPoli
   const absoluteBasis = isBeverage ? config.per_100ml : config.per_100g;
 
   result.is_dried_exception = isDried;
+
+  // ----------------------------------------------------------
+  // ★★ 세션42: per_total(총 내용량 기준) 라벨 → 1회분 환산
+  // ----------------------------------------------------------
+  // 제이 확정 정책(2026-07-29 §3-1): RACC 로 환산. RACC 미매핑이면 총량 = 1회분.
+  //
+  // ★ 왜 여기서 처리해야 하나 — 이 블록이 없으면 아래 toPerServing 이
+  //   per_100* 가 아닌 basis 를 **전부 그대로 1회분으로 통과**시킨다.
+  //   캡처 032 떡국떡 실물: 총 500 g / 나트륨 1,530 mg.
+  //   그대로 판정 → 77%DV **거짓 빨강**. 실제 1회분(RACC 100 g) 306 mg = 초록.
+  //   거짓 초록(세션39)과 방향만 반대일 뿐 같은 등급의 결함이다.
+  //
+  // ★ 환산 후 basis 를 'per_serving' 으로 바꿔 흘려보낸다.
+  //   아래 판정 로직은 1회분 기준으로 이미 정확하다. 분기를 늘리지 않는 것이 안전하다.
+  //
+  // ★ safe=false = **판정 보류**. 017 골든카레(220 g / 나트륨 458%)가 여기 걸린다.
+  //   인분 수를 모르는데 1로 나누면 458% 초강력 빨강이 나간다. 12인분이므로 실제는 38%.
+  //   "모르면 회색" 이 정답이다 — `null = 판정 없음 ≠ 안전` 도크트린.
+  const rawBasis = nutrition.basis || 'per_serving';
+  if (rawBasis === 'per_total') {
+    const resolved = nutrition._resolved || servingResolver.resolveServings({
+      text: nutrition._label_text || '',
+      basis: rawBasis,
+      totalContent: product.total_content ?? nutrition._totalContent ?? null,
+      contentUnit: product.content_unit ?? null,
+      servingSize: product.serving_size ?? null,
+      foodType: product.food_type ?? null,
+    });
+    const div = servingResolver.totalToServingDivisor(resolved);
+
+    result.per_total = {
+      divisor: div.divisor,
+      reason: div.reason,
+      safe: div.safe,
+      servings: resolved.servings ?? null,
+      tier: resolved.tier ?? null,
+      source: resolved.source ?? null,
+      needs_lookup: !!resolved.needsLookup,
+      lookup_reasons: resolved.lookupReasons || [],
+    };
+
+    if (!div.safe) {
+      return buildWithheldResult(result, product, nutrition, resolved, div.reason);
+    }
+
+    const totalAmt = product.total_content ?? nutrition._totalContent ?? null;
+    if (div.divisor > 1) {
+      nutrition = scaleNutrition(nutrition, div.divisor);
+      product = {
+        ...product,
+        serving_size: totalAmt ? Math.round((totalAmt / div.divisor) * 100) / 100
+                               : (resolved.servingSize ?? product.serving_size),
+      };
+    } else if (!product.serving_size && totalAmt) {
+      // 총량 = 1회분으로 확정된 경우. serving_size 가 비면 아래에서 100 으로 잘못 잡힌다.
+      product = { ...product, serving_size: totalAmt };
+    }
+    nutrition = { ...nutrition, basis: 'per_serving' };
+  }
 
   // ----------------------------------------------------------
   // Sanity Check (건조식품은 per_100g 면제 — 신호등과 일관)
@@ -591,8 +718,13 @@ function formatResult(result) {
   lines.push('│');
 
   // 열량
+  // ★ 세션43: 판정 보류일 때 pct_dv 가 null 이라 `null%` 이 출력되고 있었다.
+  //   그리고 그 값은 **총량**인데 1회분처럼 보였다 — 숫자 자체가 오해를 만든다.
   if (result.calories) {
-    lines.push(`│  열량      ${result.calories.amount}kcal   ${result.calories.pct_dv}%`);
+    const c = result.calories;
+    const dvPart = (c.pct_dv !== null && c.pct_dv !== undefined) ? `   ${c.pct_dv}%` : '';
+    const basisPart = c.basis === 'per_total' ? '  [총 내용량 기준]' : '';
+    lines.push(`│  열량      ${c.amount}kcal${dvPart}${basisPart}`);
   }
 
   // 영양소 신호등
@@ -605,6 +737,12 @@ function formatResult(result) {
     const n = result.nutrients[key];
     if (!n || n.data === 'missing') {
       lines.push(`│  ${name.padEnd(6, '　')}  데이터 없음`);
+      continue;
+    }
+    // ★ 세션42: 판정 보류는 "데이터 없음" 과 다르다. 값은 있는데 **기준을 몰라서** 안 칠한 것이다.
+    //   이 구분이 화면에 드러나야 사용자가 재촬영이라는 행동을 할 수 있다.
+    if (n.data === 'withheld') {
+      lines.push(`│  ${name.padEnd(6, '　')}  ⚪ 판정 보류 (1회 섭취량 미확인)`);
       continue;
     }
     const emoji = colorEmoji[n.color] || '❓';
@@ -657,4 +795,8 @@ module.exports = {
   evaluateNutrition,
   sanityCheck,
   formatResult,
+  scaleNutrition,   // 세션42: per_total → 1회분 환산 (crowdsourceService 공용)
+  // 세션43: 클라이언트가 같은 사유 집합을 다루는지 테스트로 고정하기 위해 노출한다.
+  // 서버에만 사유가 추가되고 클라이언트가 모르면 배너가 기본 문구로 조용히 퇴화한다.
+  WITHHOLD_MESSAGES,
 };

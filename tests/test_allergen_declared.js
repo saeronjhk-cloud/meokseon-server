@@ -48,6 +48,37 @@ function t(name, fn) {
   }
 }
 
+/**
+ * ★★ 세션45 — 성능 단정은 콜드 런 1회로 재지 않는다.
+ *   세션45 실측: test_parser_parity 의 같은 형태 단정이 약 40% 확률로 거짓 실패했다.
+ *   원인은 ReDoS 재발이 아니라 **JIT 컴파일 스파이크**(중앙값 7.8 ms / 최댓값 42.6 ms).
+ *   워밍업 후 3회 중앙값을 쓴다 — 이것이 1차 수정이다.
+ *   ★ 역행추적은 입력에 결정적이라 3회 전부 느리다 — 18,000 ms 는 중앙값 뒤에 숨지 못한다.
+ *
+ * ⚠ 측정을 고쳐도 여전히 실패했다. 상한 수치 자체가 원인이었다 — 아래 SLOW_MS 참조.
+ */
+/**
+ * ★★★ 세션45 — 절대 ms 상한 30 → SLOW_MS(120).
+ *   세션44 의 30 ms 는 제이 PC 실측에 맞춘 숫자다. Claude 샌드박스는 1.5~2배 느려서
+ *   정상 코드가 무작위로 실패한다(실측: `메타 2400자` 37.5 ms).
+ *   막으려는 실패 모드는 초 단위(411 B 18,055 ms 등)이므로 120 은 여전히 49배 이상 아래다.
+ *   ★ 정밀 탐지는 test_parser_parity.js §6 의 「2배 길이 → 배수」 검사가 담당한다(기계 독립).
+ *   ❌ 실패할 때마다 이 숫자를 올리지 말 것 — 근거는 "정상 상한을 재실측했다" 뿐이다.
+ */
+const SLOW_MS = 120;
+
+function medianMs(fn, runs = 3) {
+  fn();
+  const ts = [];
+  for (let i = 0; i < runs; i += 1) {
+    const t0 = process.hrtime.bigint();
+    fn();
+    ts.push(Number(process.hrtime.bigint() - t0) / 1e6);
+  }
+  ts.sort((a, b) => a - b);
+  return ts[Math.floor(ts.length / 2)];
+}
+
 function section(title) {
   console.log(`\n── ${title} ${'─'.repeat(Math.max(0, 60 - title.length))}`);
 }
@@ -284,10 +315,21 @@ t('★ ocrRoutes 의 두 엔드포인트 응답에 allergens_v2 가 실린다 (�
   const hits = src.match(/allergens_v2/g) || [];
   assert.ok(hits.length >= 5,
     `ocrRoutes.js 의 allergens_v2 언급이 ${hits.length}건 — /analyze·/multi-photo 응답 양쪽 배선이 필요하다`);
-  // 응답 객체 안(analysis: { ... }) 두 곳에 들어 있는지
-  const inAnalysis = src.match(/allergens:\s*(?:analysis|merged)\.allergens,\s*(?:\/\/[^\n]*\n\s*)*(?:\/\/[^\n]*\n\s*)*allergens_v2/g) || [];
-  assert.ok(inAnalysis.length >= 2,
-    `응답 analysis 블록에 allergens_v2 가 ${inAnalysis.length}곳 — 2곳(/analyze·/multi-photo)이어야 한다`);
+  // ★ 세션46 — 세션45가 flat 을 `flattenAllergensV2(...)` 로 바꾸면서 옛 정규식
+  //   (`allergens: analysis.allergens,` 뒤에 allergens_v2)이 영영 매칭되지 않게 됐다.
+  //   숫자만 맞추면 또 「형태만 보는 검사」가 된다 → **응답에 실리는 v2 의 인자 짝**을 본다.
+  //   `allergens_v2: reconcileAllergens(X.allergens, X.allergens_v2)` 에서 두 X 가 같아야 한다.
+  //   어긋나면 A 의 이름에 B 의 등급이 붙는다 — 예외 없이 조용히 틀리는 종류다.
+  const v2Wiring = [...src.matchAll(/allergens_v2:\s*reconcileAllergens\(\s*(\w+)\.allergens,\s*(\w+)\.allergens_v2\s*\)/g)];
+  assert.strictEqual(v2Wiring.length, 2,
+    `응답에 v2 를 싣는 지점이 ${v2Wiring.length}곳 — 2곳(/analyze·/multi-photo)이어야 한다`);
+  for (const m of v2Wiring) {
+    assert.strictEqual(m[1], m[2],
+      `reconcileAllergens 인자 짝이 어긋났다: ${m[1]}.allergens vs ${m[2]}.allergens_v2`);
+  }
+  // 두 지점이 서로 다른 분석 객체여야 한다(/analyze=analysis · /multi-photo=merged).
+  assert.deepStrictEqual([...new Set(v2Wiring.map((m) => m[1]))].sort(), ['analysis', 'merged'],
+    '두 엔드포인트가 같은 객체를 쓴다 — 한쪽 배선이 복사된 것이다');
 });
 
 t('사용자가 알레르기 목록을 덮어쓰면 3분리를 null 로 내린다 (모순 표시 방지)', () => {
@@ -390,15 +432,13 @@ t('★ XSS — 알레르기 이름에 태그가 들어와도 이스케이프된�
 // ════════════════════════════════════════════════════════════════════════════
 section('§7. ReDoS 상한 유지 — 세션43 치명1 이 되살아나지 않는다');
 
-t('공백 9,900자 + 함유 표기가 30 ms 안에 끝난다', () => {
+t('공백 9,900자 + 함유 표기가 SLOW_MS(120) 안에 끝난다', () => {
   const evil = `${' '.repeat(9900)}\n밀, 대두 함유`;
-  const t0 = Date.now();
-  detectAllergens(evil);
-  const ms = Date.now() - t0;
-  assert.ok(ms < 30, `${ms}ms — 수량자 상한이 풀렸다`);
+  const ms = medianMs(() => detectAllergens(evil));
+  assert.ok(ms < SLOW_MS, `${ms.toFixed(1)}ms — 수량자 상한이 풀렸다`);
 });
 
-t('detectAllergensV2 도 적대적 입력 5종에서 30 ms 안에 끝난다', () => {
+t('detectAllergensV2 도 적대적 입력 5종에서 SLOW_MS(120) 안에 끝난다', () => {
   const N = 9900;
   const battery = [
     ' '.repeat(N),
@@ -408,10 +448,8 @@ t('detectAllergensV2 도 적대적 입력 5종에서 30 ms 안에 끝난다', ()
     `${'혼입'.repeat(N / 2)}밀`,
   ];
   for (const s of battery) {
-    const t0 = Date.now();
-    detectAllergensV2(s);
-    const ms = Date.now() - t0;
-    assert.ok(ms < 30, `${ms}ms — 입력 ${JSON.stringify(s.slice(0, 6))}… 에서 느리다`);
+    const ms = medianMs(() => detectAllergensV2(s));
+    assert.ok(ms < SLOW_MS, `${ms.toFixed(1)}ms — 입력 ${JSON.stringify(s.slice(0, 6))}… 에서 느리다`);
   }
 });
 
@@ -554,9 +592,22 @@ t('★ 치명3 — ocrRoutes 두 엔드포인트가 reconcileAllergens 를 거�
   const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'routes', 'ocrRoutes.js'), 'utf8');
   assert.ok(/require\(['"]\.\.\/services\/ocrParser['"]\)/.test(src)
     && src.includes('reconcileAllergens'), 'ocrRoutes 가 reconcileAllergens 를 import 하지 않는다');
-  const calls = src.match(/reconcileAllergens\(/g) || [];
-  assert.strictEqual(calls.length, 2,
-    `응답 배선이 ${calls.length}곳 — /analyze·/multi-photo 두 곳이어야 한다`);
+  // ★ 세션46 — 세션45 중대4 수정으로 호출이 2곳에서 5곳으로 늘었다.
+  //   /analyze 응답 flat + 응답 v2 · /multi-photo 저장 flat + 응답 flat + 응답 v2.
+  //   ★★ 개수만 5로 바꾸면 이 검사는 아무것도 지키지 못한다.
+  //      원래 의도는 「raw flat 이 reconcile 을 건너뛰고 나가지 않는다」였다. 그 의도를 검사한다.
+  const calls = [...src.matchAll(/reconcileAllergens\(\s*(\w+)\.allergens,\s*(\w+)\.allergens_v2\s*\)/g)];
+  assert.strictEqual(calls.length, 5,
+    `reconcileAllergens 호출이 ${calls.length}곳 — 5곳(/analyze 2 · /multi-photo 3)이어야 한다`);
+  for (const m of calls) {
+    assert.strictEqual(m[1], m[2],
+      `reconcileAllergens 인자 짝이 어긋났다: ${m[1]}.allergens vs ${m[2]}.allergens_v2`);
+  }
+  // ★ 어떤 지점도 reconcile 을 거치지 않은 raw flat 을 응답·저장에 그대로 쓰지 않는다.
+  assert.ok(!/allergens:\s*analysis\.allergens\s*,/.test(src),
+    '/analyze 가 raw flat 을 그대로 낸다 — 혼입이 「직접 함유」로 나간다');
+  assert.ok(!/allergens:\s*merged\.allergens\s*,/.test(src),
+    '/multi-photo 가 raw flat 을 그대로 낸다 — 혼입이 「직접 함유」로 나간다');
 });
 
 t('경미9 — 조사 없는 「밀 포함」 선언도 잡힌다 (030 오탐 재발 없이)', () => {
@@ -590,25 +641,22 @@ t('경미11 — evidence 에 상한이 있다 (응답 비대 방지)', () => {
 // ════════════════════════════════════════════════════════════════════════════
 section('§10. ★★★ 2차 서브에이전트 검증 결함 재발 방지 (세션44)');
 
-t('★ 치명A — `알레르기` + 공백 ReDoS. 411바이트가 30 ms 안에 끝난다', () => {
+t('★ 치명A — `알레르기` + 공백 ReDoS. 411바이트가 SLOW_MS(120) 안에 끝난다', () => {
   // 1차 수정이 "패턴 2곳을 고쳤다"고 적었지만 실제로는 패턴1·4 만 고쳤고
   // `_stripAllergenSuffix` 패턴2(`알레르기|알러지` 접두)가 그대로 남아 있었다.
   // 실측(수정 전): 111 B 82 ms / 211 B 1,146 ms / 311 B 5,604 ms / **411 B 18,055 ms**
   // ★ 411바이트다. MAX_OCR_TEXT_LENGTH(10,000) 절단이 방어가 되지 않는다.
   for (const n of [100, 200, 300, 400, 2000, 9880]) {
     const payload = `원재료명: 알레르기${' '.repeat(n)}x`;
-    const t0 = Date.now();
-    analyzeText(payload.substring(0, 10000));
-    const ms = Date.now() - t0;
-    assert.ok(ms < 30, `${payload.length}B → ${ms}ms`);
+    const ms = medianMs(() => analyzeText(payload.substring(0, 10000)));
+    assert.ok(ms < SLOW_MS, `${payload.length}B → ${ms.toFixed(1)}ms`);
   }
 });
 
 t('치명A — `알러지` 변형도 같이 막혔다', () => {
   for (const kw of ['알레르기', '알러지', '알레르기 유발물질']) {
-    const t0 = Date.now();
-    analyzeText(`원재료명: ${kw}${' '.repeat(600)}x`);
-    assert.ok(Date.now() - t0 < 30, `${kw} 경로가 느리다`);
+    const ms = medianMs(() => analyzeText(`원재료명: ${kw}${' '.repeat(600)}x`));
+    assert.ok(ms < SLOW_MS, `${kw} 경로가 느리다 (${ms.toFixed(1)}ms)`);
   }
 });
 
@@ -704,8 +752,17 @@ t('★ 중대F — 기여 레코드에 allergens_v2 가 저장된다 (혼입 정
   // flat 에서 혼입 항목을 뺀 것은 옳지만, 그 정보가 DB 에 안 남으면 **경고 총량이 순감**한다.
   // 실측: 캡처 032 는 대두·우유, 060 은 난류·대두·메밀 이 저장 경로에서 사라졌다.
   const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'services', 'crowdsourceService.js'), 'utf8');
-  assert.ok(/allergens_v2:\s*analysis\.allergens_v2/.test(src),
-    'crowdsourceService 가 allergens_v2 를 저장하지 않는다');
+  // ★ 세션46 중대4 — 이제 **raw 가 아니라 reconcile 을 거친 값**을 저장한다.
+  //   세션45 판(`allergens_v2: analysis.allergens_v2`)은 응답과 등급이 갈렸다:
+  //   flat 에만 있는 이름을 mergeService 가 `contains` 로 확정해 006·046·076 이
+  //   응답 inferred / DB contains 로 나뉘었다(라벨이 선언한 적 없는 「직접 함유」).
+  //   → 저장돼야 한다는 원래 의도는 그대로 지키되, 값의 출처를 정확히 고정한다.
+  assert.ok(/allergens_v2:\s*reconcileAllergens\(\s*analysis\.allergens,\s*analysis\.allergens_v2\s*\)/.test(src),
+    'crowdsourceService 가 reconcile 된 allergens_v2 를 저장하지 않는다');
+  assert.ok(/allergens:\s*flattenAllergensV2\(/.test(src),
+    '저장 flat 이 응답과 같은 함수를 쓰지 않는다 — 규칙이 두 곳에 생긴다');
+  assert.ok(!/allergens_v2:\s*analysis\.allergens_v2\s*\|\|/.test(src),
+    'raw v2 를 그대로 저장하는 경로가 남아 있다');
 });
 
 t('경미I — 「포함되어/포함된/포함하고」 선언이 배제되지 않는다', () => {

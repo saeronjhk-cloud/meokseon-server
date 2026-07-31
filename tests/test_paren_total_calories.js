@@ -40,6 +40,39 @@ function t(name, fn) {
   }
 }
 
+/**
+ * ★★★ 세션45 — 성능 단정의 측정법·상한을 test_parser_parity.js 와 통일했다.
+ *
+ * 두 가지가 잘못돼 있었다.
+ *   ① 콜드 런 1회 측정 → JIT 컴파일 비용이 그대로 섞인다(중앙값 7.8 ms / 최댓값 42.6 ms).
+ *   ② 상한 30 ms 가 **제이 PC 전용 숫자**였다. Claude 샌드박스는 1.5~2배 느려서
+ *      정상 코드가 무작위로 실패한다(실측: 한글 70 / 내용량반복 98 / 미완성괄호 81 ms).
+ *   그 결과 "수량자 중복이 남아 있다" 는 **거짓 진단**이 나왔다.
+ *   무작위로 빨간불이 뜨는 감시 장치는 사람이 무시하게 된다 — 빡빡한 상한은 안전이 아니다.
+ *
+ * 왜 SLOW_MS(120)·SLOW_MS*2(240) 로 충분한가 —
+ *   막으려는 실패 모드는 초 단위다: detectAllergens 5,000자 25초 초과 ·
+ *   `_stripAllergenSuffix` 411 B 18,055 ms · 정본 ING_STOP 2,400자 5,886 ms.
+ *   120 ms 는 그중 가장 작은 것보다도 49배 아래다. 감시 능력은 유지된다.
+ *
+ * ★ 정밀 탐지는 test_parser_parity.js §6 의 「2배 길이 → 배수」 검사가 담당한다.
+ *   배수는 기계에 의존하지 않으므로 그쪽이 ReDoS 의 정확한 지문이다.
+ * ❌ 실패할 때마다 이 숫자를 올리지 말 것 — 올릴 근거는 "정상 상한을 재실측했다" 뿐이다.
+ */
+const SLOW_MS = 120;
+
+function medianMs(fn, runs = 3) {
+  fn();                                  // 워밍업 — JIT 컴파일 비용을 측정에서 뺀다
+  const ts = [];
+  for (let i = 0; i < runs; i += 1) {
+    const t0 = process.hrtime.bigint();
+    fn();
+    ts.push(Number(process.hrtime.bigint() - t0) / 1e6);
+  }
+  ts.sort((a, b) => a - b);
+  return ts[Math.floor(ts.length / 2)];
+}
+
 function section(title) {
   console.log(`\n── ${title} ${'─'.repeat(Math.max(0, 60 - title.length))}`);
 }
@@ -248,36 +281,28 @@ t('dual-column 에서 이미 총량 열량을 얻었으면 덮어쓰지 않는�
 // ════════════════════════════════════════════════════════════════════════════
 section('§7. ★ ReDoS — 세션42 치명2 재발 방지');
 
-t('공백 3 KB 입력이 100 ms 안에 끝난다', () => {
+t('공백 3 KB 입력이 SLOW_MS(120) 안에 끝난다', () => {
   const evil = `내 용 량: 384 g ${' '.repeat(3000)}(1,740 kcal)`;
-  const t0 = Date.now();
-  ocrParser.parseNutrition(evil);
-  const ms = Date.now() - t0;
-  assert.ok(ms < 100, `${ms}ms — 간격 수량자에 상한이 없다`);
+  const ms = medianMs(() => ocrParser.parseNutrition(evil));
+  assert.ok(ms < SLOW_MS, `${ms.toFixed(1)}ms — 간격 수량자에 상한이 없다`);
 });
 
-t('괄호 여닫이 반복 8 KB 입력이 100 ms 안에 끝난다', () => {
+t('괄호 여닫이 반복 8 KB 입력이 SLOW_MS(120) 안에 끝난다', () => {
   const evil = `총 내용량 100 g ${'(1 g x 2) '.repeat(800)}(500 kcal)`;
-  const t0 = Date.now();
-  ocrParser.parseNutrition(evil);
-  const ms = Date.now() - t0;
-  assert.ok(ms < 100, `${ms}ms`);
+  const ms = medianMs(() => ocrParser.parseNutrition(evil));
+  assert.ok(ms < SLOW_MS, `${ms.toFixed(1)}ms`);
 });
 
-t('숫자·콤마 긴 런이 100 ms 안에 끝난다', () => {
+t('숫자·콤마 긴 런이 SLOW_MS(120) 안에 끝난다', () => {
   const evil = `총 내용량 ${'1,'.repeat(4000)} g (500 kcal)`;
-  const t0 = Date.now();
-  ocrParser.parseNutrition(evil);
-  const ms = Date.now() - t0;
-  assert.ok(ms < 100, `${ms}ms`);
+  const ms = medianMs(() => ocrParser.parseNutrition(evil));
+  assert.ok(ms < SLOW_MS, `${ms.toFixed(1)}ms`);
 });
 
-t('정본 파서도 같은 입력에서 100 ms 안에 끝난다', () => {
+t('정본 파서도 같은 입력에서 SLOW_MS(120) 안에 끝난다', () => {
   const evil = `내 용 량: 384 g ${' '.repeat(3000)}(1,740 kcal)`;
-  const t0 = Date.now();
-  capParser.parseLabel(evil);
-  const ms = Date.now() - t0;
-  assert.ok(ms < 100, `${ms}ms`);
+  const ms = medianMs(() => capParser.parseLabel(evil));
+  assert.ok(ms < SLOW_MS, `${ms.toFixed(1)}ms`);
 });
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -346,14 +371,12 @@ t('중대3-e 1회 제공량이 괄호 **앞**이면 그대로 보존한다', () 
   assert.strictEqual(n._calorie_total_from_content, undefined);
 });
 
-t('★ 치명1 detectAllergens ReDoS — 공백 9,900자가 30 ms 안에 끝난다', () => {
+t('★ 치명1 detectAllergens ReDoS — 공백 9,900자가 SLOW_MS(120) 안에 끝난다', () => {
   // 수정 전 실측: 2,000자 1.8초 / 4,000자 14.2초 / 5,000자 25초 초과.
   // 무인증 `POST /api/ocr/analyze` 로 요청 1건이 이벤트 루프를 분 단위로 정지시킬 수 있었다.
   const evil = `${' '.repeat(9900)}\n총 내용량 30 g\n우유 함유`;
-  const t0 = Date.now();
-  ocrParser.detectAllergens(evil);
-  const ms = Date.now() - t0;
-  assert.ok(ms < 30, `${ms}ms — 수량자 중복이 남아 있다`);
+  const ms = medianMs(() => ocrParser.detectAllergens(evil));
+  assert.ok(ms < SLOW_MS, `${ms.toFixed(1)}ms — 수량자 중복이 남아 있다`);
 });
 
 t('치명1 수정 후에도 알레르기 표기 3형식이 정상 동작한다', () => {
@@ -368,7 +391,7 @@ t('치명1 수정 후에도 알레르기 표기 3형식이 정상 동작한다',
   assert.deepStrictEqual(ocrParser.detectAllergens('본 제품은 우유, 땅콩을 함유하고 있습니다'), ['땅콩', '우유']);
 });
 
-t('★ 중대2 analyzeText 적대적 입력 16종 전부 30 ms 안에 끝난다', () => {
+t('★ 중대2 analyzeText 적대적 입력 16종 전부 SLOW_MS*2(240) 안에 끝난다', () => {
   const N = 9900;
   const battery = {
     공백: ' '.repeat(N),
@@ -393,14 +416,18 @@ t('★ 중대2 analyzeText 적대적 입력 16종 전부 30 ms 안에 끝난다'
   //   매치 수에 비례하는 선형 비용이며 ReDoS(입력 길이에 초선형)가 아니다.
   //   세션44가 `[:\s]{0,8}` → `{0,20}` 으로 넓히면서(구분자 9자 이상 값 소실 수정)
   //   매치당 비용이 조금 늘어 34 ms 가 됐다.
-  //   ⚠ 이 상한을 100 ms 이상으로 올리지 말 것 — 그러면 진짜 ReDoS 를 놓친다.
-  //     상한을 올릴 때는 "왜 선형인지" 를 여기에 적을 수 있어야 한다.
+  // ★★ 세션45: 상한을 60 → SLOW_MS*2(240) 로 올리고 측정을 중앙값으로 바꿨다.
+  //   세션44 의 60 ms 는 제이 PC 실측이다. 샌드박스 콜드 런 실측은
+  //   한글 70 / 공백+라벨 62 / 내용량반복 98 / 당반복 69 / 미완성괄호 81 ms 로 전부 넘겼다.
+  //   전부 **매치 수에 비례하는 선형 비용**이며(`총 내용량 ` × 1,650 개 등) 초선형이 아니다.
+  //   ⚠ 세션44 주석은 "100 ms 이상 올리지 말 것" 이라고 적었지만, 그 기준으로는
+  //     다른 기계에서 정상 코드가 실패한다. 절대 ms 를 기계 독립 기준처럼 쓴 것이 오류였다.
+  //     → 절대 상한은 **거친 백스톱**으로 두고, 정밀 탐지는
+  //       test_parser_parity.js §6 의 배수 검사(2배 길이 → 8배 미만)가 맡는다.
   const slow = [];
   for (const [k, v] of Object.entries(battery)) {
-    const t0 = Date.now();
-    ocrParser.analyzeText(v);
-    const ms = Date.now() - t0;
-    if (ms >= 60) slow.push(`${k}=${ms}ms`);
+    const ms = medianMs(() => ocrParser.analyzeText(v));
+    if (ms >= SLOW_MS * 2) slow.push(`${k}=${ms.toFixed(1)}ms`);
   }
   assert.strictEqual(slow.length, 0, `느린 입력: ${slow.join(', ')}`);
 });

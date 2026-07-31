@@ -21,11 +21,16 @@
     "test:per-total": "cross-env NODE_ENV=test node tests/test_per_total_wiring.js",
     "test:withheld-client": "cross-env NODE_ENV=test node tests/test_withheld_client_render.js",
     "test:paren-total": "cross-env NODE_ENV=test node tests/test_paren_total_calories.js",
-    "test:allergen": "cross-env NODE_ENV=test node tests/test_allergen_v2.js && cross-env NODE_ENV=test node tests/test_allergen_declared.js",
+    "test:allergen": "cross-env NODE_ENV=test node tests/test_allergen_v2.js && cross-env NODE_ENV=test node tests/test_allergen_declared.js && cross-env NODE_ENV=test node tests/test_allergen_evidence_level.js",
+    "test:allergen-level": "cross-env NODE_ENV=test node tests/test_allergen_evidence_level.js",
+    "test:merge": "cross-env NODE_ENV=test node tests/mergeService.test.js",
     "test:parity": "cross-env NODE_ENV=test node tests/test_parser_parity.js",
     "test:serving": "npm run test:racc-table && npm run test:serving-resolver && npm run test:official-source && npm run test:per-total && npm run test:withheld-client",
-    "migrate": "psql $DATABASE_URL -f scripts/migrations/001_init_schema.sql && psql $DATABASE_URL -f scripts/migrations/002_seed_config.sql && psql $DATABASE_URL -f scripts/migrations/004_add_disputed.sql && psql $DATABASE_URL -f scripts/migrations/005_crowdsource_merge.sql && psql $DATABASE_URL -f scripts/migrations/006_align_schema_with_production.sql && psql $DATABASE_URL -f scripts/migrations/007_pulse_hooks.sql && psql $DATABASE_URL -f scripts/migrations/008_mfras_v2.sql",
-    "migrate:all": "npm run migrate && psql $DATABASE_URL -f scripts/migrations/003_seed_products.sql"
+    "probe:basis-unknown": "cross-env NODE_ENV=test node scripts/74-probe-basis-unknown.js",
+    "migrate": "psql $DATABASE_URL -f scripts/migrations/001_init_schema.sql && psql $DATABASE_URL -f scripts/migrations/002_seed_config.sql && psql $DATABASE_URL -f scripts/migrations/004_add_disputed.sql && psql $DATABASE_URL -f scripts/migrations/005_crowdsource_merge.sql && psql $DATABASE_URL -f scripts/migrations/006_align_schema_with_production.sql && psql $DATABASE_URL -f scripts/migrations/007_pulse_hooks.sql && psql $DATABASE_URL -f scripts/migrations/008_mfras_v2.sql && psql $DATABASE_URL -f scripts/migrations/020_allergen_evidence_level.sql",
+    "_note:migrate": "★ 세션46 — 009~019 는 이 체인에 없다. 빈 DB 에 순서대로 돌리면 011 이 nutrition_data.serving_size(어느 마이그레이션도 만들지 않고 운영에만 있는 컬럼) 때문에 실패하고 012·013·015·018·019 가 연쇄 실패한다. 021 로 운영 스키마 괴리를 메우기 전에는 체인에 넣지 말 것. 상세: IP/인수인계_2026-07-31_세션46.md §5",
+    "migrate:all": "npm run migrate && psql $DATABASE_URL -f scripts/migrations/003_seed_products.sql",
+    "migrate:020": "psql $DATABASE_URL -f scripts/migrations/020_allergen_evidence_level.sql"
   },
   "keywords": [
     "food-safety",

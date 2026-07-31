@@ -8,7 +8,7 @@ const express = require('express');
 const multer = require('multer');
 const { callVisionAPI, correctOcrText } = require('../services/ocrService');
 const {
-  analyzeText, detectNutritionBasis, reconcileAllergens, mergeAllergensV2,
+  analyzeText, detectNutritionBasis, reconcileAllergens, mergeAllergensV2, flattenAllergensV2,
 } = require('../services/ocrParser');
 const { evaluateNutrition, sanityCheck } = require('../services/nutritionTrafficLight');
 const { ValidationError } = require('../middleware/errorHandler');
@@ -75,8 +75,13 @@ function judgeNutrition({ productData, nutrition, labelText, explicitServingSize
     const re = detectNutritionBasis(labelText);
     if (re && re.basis && re.basis !== 'unknown') basisRaw = re.basis;
   }
-  const basis = BASIS_OK[basisRaw] || 'per_serving';
-  // unknown 은 여전히 per_serving 으로 두되 **불확실 플래그**를 남긴다(세션39 정책 유지).
+  // ★★ 세션45 (제이 결정 안①) — 여기가 정책의 실제 관문이다.
+  //   이전 코드는 `|| 'per_serving'` 으로 **unknown 을 눙쳐서** 신호등에 넘겼다.
+  //   그래서 신호등에 `unknown → 판정 보류` 를 넣어도 이 줄이 있는 한 영원히 발동하지 않는다.
+  //   세션44 중대8(normalizeLabelSpacing 반쪽 적용)과 같은 유형의 함정이다 —
+  //   **정책을 엔진에만 넣고 관문을 안 고치면 초록 테스트와 무동작이 공존한다.**
+  //   per_100_unknown 은 BASIS_OK 에 없지만 파서가 내지 않는 값이며(별도 경로), 여기 오면 unknown 취급이 맞다.
+  const basis = BASIS_OK[basisRaw] || 'unknown';
   const basisUncertain = !BASIS_OK[basisRaw];
   nutritionData.basis = basis;
 
@@ -98,7 +103,10 @@ function judgeNutrition({ productData, nutrition, labelText, explicitServingSize
   const trafficLight = evaluateNutrition(productData, nutritionData);
 
   // per_total 은 신호등이 환산 후 자체 sanityCheck 를 돌린다(총량 그대로 검사하면 전부 오탐).
-  const sanityWarnings = (basis === 'per_total')
+  // ★ 세션45: basis 가 unknown 이면 sanityCheck 의 전제(1회분 상한)가 성립하지 않는다.
+  //   총량 기준 값을 1회분 상한으로 재면 경고가 무더기로 뜨고, 그 경고는 근거가 없다.
+  //   판정을 보류한 제품에 대해 "값이 이상하다" 고 단정하는 것도 같은 오류다. 보류는 보류로 끝낸다.
+  const sanityWarnings = (basis === 'per_total' || basis === 'unknown' || trafficLight?.is_withheld)
     ? (trafficLight?.sanity_warnings || [])
     : sanityCheck(nutritionData, productData.serving_size, false, basis);
 
@@ -273,7 +281,13 @@ router.post('/analyze', upload.single('image'), async (req, res) => {
         additives: analysis.additives,
         additive_count: analysis.additive_count,
         nutrition: analysis.nutrition,
-        allergens: analysis.allergens,
+        // ★★ 세션45 중대4 — flat 을 **3분리에서 되짚어** 만든다.
+        //   analysis.allergens 를 그대로 내보내면 혼입 항목이 flat 에 섞여(v1 폴백 경로)
+        //   구버전 앱이 「직접 함유」로 붉게 표시한다. 바코드 조회 경로와 의미도 어긋난다.
+        allergens: flattenAllergensV2(
+          reconcileAllergens(analysis.allergens, analysis.allergens_v2),
+          analysis.allergens,
+        ),
         // ★ 세션44 — `allergens_v2`(직접함유/혼입가능/추정 3분리)는 알레르기 #114 부터
         //   analyzeText 안에서 **계산되고 있었지만 응답에 실리지 않았다**.
         //   세션43 의 `context_messages` 와 똑같은 형태의 결함이다(서버는 만들고 아무도 안 쓴다).
@@ -431,7 +445,12 @@ router.post(
         ...merged.product_meta,
         ...productInfo,
         nutrition: merged.nutrition,
-        allergens: merged.allergens,
+        // ★ 세션45 중대4 — 저장 경로(`user_input.allergens`)도 같은 규칙을 쓴다.
+        //   여기만 raw flat 이면 혼입 항목이 「사용자가 직접 함유라고 했다」는 기록으로 DB 에 남는다.
+        allergens: flattenAllergensV2(
+          reconcileAllergens(merged.allergens, merged.allergens_v2),
+          merged.allergens,
+        ),
       };
       saveResult = await saveOcrContribution({
         barcode: productInfo?.barcode || req.body.barcode || null,
@@ -479,7 +498,13 @@ router.post(
           additives: merged.additives,
           additive_count: merged.additive_count,
           nutrition: merged.nutrition,
-          allergens: merged.allergens,
+          // ★★ 세션45 중대4 — /analyze 와 **문자 단위로 같은 방식**으로 flat 을 만든다.
+          //   여기만 `merged.allergens` 를 그대로 두면 두 엔드포인트가 또 갈라진다
+          //   (세션39·세션44 치명B 가 정확히 그 사고였다).
+          allergens: flattenAllergensV2(
+            reconcileAllergens(merged.allergens, merged.allergens_v2),
+            merged.allergens,
+          ),
           // ★ 세션44: /analyze 와 동일 계약 + flat 병합(치명3)
           allergens_v2: reconcileAllergens(merged.allergens, merged.allergens_v2),
         },
@@ -535,3 +560,9 @@ router.post('/text-only', upload.single('image'), async (req, res) => {
 });
 
 module.exports = router;
+
+// ★ 세션45: judgeNutrition 을 테스트·프로브에서 직접 부를 수 있게 노출한다.
+//   노출하지 않으면 회귀 테스트가 이 함수를 **복사**해서 검사하게 되고,
+//   그 순간 "두 파서 중 한쪽만 고치기" 사고가 basis 관문에서도 반복된다(세션42~44에서 4회).
+//   라우터는 함수 객체이므로 속성 부착은 기존 `app.use(router)` 사용에 영향이 없다.
+module.exports.judgeNutrition = judgeNutrition;

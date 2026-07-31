@@ -257,7 +257,19 @@
       racc_says_single_but_pct_dv_says_multi:
         '식품유형 기준 1회 섭취참고량으로는 1회분인데, 라벨에 인쇄된 1일 영양성분 기준치가 그와 맞지 않습니다. '
         + '어느 쪽이 맞는지 확정하지 못해 판정하지 않았습니다.',
+      // ★ 세션45 안①: 서버 WITHHOLD_MESSAGES.basis_unknown 과 짝이다.
+      //   test_withheld_client_render §5 가 「서버 사유 ⊆ 클라이언트 문구」를 검사하므로 반드시 함께 있어야 한다.
+      basis_unknown:
+        '영양성분이 무엇을 기준으로 적힌 것인지(총 내용량 당 / 100 g 당 / 1회 제공량 당) 라벨에서 읽지 못했습니다. '
+        + '기준을 모르고 계산하면 실제와 크게 달라질 수 있어 판정하지 않았습니다.',
       _default: '1회 섭취량 기준을 확정하지 못해 판정하지 않았습니다. 색이 없는 것은 "안전" 이 아니라 "판정 안 함" 입니다.',
+    };
+
+    // 사유별 재촬영 안내. ★ 행동 지시가 사유와 어긋나면 사용자가 헛수고를 한다.
+    //   basis_unknown 은 「○인분」이 아니라 **영양정보 표 머리글**을 찍어야 해결된다.
+    const WITHHOLD_ACTION_TEXT = {
+      basis_unknown: '📷 영양정보 표의 머리글(「총 내용량 당」·「100 g 당」·「1회 제공량 당」)이 함께 보이도록 다시 촬영해 주세요.',
+      _default: '📷 라벨에 「○인분」 또는 「1회 제공량」 표기가 보이도록 다시 촬영해 주세요.',
     };
 
     // 결과 렌더링
@@ -338,7 +350,9 @@
             '<div class="withhold-banner">' +
             '<span class="wb-title">⚪ 판정 보류 — 신호등을 표시하지 않았습니다</span>' +
             esc(reasonText) +
-            '<span class="wb-action">📷 라벨에 「○인분」 또는 「1회 제공량」 표기가 보이도록 다시 촬영해 주세요.</span>' +
+            '<span class="wb-action">' +
+            esc(WITHHOLD_ACTION_TEXT[tl.withhold_reason] || WITHHOLD_ACTION_TEXT._default) +
+            '</span>' +
             `<span class="wb-meta">사유코드: ${esc(tl.withhold_reason || '-')}` +
             (pt.reason ? ` / 환산: ${esc(pt.reason)}` : '') +
             (pt.lookup_reasons && pt.lookup_reasons.length ? ` / 조회필요: ${esc(pt.lookup_reasons.join(', '))}` : '') +

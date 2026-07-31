@@ -162,6 +162,108 @@ async function getAdditives(productId) {
 }
 
 /**
+ * 제품 ID로 알레르기 목록 조회 (세션45 신규 · 마이그레이션 020)
+ *
+ * ★★ 왜 이 함수가 이제야 생기나 —
+ *   `GET /api/products/:barcode` 응답에는 **알레르기가 아예 없었다.**
+ *   세션44 인수인계 §6-2 는 「바코드 조회 사용자가 혼입/직접 함유 **구분**을 받지 못한다」고 적었지만,
+ *   실제로는 구분이 아니라 **알레르기 정보 자체가 전달되지 않고 있었다.**
+ *   대두 알레르기 사용자가 바코드를 찍으면 아무 경고도 받지 못한다. 등급 분리보다 앞서는 결함이다.
+ *
+ * ★ 정렬: 직접 함유를 먼저 낸다. 응답 배열 순서가 곧 화면 순서인 클라이언트가 있을 때,
+ *   혼입 가능이 위에 오면 사용자가 가장 중요한 정보를 나중에 본다.
+ *
+ * @param {number} productId
+ * @returns {Promise<Array<{allergen_name, evidence_level, status, source_count, detected_via}>>}
+ */
+// ★★★ 세션45 1차 검증 치명1 — 마이그레이션 020 이 아직 안 돈 DB 에서
+//   `evidence_level` 을 SELECT 하면 쿼리가 예외를 던지고, 그 예외가
+//   `getProductWithTrafficLight` → `productRoutes` 를 통과해 **500** 이 된다.
+//   알레르기만 빠지는 게 아니라 **영양·신호등·제품 메타까지 응답 전체가 사라진다.**
+//
+//   실재하는 시나리오다 — Railway 는 `node src/server.js` 로만 뜨고 부팅 시
+//   마이그레이션을 돌리지 않는다(`grep -rn "migrat" src/` 0건). 020 은 수동
+//   `npm run migrate:020` 뿐이다. 즉 **코드가 먼저 배포되고 마이그레이션이 나중**일 수 있다.
+//   healthcheck 는 `/api/health` 라서 배포는 정상으로 표시되고 제품 조회만 조용히 전멸한다.
+//
+//   → 컬럼 유무를 1회 판정해 캐싱하고, 없으면 리터럴로 대체한다.
+//     ★ 대체값은 `contains` 다. 020 이전 행의 의미가 그것이고(005 이후 등급 개념이 없었다),
+//       모르는 것을 약하게 만드는 방향의 기본값은 이 도메인에서 안전하지 않다.
+//
+// ★★ 세션46 2차 검증 중대2 — 세션45 판은 **실패를 영구 캐싱**했다.
+//   `catch` 가 `_hasEvidenceLevel = false` 로 확정하는데, 무효화 경로가 없었다.
+//   실측(pglite + 커넥션 1회 강제 종료): 020 이 정상 적용된 DB 에서도
+//   첫 조회 순간 `Connection terminated unexpectedly` 가 한 번 나면
+//   **프로세스가 죽을 때까지** 모든 알레르기가 `contains` 로 나갔다.
+//   → 혼입 가능이 「직접 함유」로 표시된다(**과잉경고**). 3분리 기능 전체가 무력화되고
+//     `orderExpr` 이 빈 문자열이 되어 「직접 함유 먼저」 정렬 계약도 함께 깨진다.
+//   Railway 콜드 스타트·풀 고갈에서 흔한 형태다. 040 초 뒤 DB 가 멀쩡해져도 회복되지 않았다.
+//
+//   → **성공만 캐싱한다.** 실패는 `null` 로 두어 다음 요청에 다시 판정한다.
+//     한 요청이 조금 느려지는 것과, 프로세스 수명 내내 등급이 틀리는 것은 심각도가 다르다.
+//   → 그리고 캐시가 `true` 인데 컬럼이 사라진 경우(020 롤백)도 본 쿼리에서 `42703` 을 잡아
+//     캐시를 버리고 1회 재시도한다. 단방향 캐시는 어느 쪽으로든 굳으면 방어가 없다.
+let _hasEvidenceLevel = null;   // null=미확인/재판정필요 · true/false=확인됨
+
+const UNDEFINED_COLUMN = '42703';   // Postgres: column does not exist
+
+async function hasEvidenceLevelColumn() {
+  if (_hasEvidenceLevel !== null) return _hasEvidenceLevel;
+  try {
+    const r = await db.query(
+      `SELECT 1 FROM information_schema.columns
+       WHERE table_name = 'product_allergens' AND column_name = 'evidence_level'
+       LIMIT 1`,
+    );
+    _hasEvidenceLevel = r.rows.length > 0;   // ★ 성공했을 때만 캐싱한다
+    return _hasEvidenceLevel;
+  } catch (_) {
+    // ★ 캐싱하지 않는다. 이번 요청만 보수적으로 "없다" 로 본다.
+    //   여기서 true 를 반환하면 본 쿼리가 500 을 낸다 — 치명1 이 그대로 재현된다.
+    return false;
+  }
+}
+
+/** 테스트에서 캐시를 비운다(마이그레이션 전/후를 한 프로세스에서 검사하기 위함). */
+function _resetEvidenceLevelCache() { _hasEvidenceLevel = null; }
+
+function buildAllergenQuery(hasLevel) {
+  const levelExpr = hasLevel ? 'evidence_level' : `'contains'::text AS evidence_level`;
+  const orderExpr = hasLevel
+    ? `CASE evidence_level
+         WHEN 'contains' THEN 1
+         WHEN 'inferred' THEN 2
+         WHEN 'may_contain' THEN 3
+         ELSE 4
+       END,`
+    : '';
+  return `SELECT allergen_name, ${levelExpr}, status, source_count, detected_via
+     FROM product_allergens
+     WHERE product_id = $1
+     ORDER BY ${orderExpr}
+              source_count DESC,
+              allergen_name`;
+}
+
+async function getAllergens(productId) {
+  const hasLevel = await hasEvidenceLevelColumn();
+  try {
+    const result = await db.query(buildAllergenQuery(hasLevel), [productId]);
+    return result.rows;
+  } catch (e) {
+    // ★ 세션46 중대2-(c) — 캐시가 true 인데 컬럼이 사라진 경우(020 롤백).
+    //   단방향 캐시라 방어가 없었고, 그대로 던지면 응답 전체가 500 이 된다(치명1 재발).
+    //   컬럼 부재(42703)일 때만 캐시를 버리고 등급 없이 1회 재시도한다.
+    if (hasLevel && e && e.code === UNDEFINED_COLUMN) {
+      _hasEvidenceLevel = null;
+      const result = await db.query(buildAllergenQuery(false), [productId]);
+      return result.rows;
+    }
+    throw e;
+  }
+}
+
+/**
  * 제품 ID로 신호등 캐시 조회
  * @param {number} productId
  * @returns {Promise<Object|null>}
@@ -288,6 +390,9 @@ module.exports = {
   searchByName,
   getNutrition,
   getAdditives,
+  getAllergens,                 // 세션45
+  hasEvidenceLevelColumn,       // 세션45 — 배포 순서 방어(치명1)
+  _resetEvidenceLevelCache,     // 테스트 전용
   getTrafficLight,
   upsertTrafficLight,
   getRecent,

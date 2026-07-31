@@ -405,15 +405,35 @@ const WITHHOLD_MESSAGES = {
   racc_says_single_but_pct_dv_says_multi:
     '이 제품은 총 내용량 기준으로 표시된 라벨입니다. 식품유형 기준 1회 섭취참고량으로는 1회분이지만, '
     + '라벨의 1일 영양성분 기준치가 그와 맞지 않습니다. 어느 쪽이 맞는지 확정하지 못해 판정을 보류합니다.',
+  // ★★ 세션45 (제이 결정 2026-07-30, 안①): basis 를 읽지 못한 라벨은 판정하지 않는다.
+  //   이전에는 `nutrition.basis || 'per_serving'` 이 unknown 을 **1회분으로 취급**했다.
+  //   캡처 018 실물: 나트륨 690 mg / 열량·1회 제공량·총 내용량 전부 없음.
+  //   1회분으로 읽으면 과자 RACC 30 g 기준 빨강이 나가지만, 총량 기준일 가능성이 크다 = 거짓 빨강.
+  //   `null = 판정 없음 ≠ 안전` 도크트린. 실측 비용은 68건 중 2건(2.9%)뿐이다.
+  //   근거: IP/basis_unknown_decision_2026-07-30.md
+  basis_unknown:
+    '이 라벨에서 영양성분이 무엇을 기준으로 적힌 것인지(총 내용량 당 / 100 g 당 / 1회 제공량 당) 확인하지 못했습니다. '
+    + '기준을 모르는 상태로 계산하면 실제와 크게 달라질 수 있어 판정을 보류합니다.',
+};
+
+// 보류 시 영양소·열량에 붙는 basis 표기. 사유별로 다르다.
+// ★ basis_unknown 에 'per_total' 을 붙이면 **모르는 것을 총량이라고 단정**하는 것이 된다.
+//   formatResult 가 「총 내용량 기준」이라고 인쇄하고, 그것은 거짓 정보다.
+const WITHHOLD_BASIS_LABEL = {
+  multi_serving_but_count_unknown: 'per_total',
+  racc_says_single_but_pct_dv_says_multi: 'per_total',
+  basis_unknown: 'unknown',
 };
 
 function buildWithheldResult(result, product, nutrition, resolved, reason) {
+  const _reason = reason || 'multi_serving_but_count_unknown';
+  const basisLabel = WITHHOLD_BASIS_LABEL[_reason] || 'per_total';
   result.nutrients = {};
   for (const k of WITHHELD_KEYS) {
-    result.nutrients[k] = { color: null, pct_dv: null, per_100: null, basis: 'per_total', data: 'withheld' };
+    result.nutrients[k] = { color: null, pct_dv: null, per_100: null, basis: basisLabel, data: 'withheld' };
   }
   result.calories = (nutrition.calories !== null && nutrition.calories !== undefined)
-    ? { amount: nutrition.calories, pct_dv: null, unit: 'kcal', basis: 'per_total' }
+    ? { amount: nutrition.calories, pct_dv: null, unit: 'kcal', basis: basisLabel }
     : null;
 
   result.is_withheld = true;
@@ -494,6 +514,16 @@ function evaluateNutrition(product, nutrition, config = DEFAULT_CONFIG, raccPoli
   //   인분 수를 모르는데 1로 나누면 458% 초강력 빨강이 나간다. 12인분이므로 실제는 38%.
   //   "모르면 회색" 이 정답이다 — `null = 판정 없음 ≠ 안전` 도크트린.
   const rawBasis = nutrition.basis || 'per_serving';
+
+  // ★★ 세션45 안① — basis 를 명시적으로 읽지 못한 라벨(`unknown`)은 판정 보류.
+  //   ★ `'unknown'` 만 걸러야 한다. `'per_100_unknown'` 은 **값이 per-100 인 것은 확실하고
+  //     단위(g/mL)만 모르는** 상태이며 아래에서 %DV 만으로 정상 판정한다. 함께 막으면 퇴행이다.
+  //   ★ basis 가 아예 없는 경우(null/undefined)는 종전대로 per_serving 이다.
+  //     DB 상품 레코드는 basis 컬럼이 없고 1회분 의미로 저장돼 있다. 여기를 건드리면 전수 보류가 된다.
+  if (rawBasis === 'unknown') {
+    return buildWithheldResult(result, product, nutrition, null, 'basis_unknown');
+  }
+
   if (rawBasis === 'per_total') {
     const resolved = nutrition._resolved || servingResolver.resolveServings({
       text: nutrition._label_text || '',
@@ -742,7 +772,10 @@ function formatResult(result) {
     // ★ 세션42: 판정 보류는 "데이터 없음" 과 다르다. 값은 있는데 **기준을 몰라서** 안 칠한 것이다.
     //   이 구분이 화면에 드러나야 사용자가 재촬영이라는 행동을 할 수 있다.
     if (n.data === 'withheld') {
-      lines.push(`│  ${name.padEnd(6, '　')}  ⚪ 판정 보류 (1회 섭취량 미확인)`);
+      // ★ 세션45: 사유를 하드코딩하면 안 된다. basis_unknown 은 1회 섭취량이 아니라
+      //   **기준 표기 자체**를 못 읽은 것이다. 잘못된 사유를 인쇄하면 사용자가 잘못된 행동(재촬영 각도)을 한다.
+      const why = result.withhold_reason === 'basis_unknown' ? '기준 표기 미확인' : '1회 섭취량 미확인';
+      lines.push(`│  ${name.padEnd(6, '　')}  ⚪ 판정 보류 (${why})`);
       continue;
     }
     const emoji = colorEmoji[n.color] || '❓';

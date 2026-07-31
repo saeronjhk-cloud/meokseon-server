@@ -458,8 +458,120 @@ t('경미5 per_total 에 divisor 가 없어도 배너가 뜬다', () => {
 });
 
 // ════════════════════════════════════════════════════════════════════════════
+section('§9. 세션45 안① — basis unknown → 판정 보류 (제이 결정 2026-07-30)');
+
+// 캡처 018 실물: 기준 문구가 라벨에 없고 나트륨 690 mg / 당류 1 g 만 읽혔다.
+// 열량·1회 제공량·총 내용량 전부 없음. 현행(unknown→per_serving)이면 과자 RACC 30 g 기준 빨강.
+// 근거: IP/basis_unknown_decision_2026-07-30.md §2
+const P018 = { product_name: '블랙트러플 하몽 크래커', food_type: '과자', content_unit: 'g', serving_size: null, total_content: null };
+const N018 = { calories: null, sodium: 690, sugars: 1, sat_fat: 11, total_fat: 28, cholesterol: 0, basis: 'unknown' };
+
+t('018 실물 — unknown 은 판정 보류로 떨어진다 (이전: 거짓 빨강 가능)', () => {
+  const r = evaluateNutrition(P018, N018);
+  assert.strictEqual(r.is_withheld, true, `보류여야 한다: ${JSON.stringify(r.nutrients.sodium)}`);
+  assert.strictEqual(r.withhold_reason, 'basis_unknown');
+});
+
+t('보류이므로 어떤 영양소에도 색이 칠해지지 않는다', () => {
+  const r = evaluateNutrition(P018, N018);
+  for (const [k, n] of Object.entries(r.nutrients)) {
+    assert.strictEqual(n.color, null, `${k} 에 색이 칠해졌다: ${JSON.stringify(n)}`);
+    assert.strictEqual(n.data, 'withheld', `${k}: ${JSON.stringify(n)}`);
+  }
+});
+
+t('★ basis 표기가 per_total 이 아니라 unknown 이다 (모르는 것을 총량이라 단정하지 않는다)', () => {
+  const r = evaluateNutrition(P018, N018);
+  assert.strictEqual(r.nutrients.sodium.basis, 'unknown');
+  // 열량이 있는 경우도 같다
+  const r2 = evaluateNutrition(P018, { ...N018, calories: 500 });
+  assert.strictEqual(r2.calories.basis, 'unknown');
+});
+
+t('★ formatResult 가 「총 내용량 기준」이라고 거짓 인쇄하지 않는다', () => {
+  const out = formatResult(evaluateNutrition(P018, { ...N018, calories: 500 }));
+  assert.ok(!out.includes('총 내용량 기준'), out);
+});
+
+t('★ 보류 사유가 「기준 표기 미확인」으로 인쇄된다 (1회 섭취량 미확인 아님)', () => {
+  const out = formatResult(evaluateNutrition(P018, N018));
+  assert.ok(out.includes('기준 표기 미확인'), out);
+  assert.ok(!out.includes('1회 섭취량 미확인'), out);
+});
+
+t('★ per_100_unknown 은 보류되지 않는다 (단위만 모르고 per-100 인 것은 확실 — 함께 막으면 퇴행)', () => {
+  const r = evaluateNutrition(
+    { product_name: 'x', food_type: '과자', content_unit: 'g', serving_size: 30, total_content: 30 },
+    { calories: 150, sodium: 100, sugars: 5, basis: 'per_100_unknown' },
+  );
+  assert.ok(!r.is_withheld, `per_100_unknown 이 보류됐다: ${r.withhold_reason}`);
+  assert.ok(r.nutrients.sodium.color, '색이 칠해져야 한다');
+});
+
+t('★ basis 가 아예 없으면 종전대로 per_serving (DB 상품 레코드 전수 보류 방지)', () => {
+  const r = evaluateNutrition(P_NORMAL, { calories: 150, sodium: 100, sugars: 5, sat_fat: 1 });
+  assert.ok(!r.is_withheld, 'basis 없는 레코드가 보류됐다 — DB 조회 경로가 전부 회색이 된다');
+  assert.ok(r.nutrients.sodium.color);
+});
+
+t('보류에 sanity_warnings 를 붙이지 않는다 (근거 없는 경고)', () => {
+  const r = evaluateNutrition(P018, N018);
+  assert.deepStrictEqual(r.sanity_warnings, []);
+});
+
+t('★ 클라이언트 재촬영 안내가 「○인분」이 아니라 기준 문구를 지시한다', () => {
+  const c = loadClient();
+  c.renderResult(envelope(evaluateNutrition(P018, N018)));
+  const html = c.el('withholdBanner').innerHTML;
+  assert.ok(html.includes('다시 촬영'), html);
+  assert.ok(html.includes('머리글') || html.includes('100 g 당'),
+    `기준 문구 촬영 안내가 없다 — 사용자가 「○인분」을 찾다 헛수고한다: ${html}`);
+  assert.ok(!html.includes('「○인분」'), `잘못된 행동 지시가 남아 있다: ${html}`);
+});
+
+t('★ 배너에 사유코드 basis_unknown 이 노출된다 (제이가 눈으로 잡는 유일한 지점)', () => {
+  const c = loadClient();
+  c.renderResult(envelope(evaluateNutrition(P018, N018)));
+  assert.ok(c.el('withholdBanner').innerHTML.includes('basis_unknown'));
+});
+
+t('★ unknown 보류에는 per_total 배너가 뜨지 않는다 (환산했다는 거짓 주장)', () => {
+  const c = loadClient();
+  const r = evaluateNutrition(P018, N018);
+  assert.strictEqual(r.per_total, undefined, 'per_total 진단이 붙었다');
+  c.renderResult(envelope(r));
+  assert.strictEqual(c.el('perTotalBanner').innerHTML, '');
+});
+
+t('★ 세 사유의 사용자 문구가 서로 전부 다르다', () => {
+  const msgs = [
+    evaluateNutrition(P017, N017).context_messages[0],
+    evaluateNutrition(P_CONFLICT, N_CONFLICT).context_messages[0],
+    evaluateNutrition(P018, N018).context_messages[0],
+  ];
+  assert.strictEqual(new Set(msgs).size, 3, `문구가 겹친다: ${JSON.stringify(msgs)}`);
+});
+
+t('★ ocrRoutes 관문이 unknown 을 per_serving 으로 눙치지 않는다 (소스 검증)', () => {
+  // 정책을 신호등에만 넣고 이 줄을 안 고치면 초록 테스트와 무동작이 공존한다(세션44 중대8 유형).
+  const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'routes', 'ocrRoutes.js'), 'utf8');
+  assert.ok(!/BASIS_OK\[basisRaw\]\s*\|\|\s*'per_serving'/.test(src),
+    "ocrRoutes 에 `BASIS_OK[basisRaw] || 'per_serving'` 이 남아 있다 — unknown 보류가 발동하지 않는다");
+  assert.ok(/BASIS_OK\[basisRaw\]\s*\|\|\s*'unknown'/.test(src),
+    "ocrRoutes 가 unknown 을 그대로 신호등에 넘기지 않는다");
+});
+
+t('★ crowdsourceService 는 unknown 을 DB 에 저장하지 않는다 (관문 유지 확인)', () => {
+  const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'services', 'crowdsourceService.js'), 'utf8');
+  // BASIS_OK 에 unknown 이 들어가면 기준 모르는 값이 영구 저장된다. 되돌리기 가장 어려운 오염이다.
+  const m = src.match(/const BASIS_OK = \{[\s\S]{0,200}?\}/);
+  assert.ok(m, 'crowdsourceService 의 BASIS_OK 를 찾지 못했다 — 테스트를 갱신할 것');
+  assert.ok(!/unknown/.test(m[0]), `BASIS_OK 에 unknown 이 들어갔다: ${m[0]}`);
+});
+
+// ════════════════════════════════════════════════════════════════════════════
 console.log(`\n${'═'.repeat(62)}`);
-console.log(`📊 세션43 판정 보류 클라이언트: ${pass} 통과 / ${fail} 실패 (총 ${pass + fail})`);
+console.log(`📊 세션43 판정 보류 + 세션45 안①: ${pass} 통과 / ${fail} 실패 (총 ${pass + fail})`);
 if (fail > 0) {
   console.log('\n실패 상세:');
   for (const f of failures) console.log(`  - ${f.name}\n    ${f.message}`);

@@ -21,6 +21,8 @@
 
 const db = require('../config/database');
 const logger = require('../config/logger');
+// ★ 세션46 치명1 — 쓰기 경로에도 컬럼 가드가 필요하다. 판정 로직을 두 곳에 적지 않는다.
+const { hasEvidenceLevelColumn } = require('../models/productModel');
 
 // ====================================================================
 // 1. 필드별 병합 알고리즘 (순수 함수 — 테스트 가능)
@@ -103,26 +105,91 @@ function majorityIngredients(listOfLists, options = {}) {
   return accepted;
 }
 
+// ────────────────────────────────────────────────────────────────────
+// 알레르기 근거 등급 (세션45 · 마이그레이션 020)
+// ────────────────────────────────────────────────────────────────────
+/**
+ * 등급 서열. 병합은 **큰 쪽으로만** 간다.
+ * ★ 왜 낮추지 않는가 — 등급을 낮추는 병합은 경고를 지우는 방향이다.
+ *   기여 A 가 「직접 함유: 대두」, 기여 B 가 OCR 실패로 「혼입 가능: 대두」 를 냈을 때
+ *   B 를 채택하면 대두 알레르기 사용자에게 표시되던 붉은 경고가 점선으로 바뀐다.
+ *   세션44 `mergeAllergensV2` 가 두 사진에 대해 세운 규칙과 동일하다.
+ */
+const ALLERGEN_LEVEL_RANK = { may_contain: 1, inferred: 2, contains: 3 };
+const ALLERGEN_LEVEL_DEFAULT = 'contains';
+
+function strongerLevel(a, b) {
+  const ra = ALLERGEN_LEVEL_RANK[a] || 0;
+  const rb = ALLERGEN_LEVEL_RANK[b] || 0;
+  return rb > ra ? b : (a || b);
+}
+
+/**
+ * 한 기여의 `allergens_v2`(3분리) 를 `{이름 → 등급}` 으로 평탄화한다.
+ * ★ v2 가 없으면(구 기여, 또는 사용자 덮어쓰기로 null) `{}` 를 돌려주고
+ *   호출부가 flat 목록을 기본 등급 contains 로 취급하게 한다.
+ *   여기서 v2 없는 것을 may_contain 으로 떨어뜨리면 **과거 기여 전량이 강등**된다.
+ */
+function levelsFromV2(v2) {
+  const out = new Map();
+  if (!v2 || typeof v2 !== 'object') return out;
+  const put = (list, level) => {
+    if (!Array.isArray(list)) return;
+    for (const n of list) {
+      if (typeof n !== 'string') continue;
+      const v = n.trim();
+      if (!v) continue;
+      out.set(v, strongerLevel(out.get(v), level));
+    }
+  };
+  // 강한 등급을 나중에 넣어도 strongerLevel 이 처리하지만, 순서 의존을 남기지 않는다.
+  put(v2.mayContain, 'may_contain');
+  put(v2.inferred, 'inferred');
+  put(v2.contains, 'contains');
+  return out;
+}
+
 /**
  * 알레르기 union — 한 명이라도 등록했으면 채택 (안전 우선).
  * source_count 함께 반환해서 candidate / confirmed 구분 가능.
+ *
+ * ★ 세션45: 등급(evidence_level)을 함께 병합한다.
+ *   @param listOfLists  기여별 flat 이름 배열 (구 형식 호환 — 그대로 받는다)
+ *   @param listOfV2     기여별 allergens_v2 객체 배열 (같은 인덱스로 짝을 맞춘다). 없으면 무시.
+ *
+ * ★ 인덱스 짝맞춤이 계약이다. 어긋나면 A 의 이름에 B 의 등급이 붙는다 —
+ *   예외가 나지 않고 조용히 틀리는 종류의 결함이므로 테스트로 고정했다.
  */
-function unionAllergens(listOfLists) {
+function unionAllergens(listOfLists, listOfV2 = []) {
   const counts = new Map();
-  for (const list of listOfLists) {
-    if (!Array.isArray(list)) continue;
-    const seen = new Set();
-    for (const a of list) {
-      if (typeof a !== 'string') continue;
-      const v = a.trim();
-      if (!v || seen.has(v)) continue;
-      seen.add(v);
+  const levels = new Map();
+  for (let i = 0; i < listOfLists.length; i += 1) {
+    const list = listOfLists[i];
+    const v2Levels = levelsFromV2(listOfV2[i]);
+
+    // v2 에만 있고 flat 에 없는 이름도 채택한다.
+    // ★ 세션44 가 flat 에서 혼입 항목을 제거했으므로, 이 합집합이 없으면
+    //   혼입 정보가 DB 에 영원히 도달하지 못한다(§6-2 가 풀려던 문제 그 자체).
+    const names = new Set();
+    if (Array.isArray(list)) {
+      for (const a of list) {
+        if (typeof a !== 'string') continue;
+        const v = a.trim();
+        if (v) names.add(v);
+      }
+    }
+    for (const n of v2Levels.keys()) names.add(n);
+    if (names.size === 0) continue;
+
+    for (const v of names) {
       counts.set(v, (counts.get(v) || 0) + 1);
+      levels.set(v, strongerLevel(levels.get(v), v2Levels.get(v) || ALLERGEN_LEVEL_DEFAULT));
     }
   }
   return [...counts.entries()].map(([name, count]) => ({
     name,
     source_count: count,
+    evidence_level: levels.get(name) || ALLERGEN_LEVEL_DEFAULT,
   }));
 }
 
@@ -193,6 +260,11 @@ function extractCandidatesFromContribution(contribution) {
     .filter((s) => s && String(s).trim().length > 0);
 
   const allergens = Array.isArray(data.allergens) ? data.allergens : [];
+  // ★ 세션45: 세션44 가 기여 레코드에 저장하기 시작한 3분리를 여기서 꺼낸다.
+  //   꺼내지 않으면 저장은 되지만 **마스터 테이블까지 오지 못한다** — 세션44 중대F 의 나머지 절반이다.
+  //   구 기여에는 없다(null). 그 경우 flat 목록이 기본 등급 contains 로 처리된다.
+  const allergensV2 = (data.allergens_v2 && typeof data.allergens_v2 === 'object')
+    ? data.allergens_v2 : null;
 
   return {
     contributionId: contribution.contribution_id,
@@ -202,6 +274,7 @@ function extractCandidatesFromContribution(contribution) {
     nutrition: nutritionVals,
     ingredients,
     allergens,
+    allergensV2,
   };
 }
 
@@ -248,8 +321,12 @@ function mergeContributions(contributions) {
   // ── 원재료: 다수결 ──
   const mergedIngredients = majorityIngredients(candidates.map((c) => c.ingredients));
 
-  // ── 알레르기: union + source_count ──
-  const mergedAllergens = unionAllergens(candidates.map((c) => c.allergens));
+  // ── 알레르기: union + source_count + 등급(세션45) ──
+  // ★ 두 map 이 **같은 candidates 순서**여야 한다. 인덱스로 짝을 맞추기 때문이다.
+  const mergedAllergens = unionAllergens(
+    candidates.map((c) => c.allergens),
+    candidates.map((c) => c.allergensV2),
+  );
 
   // ── 이상치 감지 ──
   const outliers = detectOutliers(perNutrient);
@@ -417,22 +494,106 @@ async function mergeAndApply(productId) {
     }
 
     // ── 5) product_allergens 갱신 ──
-    // 기존 admin_verified 항목은 그대로 두고, 나머지는 merge 결과로 덮어씀.
+    //
+    // ★★★ 세션45 1차 검증 치명2 — 이 DELETE 가 **아래 UPSERT 의 등급 보호를 통째로 우회**하고 있었다.
+    //   원래 코드: `DELETE ... WHERE product_id = $1 AND status != 'admin_verified'`
+    //
+    //   무엇이 문제였나 (pglite 로 mergeAndApply 를 실제 실행해 재현) —
+    //     ① `product_allergens.status = 'admin_verified'` 를 **세팅하는 코드가 저장소에 없다.**
+    //        `grep -rn "admin_verified" src/` 의 쓰기 구문은 전부 `products.verification` 이다.
+    //        즉 이 조건은 사실상 **무조건 전삭제**였다.
+    //     ② 전삭제 후 INSERT 하므로 `ON CONFLICT` 가 걸릴 행이 없다.
+    //        세션45 가 신중히 짠 승격/유지 CASE 는 **한 번도 실행되지 않는 죽은 코드**였다.
+    //     ③ 실측: 식약처(HACCP) 적재분 `대두·밀·우유`(직접 함유) 가 있는 제품에
+    //        사용자가 「대두 혼입」 사진 1장을 올리면 —
+    //          이전: contains 3종  →  이후: contains 0종 / mayContain 대두 1종
+    //        밀·우유는 **DB 에서 삭제**되고 대두는 강등된다. 경고 총량 순감이다.
+    //
+    //   → 이번 merge 가 만든 행(`detected_via = 'crowdsource_merge'`)만 정리한다.
+    //     ★ 식약처·명시표기 등 **다른 출처의 행은 절대 지우지 않는다.** 크라우드소싱 1건이
+    //       공적 출처를 덮어쓸 권한은 없다. 남겨두면 아래 UPSERT 가 등급을 올리기만 한다.
+    //     ★ 그리고 admin_verified 는 여전히 보호한다(향후 그 값을 쓰게 되더라도 안전하도록).
     await client.query(
       `DELETE FROM product_allergens
-       WHERE product_id = $1 AND status != 'admin_verified'`,
+       WHERE product_id = $1
+         AND status != 'admin_verified'
+         AND detected_via = 'crowdsource_merge'`,
       [productId],
     );
+    // ★★★ 세션46 2차 검증 치명1 — 세션45 는 **조회 경로에만** 컬럼 가드를 넣었다.
+    //   쓰기 경로(`INSERT ... evidence_level`)에는 없어서, 020 미적용 DB 에서
+    //   이 INSERT 가 던지는 예외로 **트랜잭션 전체가 롤백**된다.
+    //   알레르기만이 아니라 영양·메타·원재료·첨가물이 **하나도 반영되지 않는다.**
+    //
+    //   실측(정본 마이그레이션 001/004/005/006 만 적용한 pglite):
+    //     column "evidence_level" of relation "product_allergens" does not exist
+    //     → products.merged_at = null · nutrition_data = [] · product_allergens = []
+    //
+    //   ★ 이론이 아니다 — `package.json` 의 `migrate` 체인에 020 이 없다(`migrate:020` 단독 수동).
+    //     즉 `npm run migrate` 로 만든 DB 에는 020 이 영원히 없다.
+    //   ★ 그리고 조용하다 — `crowdsourceService` 가 이 예외를 catch 해서 로그만 남기고
+    //     API 는 `saved: true` 를 반환한다. `/api/health` 도 정상이다.
+    //   → 등급을 못 적더라도 **알레르기 행 자체는 남긴다.** 등급이 없는 경고와
+    //     경고가 없는 것은 심각도가 다르다(후자는 경고가 사라지는 방향이다).
+    const canWriteLevel = await hasEvidenceLevelColumn();
+    if (!canWriteLevel) {
+      logger.error('020 미적용 DB — evidence_level 없이 알레르기를 적재한다', { productId });
+    }
     for (const a of allergens) {
       const status = a.source_count >= AUTO_VERIFY_DISTINCT_DEVICES ? 'confirmed' : 'candidate';
+      const level = ALLERGEN_LEVEL_RANK[a.evidence_level] ? a.evidence_level : ALLERGEN_LEVEL_DEFAULT;
+      if (!canWriteLevel) {
+        await client.query(
+          `INSERT INTO product_allergens
+             (product_id, allergen_name, source_count, status, detected_via)
+           VALUES ($1, $2, $3, $4, 'crowdsource_merge')
+           ON CONFLICT (product_id, allergen_name) DO UPDATE SET
+             source_count = EXCLUDED.source_count,
+             status = CASE
+               WHEN product_allergens.status = 'admin_verified' THEN 'admin_verified'
+               ELSE EXCLUDED.status
+             END,
+             updated_at = NOW()`,
+          [productId, a.name, a.source_count, status],
+        );
+        continue;
+      }
       await client.query(
-        `INSERT INTO product_allergens (product_id, allergen_name, source_count, status, detected_via)
-         VALUES ($1, $2, $3, $4, 'crowdsource_merge')
+        // ★★ 세션45: evidence_level 은 **올리기만 한다.**
+        //   `EXCLUDED.evidence_level` 을 그대로 대입하면 이번 merge 가 혼입만 읽었을 때
+        //   기존 admin_verified 가 아닌 「직접 함유」 행이 「혼입 가능」으로 **강등**된다.
+        //   화면에서 붉은 태그가 점선으로 바뀌는 것 = 경고를 지우는 방향의 변경이다.
+        //   CASE 로 서열을 비교해 강한 쪽을 남긴다(SQL 안에서 끝낸다 — 읽고-쓰기 경합을 만들지 않는다).
+        `INSERT INTO product_allergens
+           (product_id, allergen_name, source_count, status, detected_via, evidence_level)
+         VALUES ($1, $2, $3, $4, 'crowdsource_merge', $5)
          ON CONFLICT (product_id, allergen_name) DO UPDATE SET
            source_count = EXCLUDED.source_count,
-           status = EXCLUDED.status,
+           -- ★★ 1차 검증 치명2-B: status 에 EXCLUDED.status 를 그대로 대입하면 admin_verified 를
+           --   candidate 로 **깎아버린다.** 그러면 다음 merge 의 DELETE 대상이 되어
+           --   관리자 검증 결과가 merge 2회 만에 사라진다(실측 재현됨).
+           --   등급 보호가 1회용이 되지 않도록 status 도 함께 지킨다.
+           status = CASE
+             WHEN product_allergens.status = 'admin_verified' THEN 'admin_verified'
+             ELSE EXCLUDED.status
+           END,
+           -- ★ detected_via 는 **아예 갱신하지 않는다**(SET 목록에서 뺐다).
+           --   세션45 는 COALESCE(product_allergens.detected_via, EXCLUDED.detected_via) 였는데,
+           --   세션46 2차 검증에서 이것이 **NULL 을 세탁한다**는 것이 실측됐다:
+           --     merge1: 게(detected_via=NULL) → 'crowdsource_merge' 로 바뀜
+           --     merge2: 위 DELETE 의 대상이 되어 **삭제됨**
+           --   19-apply-haccp.js 의 컬럼 부재 폴백이 detected_via 없이 INSERT 하므로
+           --   NULL 행은 실제로 존재한다. 갱신하지 않으면 NULL 로 남아 DELETE 를 타지 않는다.
+           --   (경고가 사라지는 방향의 결함이므로 남기는 쪽을 택한다.)
+           evidence_level = CASE
+             WHEN COALESCE(product_allergens.evidence_level, 'contains') = 'contains' THEN 'contains'
+             WHEN EXCLUDED.evidence_level = 'contains' THEN 'contains'
+             WHEN COALESCE(product_allergens.evidence_level, 'contains') = 'inferred'
+               OR EXCLUDED.evidence_level = 'inferred' THEN 'inferred'
+             ELSE 'may_contain'
+           END,
            updated_at = NOW()`,
-        [productId, a.name, a.source_count, status],
+        [productId, a.name, a.source_count, status, level],
       );
     }
   });
@@ -465,8 +626,14 @@ module.exports = {
   detectOutliers,
   extractCandidatesFromContribution,
 
+  // 세션45: 알레르기 등급 (테스트가 서열 규칙을 직접 고정한다)
+  levelsFromV2,
+  strongerLevel,
+
   // 상수
   AUTO_VERIFY_DISTINCT_DEVICES,
   NUTRIENT_FIELDS,
   META_FIELDS,
+  ALLERGEN_LEVEL_RANK,
+  ALLERGEN_LEVEL_DEFAULT,
 };

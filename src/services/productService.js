@@ -16,6 +16,8 @@ const { evaluateNutrition, deriveBasis } = require('./nutritionTrafficLight');
 const { getRaccPolicy } = require('./raccPolicy');
 const { NotFoundError } = require('../middleware/errorHandler');
 const { getContext } = require('../utils/foodCategory');
+const logger = require('../config/logger');   // 세션45: 알레르기 조회 실패를 삼키지 않고 남긴다
+const { flattenAllergensV2 } = require('./ocrParser');   // 세션45: flat 규칙 단일화(중대4)
 
 // 4색 우선순위 — 가장 위험한 색이 dominant_color
 const COLOR_RANK = { red: 4, orange: 3, yellow: 2, green: 1, gray: 0 };
@@ -252,6 +254,24 @@ async function getProductWithTrafficLight(barcode) {
   const additivesRows = await productModel.getAdditives(product.product_id);
   const mfras = buildMfras(additivesRows);
 
+  // ★★ 세션45: 알레르기 조회 (같은 이유로 순차)
+  //   이 응답에는 알레르기가 **아예 없었다** — 세션44 §6-2 가 「구분이 없다」고 본 것보다 심하다.
+  //
+  // ★★★ 1차 검증 치명1 — 두 겹으로 막는다.
+  //   productModel 이 컬럼 부재를 견디지만(1겹), 그 밖의 이유(테이블 자체 부재·권한·풀 고갈)로도
+  //   실패할 수 있다. 그때 예외가 그대로 올라가면 **영양·신호등까지 통째로 500** 이 된다.
+  //   알레르기를 못 읽은 것과 제품 정보를 못 주는 것은 심각도가 다르다.
+  //   ★ 실패 시 `null` 이다. 빈 배열이 아니다 — 아래 buildAllergens 주석의 이유와 같다.
+  let allergens = null;
+  try {
+    allergens = buildAllergens(await productModel.getAllergens(product.product_id));
+  } catch (e) {
+    logger.error('알레르기 조회 실패 — 응답에서 알레르기를 생략한다(500 대신)', {
+      barcode, productId: product.product_id, error: e.message,
+    });
+    allergens = null;
+  }
+
   // 카테고리 맥락
   const context = getContext(product.food_type);
 
@@ -293,10 +313,59 @@ async function getProductWithTrafficLight(barcode) {
     } : null,
     traffic_light: trafficLight,
     mfras,
+    // ★ 세션45 — OCR 경로(`analysis.allergens_v2`)와 **같은 키 이름·같은 3분리 형태**로 낸다.
+    //   이름을 다르게 하면 클라이언트가 경로별 분기를 두게 되고, 그 분기 중 한쪽이
+    //   다음 수정에서 빠진다(세션39 /multi-photo · 세션44 치명B 가 정확히 그 사고였다).
+    // ★★ 1차 검증 중대5 — 「알레르기 정보 없음」과 「알레르기 없음」을 구분한다.
+    //   같은 응답의 영양은 이미 `product.calories !== null ? {...} : null` 로 그 구분을 한다.
+    //   알레르기만 빈 배열이면, 행이 하나도 없는 제품(현 DB 의 대다수)이
+    //   **「알레르기 없음」으로 단정**돼 나간다 — `null = 판정 없음 ≠ 안전` 위배다.
+    //   그리고 세션45 이전엔 이 키가 아예 없었으므로, `'allergens' in data` 로 판단하던
+    //   클라이언트는 배포 순간 전 제품이 「없음」으로 뒤집힌다.
+    allergens: allergens ? allergens.flat : null,
+    allergens_v2: allergens ? allergens.v2 : null,
+    // 화면이 "정보 없음" 과 "없음" 을 분기할 수 있는 명시 신호. 배열 길이로 추론하게 두지 않는다.
+    allergens_available: !!allergens,
     context,
     sources: buildSources(trafficLight),
     data_freshness: buildFreshness(product),
   };
+}
+
+/**
+ * product_allergens 행 → OCR 경로와 동일한 3분리 형태.
+ *
+ * ★ flat 을 함께 내는 이유 — 구버전 앱(APK)이 `allergens` 를 문자열 배열로 읽는다.
+ *   flat 을 없애면 배포 순간 구버전에서 알레르기 표시가 사라진다.
+ *   ★ 단, flat 에는 **혼입 가능을 넣지 않는다.** 구버전은 등급을 모르므로
+ *     혼입을 flat 에 넣으면 「직접 함유」로 붉게 표시된다 = 거짓 경고.
+ *     세션44 가 flat 에서 혼입을 제거한 것과 같은 규칙이다.
+ *   ★ 원재료 추정(inferred)은 flat 에 포함한다 — 실제로 그 원재료가 들어 있다는 뜻이므로
+ *     구버전에서 표시되는 것이 맞다.
+ */
+function buildAllergens(rows) {
+  // ★ 1차 검증 중대5 — rows 가 배열이 아니면(조회 실패) **null 을 돌려준다.**
+  //   빈 3분리를 돌려주면 호출부가 "조회했더니 없더라" 와 구별할 수 없다.
+  if (!Array.isArray(rows)) return null;
+
+  const v2 = { contains: [], inferred: [], mayContain: [] };
+
+  for (const r of rows) {
+    const name = r && typeof r.allergen_name === 'string' ? r.allergen_name.trim() : '';
+    if (!name) continue;
+    // ★ 알 수 없는 등급은 contains 로 본다(안전 방향).
+    //   ⚠ 1차 검증 경미9 정정 — 020 은 `NOT NULL DEFAULT 'contains'` 이므로 **NULL 은 남지 않는다.**
+    //     이 방어가 실제로 필요한 경우는 020 미적용 DB 에서 productModel 이 리터럴로 채워 줄 때와,
+    //     CHECK 를 우회해 들어온 오타값이다. 둘 다 약하게 만들면 안 되므로 contains 로 본다.
+    const level = r.evidence_level || 'contains';
+    if (level === 'may_contain') v2.mayContain.push(name);
+    else if (level === 'inferred') v2.inferred.push(name);
+    else v2.contains.push(name);
+  }
+
+  // ★★ 세션45 중대4 — flat 규칙을 **여기서 따로 쓰지 않는다.** ocrParser 의 것을 그대로 부른다.
+  //   같은 규칙을 두 곳에 적으면 다음 수정 때 한쪽만 고친다(이 프로젝트가 4세션 연속 겪은 사고).
+  return { flat: flattenAllergensV2(v2, []), v2 };
 }
 
 /**
@@ -338,6 +407,8 @@ module.exports = {
   getProductAdditives,
   // 테스트·재사용용 export
   buildMfras,
+  buildAllergens,        // 세션45
+
   buildSources,
   buildFreshness,
 };

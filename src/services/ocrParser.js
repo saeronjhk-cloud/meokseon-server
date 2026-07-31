@@ -569,16 +569,16 @@ function detectNutritionBasis(text) {
 }
 
 const NUTRIENT_PATTERNS = {
-  calories:      /열량[:\s]*(\d+[.,]?\d*)\s*(kcal|킬로칼로리|Kcal)/,
-  total_carbs:   /탄수화물[:\s]*(\d+[.,]?\d*)\s*g/,
-  total_sugars:  /당류[:\s]*(\d+[.,]?\d*)\s*g/,
-  protein:       /단백질[:\s]*(\d+[.,]?\d*)\s*g/,
-  total_fat:     /(?<!포화)(?<!트랜스)지방[:\s]*(\d+[.,]?\d*)\s*g/,
-  saturated_fat: /포화지방(?:산)?[:\s]*(\d+[.,]?\d*)\s*g/,
-  trans_fat:     /트랜스지방(?:산)?[:\s]*(\d+[.,]?\d*)\s*g/,
-  cholesterol:   /콜레스테롤[:\s]*(\d+[.,]?\d*)\s*m?g/,
-  sodium:        /나트륨[:\s]*(\d+[.,]?\d*)\s*m?g/,
-  dietary_fiber: /식이섬유[:\s]*(\d+[.,]?\d*)\s*g/,
+  calories:      /열량[:\s]*(\d{1,12}[.,]?\d{0,6})\s*(kcal|킬로칼로리|Kcal)/,
+  total_carbs:   /탄수화물[:\s]*(\d{1,12}[.,]?\d{0,6})\s*g/,
+  total_sugars:  /당류[:\s]*(\d{1,12}[.,]?\d{0,6})\s*g/,
+  protein:       /단백질[:\s]*(\d{1,12}[.,]?\d{0,6})\s*g/,
+  total_fat:     /(?<!포화)(?<!트랜스)지방[:\s]*(\d{1,12}[.,]?\d{0,6})\s*g/,
+  saturated_fat: /포화지방(?:산)?[:\s]*(\d{1,12}[.,]?\d{0,6})\s*g/,
+  trans_fat:     /트랜스지방(?:산)?[:\s]*(\d{1,12}[.,]?\d{0,6})\s*g/,
+  cholesterol:   /콜레스테롤[:\s]*(\d{1,12}[.,]?\d{0,6})\s*m?g/,
+  sodium:        /나트륨[:\s]*(\d{1,12}[.,]?\d{0,6})\s*m?g/,
+  dietary_fiber: /식이섬유[:\s]*(\d{1,12}[.,]?\d{0,6})\s*g/,
 };
 
 /**
@@ -614,16 +614,16 @@ const _G30 = dualGap(30);
 const _G40 = dualGap(40);
 
 const NUTRIENT_PATTERNS_DUAL = {
-  calories:      new RegExp(`열량[:\\s\\n]*(\\d+[.,]?\\d*)\\s*(?:kcal|Kcal|킬로칼로리)${_G30}(\\d+[.,]?\\d*)\\s*(?:kcal|Kcal|킬로칼로리)`, 'i'),
-  total_carbs:   new RegExp(`탄수화물[:\\s\\n]*(\\d+[.,]?\\d*)\\s*g${_G40}(\\d+[.,]?\\d*)\\s*g`),
-  total_sugars:  new RegExp(`당류[:\\s\\n]*(\\d+[.,]?\\d*)\\s*g${_G40}(\\d+[.,]?\\d*)\\s*g`),
-  protein:       new RegExp(`단백질[:\\s\\n]*(\\d+[.,]?\\d*)\\s*g${_G40}(\\d+[.,]?\\d*)\\s*g`),
-  total_fat:     new RegExp(`(?<!포화)(?<!트랜스)지방[:\\s\\n]*(\\d+[.,]?\\d*)\\s*g${_G40}(\\d+[.,]?\\d*)\\s*g`),
-  saturated_fat: new RegExp(`포화지방(?:산)?[:\\s\\n]*(\\d+[.,]?\\d*)\\s*g${_G40}(\\d+[.,]?\\d*)\\s*g`),
-  trans_fat:     new RegExp(`트랜스지방(?:산)?[:\\s\\n]*(\\d+[.,]?\\d*)\\s*g${_G40}(\\d+[.,]?\\d*)\\s*g`),
-  cholesterol:   new RegExp(`콜레스테롤[:\\s\\n]*(\\d+[.,]?\\d*)\\s*m?g${_G40}(\\d+[.,]?\\d*)\\s*m?g`),
-  sodium:        new RegExp(`나트륨[:\\s\\n]*(\\d+[.,]?\\d*)\\s*m?g${_G40}(\\d+[.,]?\\d*)\\s*m?g`),
-  dietary_fiber: new RegExp(`식이섬유[:\\s\\n]*(\\d+[.,]?\\d*)\\s*g${_G40}(\\d+[.,]?\\d*)\\s*g`),
+  calories:      new RegExp(`열량[:\\s\\n]*(\\d{1,12}[.,]?\\d{0,6})\\s*(?:kcal|Kcal|킬로칼로리)${_G30}(\\d{1,12}[.,]?\\d{0,6})\\s*(?:kcal|Kcal|킬로칼로리)`, 'i'),
+  total_carbs:   new RegExp(`탄수화물[:\\s\\n]*(\\d{1,12}[.,]?\\d{0,6})\\s*g${_G40}(\\d{1,12}[.,]?\\d{0,6})\\s*g`),
+  total_sugars:  new RegExp(`당류[:\\s\\n]*(\\d{1,12}[.,]?\\d{0,6})\\s*g${_G40}(\\d{1,12}[.,]?\\d{0,6})\\s*g`),
+  protein:       new RegExp(`단백질[:\\s\\n]*(\\d{1,12}[.,]?\\d{0,6})\\s*g${_G40}(\\d{1,12}[.,]?\\d{0,6})\\s*g`),
+  total_fat:     new RegExp(`(?<!포화)(?<!트랜스)지방[:\\s\\n]*(\\d{1,12}[.,]?\\d{0,6})\\s*g${_G40}(\\d{1,12}[.,]?\\d{0,6})\\s*g`),
+  saturated_fat: new RegExp(`포화지방(?:산)?[:\\s\\n]*(\\d{1,12}[.,]?\\d{0,6})\\s*g${_G40}(\\d{1,12}[.,]?\\d{0,6})\\s*g`),
+  trans_fat:     new RegExp(`트랜스지방(?:산)?[:\\s\\n]*(\\d{1,12}[.,]?\\d{0,6})\\s*g${_G40}(\\d{1,12}[.,]?\\d{0,6})\\s*g`),
+  cholesterol:   new RegExp(`콜레스테롤[:\\s\\n]*(\\d{1,12}[.,]?\\d{0,6})\\s*m?g${_G40}(\\d{1,12}[.,]?\\d{0,6})\\s*m?g`),
+  sodium:        new RegExp(`나트륨[:\\s\\n]*(\\d{1,12}[.,]?\\d{0,6})\\s*m?g${_G40}(\\d{1,12}[.,]?\\d{0,6})\\s*m?g`),
+  dietary_fiber: new RegExp(`식이섬유[:\\s\\n]*(\\d{1,12}[.,]?\\d{0,6})\\s*g${_G40}(\\d{1,12}[.,]?\\d{0,6})\\s*g`),
 };
 
 /**
@@ -1446,6 +1446,34 @@ function reconcileAllergens(flat, v2) {
   return out;
 }
 
+/**
+ * 3분리(v2) → flat `allergens` 목록. **직접 함유 + 원재료 추정만.** 혼입 가능은 제외한다.
+ *
+ * ★★★ 세션45 1차 검증 중대4 — 같은 `allergens` 키가 두 경로에서 **정반대 의미**였다.
+ *   실측: 혼입 문구만 있는 라벨(직접 함유 선언 없음)을 `/api/ocr/analyze` 에 넣으면
+ *     analysis.allergens = ["대두","우유"]        ← 혼입이 flat 에 들어간다
+ *     allergens_v2       = {contains:[], inferred:[], mayContain:["대두","우유"]}
+ *   같은 제품을 `/api/products/:barcode` 로 조회하면 allergens = [] 이다.
+ *   원인은 `detectAllergens`(v1) 이 명시 표기를 못 찾으면 **본문 전체 키워드 추론**으로
+ *   폴백해서 혼입 문장의 알레르겐까지 담기 때문이다.
+ *
+ *   flat 만 읽는 구버전 앱은 OCR 화면에서 혼입을 **붉게**(거짓 「직접 함유」) 보고,
+ *   같은 제품을 바코드로 조회하면 **아무것도 못 본다.** 어느 쪽을 기준으로 만들어도 다른 쪽이 틀린다.
+ *
+ * ★ 왜 inferred 는 넣고 mayContain 은 빼는가 —
+ *   inferred(밀가루→밀)는 실제로 그 원료가 **들어 있다.** 구버전에서 표시되는 것이 맞다.
+ *   mayContain 은 들어 있지 않을 수 있다. 등급을 모르는 구버전이 이걸 받으면 거짓 경고가 된다.
+ *   (세션44 가 flat 에서 혼입을 제거한 것과 같은 규칙 — 그 규칙을 폴백 경로까지 확장하는 것이다.)
+ *
+ * @param {Object|null} v2        reconcileAllergens 를 통과한 3분리
+ * @param {Array|null} fallback   v2 가 없을 때(사용자 덮어쓰기) 그대로 쓸 목록
+ */
+function flattenAllergensV2(v2, fallback) {
+  if (!v2) return Array.isArray(fallback) ? fallback : [];
+  const arr = (x) => (Array.isArray(x) ? x : []);
+  return [...new Set([...arr(v2.contains), ...arr(v2.inferred)])].sort();
+}
+
 // ============================================================
 // 5b. 제품 메타정보 추출 (제품명·식품유형·판매원·제조원·내용량·품목보고번호)
 // ============================================================
@@ -1643,6 +1671,7 @@ module.exports = {
   detectAllergensV2,
   reconcileAllergens,   // ★ 세션44: flat ↔ 3분리 어긋남 방지(치명3)
   mergeAllergensV2,     // ★ 세션44: 두 사진 3분리 합집합(치명B)
+  flattenAllergensV2,   // ★ 세션45: flat 의 의미를 두 경로에서 일치시킨다(중대4)
   extractProductMeta,
   analyzeText,
   ADDITIVE_KEYWORDS,

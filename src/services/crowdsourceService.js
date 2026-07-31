@@ -16,6 +16,8 @@ const { sanityCheck, scaleNutrition } = require('./nutritionTrafficLight');
 // 세션42: per_total 라벨을 저장 게이트 **통과 전에** 1회분으로 환산하기 위해 사용
 const { resolveServings, totalToServingDivisor } = require('./servingResolver');
 const { mergeAndApply, AUTO_VERIFY_DISTINCT_DEVICES } = require('./mergeService');
+// ★ 세션46 중대4 — 저장 경계도 응답과 **같은 함수**로 3분리를 만든다. 규칙을 두 번 적지 않는다.
+const { reconcileAllergens, flattenAllergensV2 } = require('./ocrParser');
 
 // 최소 OCR 신뢰도 (Gemini 피드백: 0.5→0.7 상향)
 const MIN_CONFIDENCE = 0.7;
@@ -394,7 +396,19 @@ async function saveOcrContribution(params) {
           corrections: ocrResult?.corrections || [],
           parsed_nutrition: nutrition,
           parsed_ingredients: analysis.ingredients || [],
-          allergens: analysis.allergens || [],
+          // ★★★ 세션46 2차 검증 중대4 — 여기가 **응답과 어긋나는 진짜 지점**이었다.
+          //   세션45 는 응답 4곳을 `flattenAllergensV2(reconcileAllergens(...))` 로 통일했는데
+          //   저장 경로는 **reconcile 을 거치지 않은 raw** 를 그대로 넣고 있었다.
+          //   결과(전사 68건 실측 3건 — 006·046·076):
+          //     같은 라벨인데 OCR 응답은 「원재료 추정(inferred)」, DB 는 「직접 함유(contains)」.
+          //   `mergeService.unionAllergens` 가 **flat 에만 있고 v2 에 없는 이름을
+          //   `ALLERGEN_LEVEL_DEFAULT='contains'` 로 확정**하기 때문이다.
+          //   006 실측: 새우·조개류가 바코드 조회에서 붉은 「직접 함유」로 나갔다 — 라벨은 선언한 적이 없다.
+          //   → 응답과 **같은 함수**를 태워 flat-only 이름이 `inferred` 로 저장되게 한다.
+          allergens: flattenAllergensV2(
+            reconcileAllergens(analysis.allergens, analysis.allergens_v2),
+            analysis.allergens,
+          ),
           // ★★★ 세션44 2차 검증(중대F) — `allergens_v2` 가 **저장 경로에 전혀 없었다.**
           //   flat `allergens` 만 저장되는데, 세션44가 flat 에서 혼입 항목을 정확히 제거했기 때문에
           //   **혼입 정보가 화면에만 있고 DB 에는 남지 않는다.**
@@ -404,7 +418,9 @@ async function saveOcrContribution(params) {
           //   → 3분리를 그대로 함께 저장한다. 등급 정보가 있으므로 조회 시 구분해 표시할 수 있다.
           //   ⚠ `products.allergens` 컬럼은 여전히 flat 이다. 상품 레코드에 3분리를 반영하는 것은
           //     스키마 변경이 필요하므로 별건이다(인수인계 이월).
-          allergens_v2: analysis.allergens_v2 || null,
+          //   ★ 세션46 — 여기도 reconcile 을 거친다. flat 과 v2 가 **같은 출처의 짝**이어야
+          //     `unionAllergens` 가 인덱스로 맞출 때 이름과 등급이 어긋나지 않는다.
+          allergens_v2: reconcileAllergens(analysis.allergens, analysis.allergens_v2),
           user_input: {
             product_name: productInfo?.product_name || null,
             manufacturer: productInfo?.manufacturer || null,

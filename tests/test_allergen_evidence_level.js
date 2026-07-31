@@ -461,8 +461,12 @@ async function main() {
 
   await t('★ getProductWithTrafficLight 응답에 allergens / allergens_v2 키가 있다 (소스 검증)', () => {
     const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'services', 'productService.js'), 'utf8');
-    assert.ok(/allergens:\s*allergens \? allergens\.flat : null/.test(src), '응답에 flat 알레르기가 실리지 않는다');
-    assert.ok(/allergens_v2:\s*allergens \? allergens\.v2 : null/.test(src), '응답에 3분리가 실리지 않는다');
+    // ★ 세션46: 게이트가 `allergens` 에서 `allergens && allergens.collected` 로 바뀌었다.
+    //   미수집(0행)을 「없음」으로 내보내지 않기 위해서다. 상세는 아래 §7 의 세션46 케이스.
+    assert.ok(/allergens:\s*allergens && allergens\.collected \? allergens\.flat : null/.test(src),
+      '응답에 flat 알레르기가 실리지 않는다');
+    assert.ok(/allergens_v2:\s*allergens && allergens\.collected \? allergens\.v2 : null/.test(src),
+      '응답에 3분리가 실리지 않는다');
     assert.ok(/productModel\.getAllergens/.test(src), 'productService 가 알레르기를 조회하지 않는다');
   });
 
@@ -856,6 +860,50 @@ async function main() {
     const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'services', 'productService.js'), 'utf8');
     assert.ok(/allergens_available:/.test(src),
       '「정보 없음」과 「없음」을 구분할 신호가 응답에 없다');
+  });
+
+  await t('★★★ 세션46 — 행이 0개인 제품이 「알레르기 없음」으로 나가지 않는다 (과소경고)', () => {
+    // ★ 이 결함은 1차·2차 검증을 모두 통과하고 **배포 후 실물 응답에서** 잡혔다.
+    //   세션45 판: allergens_available = !!allergens  ← 「쿼리가 성공했는가」일 뿐이다.
+    //   실측(8801043032155 짜왕 = 유탕면): allergens [] · v2 전부 빈 배열 · available **true**.
+    //   밀이 든 라면이 「정보 있음 + 알레르겐 없음」으로 나갔다.
+    //
+    // ★★ 왜 0행이 「없음」일 수 없는가 (이 근거가 이 검사의 전부다) —
+    //   product_allergens 에 INSERT 하는 지점이 저장소에 8곳인데 **전부 발견된 것만 넣는다.**
+    //   「확인했으나 없음」을 기록하는 행·컬럼·코드가 존재하지 않는다.
+    //   → 0행은 예외 없이 「미수집」이다. 아래가 그 사실을 소스에서 고정한다.
+    const insertSrcs = [
+      ['src/services/mergeService.js', true],
+      ['scripts/19-apply-haccp.js', false],
+      ['scripts/26-apply-haccp-dump.js', false],
+    ];
+    for (const [rel, required] of insertSrcs) {
+      const p = path.join(__dirname, '..', rel);
+      if (!fs.existsSync(p)) { assert.ok(!required, `${rel} 이 없다`); continue; }
+      const s = fs.readFileSync(p, 'utf8');
+      assert.ok(!/allergen_name\s*=\s*['"](없음|none|NONE)['"]/.test(s),
+        `${rel} 이 「없음」 마커 행을 넣는다 — 그렇다면 이 검사의 전제가 깨진다. 정책을 다시 볼 것`);
+    }
+
+    // 계약 1 — buildAllergens 가 「수집 여부」를 함께 낸다.
+    assert.strictEqual(buildAllergens([]).collected, false, '0행인데 collected 가 false 가 아니다');
+    assert.strictEqual(
+      buildAllergens([{ allergen_name: '밀', evidence_level: 'contains' }]).collected, true);
+    // 혼입만 있어도 「수집됨」이다 — flat 이 비는 것과 정보가 없는 것은 다르다.
+    const onlyMay = buildAllergens([{ allergen_name: '대두', evidence_level: 'may_contain' }]);
+    assert.deepStrictEqual(onlyMay.flat, [], '혼입은 flat 에 넣지 않는다');
+    assert.strictEqual(onlyMay.collected, true, '혼입만 있어도 수집된 것이다');
+
+    // 계약 2 — 응답 배선이 collected 를 실제로 게이트로 쓴다.
+    const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'services', 'productService.js'), 'utf8');
+    assert.ok(!/allergens_available:\s*!!allergens\s*,/.test(src),
+      'allergens_available 이 「쿼리 성공 여부」로 되돌아갔다 — 미수집이 「없음」으로 나간다');
+    assert.ok(/allergens_available:\s*!!\(allergens && allergens\.collected\)/.test(src),
+      'allergens_available 이 collected 를 보지 않는다');
+    for (const key of ['allergens', 'allergens_v2']) {
+      assert.ok(new RegExp(`${key}:\\s*allergens && allergens\\.collected \\?`).test(src),
+        `${key} 가 미수집일 때 null 로 나가지 않는다 — 빈 배열은 「확인했고 없다」로 읽힌다`);
+    }
   });
 
   // ════════════════════════════════════════════════════════════════════════

@@ -322,10 +322,23 @@ async function getProductWithTrafficLight(barcode) {
     //   **「알레르기 없음」으로 단정**돼 나간다 — `null = 판정 없음 ≠ 안전` 위배다.
     //   그리고 세션45 이전엔 이 키가 아예 없었으므로, `'allergens' in data` 로 판단하던
     //   클라이언트는 배포 순간 전 제품이 「없음」으로 뒤집힌다.
-    allergens: allergens ? allergens.flat : null,
-    allergens_v2: allergens ? allergens.v2 : null,
+    //
+    // ★★★ 세션46 배포 검증에서 잡힌 것 — **주석은 맞았는데 구현이 그 말을 안 지켰다.**
+    //   세션45 판은 `allergens_available: !!allergens` 였다. 이것은 「쿼리가 성공했는가」일 뿐
+    //   「이 제품의 알레르기 정보를 갖고 있는가」가 아니다.
+    //   실측(배포 직후 8801043032155 짜왕 = 유탕면):
+    //     allergens: []  allergens_v2: {전부 빈 배열}  allergens_available: **true**
+    //   밀이 든 라면이 「알레르기 정보 있음 + 없음」으로 나갔다. **과소경고**다.
+    //   현 DB 는 product_allergens 5,470행 / products 229,028건 — 대다수가 이 상태다.
+    //   → 미수집(`collected === false`)도 조회 실패와 **똑같이 null** 로 낸다.
+    //     세 키가 한 방향을 가리켜야 클라이언트가 헷갈리지 않는다: `null = 판정 없음 ≠ 안전`.
+    //   ★ 구버전 앱 호환 — 세션45 이전에는 이 키가 아예 없었다(`undefined`).
+    //     `null` 은 `undefined` 와 똑같이 falsy 라 `data.allergens || []` 패턴이 그대로 동작한다.
+    //     반면 `[]` 는 "확인했고 없다" 로 읽힌다. 그래서 빈 배열이 아니라 null 이다.
+    allergens: allergens && allergens.collected ? allergens.flat : null,
+    allergens_v2: allergens && allergens.collected ? allergens.v2 : null,
     // 화면이 "정보 없음" 과 "없음" 을 분기할 수 있는 명시 신호. 배열 길이로 추론하게 두지 않는다.
-    allergens_available: !!allergens,
+    allergens_available: !!(allergens && allergens.collected),
     context,
     sources: buildSources(trafficLight),
     data_freshness: buildFreshness(product),
@@ -365,7 +378,14 @@ function buildAllergens(rows) {
 
   // ★★ 세션45 중대4 — flat 규칙을 **여기서 따로 쓰지 않는다.** ocrParser 의 것을 그대로 부른다.
   //   같은 규칙을 두 곳에 적으면 다음 수정 때 한쪽만 고친다(이 프로젝트가 4세션 연속 겪은 사고).
-  return { flat: flattenAllergensV2(v2, []), v2 };
+  //
+  // ★★★ 세션46 배포 검증에서 잡힌 것 — `collected` 를 함께 낸다.
+  //   `rows.length === 0` 은 「알레르겐이 없다」가 **아니라** 「아직 수집하지 않았다」다.
+  //   근거: `product_allergens` 에 INSERT 하는 지점이 저장소에 5곳인데(mergeService 2 ·
+  //   19-apply-haccp 3 · 26-apply-haccp-dump 3) **전부 발견된 알레르겐만 넣는다.**
+  //   「확인했으나 없음」을 기록하는 행·컬럼·코드가 **존재하지 않는다.**
+  //   → 0행은 예외 없이 「미수집」이다. 이것을 「없음」으로 내보내면 과소경고다.
+  return { flat: flattenAllergensV2(v2, []), v2, collected: rows.length > 0 };
 }
 
 /**

@@ -1,0 +1,278 @@
+# ==============================================================================
+#  먹선 서버 — 배포 게이트  (세션49 신설)
+#
+#  왜 이 파일이 있는가
+#    세션48 외부 검증 2인이 공통으로 지목한 0순위: main 에 push 하면 Railway 가
+#    즉시 배포한다. 발견과 사용자 노출 사이에 완충지대가 0 이다.
+#    이 워크플로는 그 완충지대다. Railway 서비스 설정의 `Wait for CI` 를 켜면
+#    여기가 초록일 때만 배포가 진행된다(실패하면 배포는 SKIPPED).
+#    ★ Railway 의 Wait for CI 는 워크플로에 `on: push: branches: [main]` 이
+#      있어야 인식된다. 아래 트리거를 함부로 바꾸지 말 것.
+#
+#  두 개의 축
+#    job: regression   — pglite(=PostgreSQL 18.3) 위에서 커밋 게이트 전량.
+#                        run-commit-session48.bat 의 STEP 1+2 와 같은 목록이다.
+#                        ★ Node 20 과 22 양쪽에서 돌린다. Dockerfile 은 node:20-alpine
+#                          인데 개발·테스트는 Node 22 였다. 그 드리프트를 여기서 닫는다.
+#    job: real-postgres — 진짜 PostgreSQL 컨테이너에 000_baseline.sql 을 실제로
+#                        적용하고, 앱을 그 DB 에 붙여 부팅시킨다.
+#                        pglite 가 원리적으로 못 보는 것을 본다:
+#                          · pg_trgm 이 실제로 생성되어 trigram GIN 인덱스 8개가 만들어지는가
+#                          · GENERATED ALWAYS AS (...) STORED 가 도는가
+#                          · ALTER TYPE ... ADD VALUE 가 트랜잭션 밖에서 도는가
+#                          · psql 이 ON_ERROR_STOP=1 에서 정말 멈추는가
+#
+#  하지 말 것
+#    ❌ 스위트를 한 줄로 && 로 잇지 말 것. 어느 것이 빨강인지 안 보인다.
+#    ❌ `continue-on-error: true` 를 붙이지 말 것. 그 순간 이 파일은 거짓 초록이 된다.
+#    ❌ §F 스킵을 허용하지 말 것. 아래 assert 단계가 그것을 막는다.
+# ==============================================================================
+name: gate
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: gate-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  # ────────────────────────────────────────────────────────────────────────────
+  regression:
+    name: 회귀 게이트 (Node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ['20', '22']   # 20 = Dockerfile(프로덕션) · 22 = 개발·세션48 검증 환경
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+
+      - name: 의존성 설치 (lockfile 고정)
+        run: npm ci
+
+      # ── STEP 1 : 문법 + 부팅 ────────────────────────────────────────────────
+      - name: 문법 검사 (커밋 게이트와 동일 목록)
+        run: |
+          set -e
+          for f in \
+            src/models/productModel.js \
+            src/routes/ocrRoutes.js \
+            src/routes/productRoutes.js \
+            src/services/mergeService.js \
+            src/services/productService.js \
+            src/services/allergenName.js \
+            scripts/lib/allergenUpsert.js \
+            scripts/19-apply-haccp.js \
+            scripts/26-apply-haccp-dump.js \
+            scripts/76-normalize-allergen-names.js \
+            scripts/77-verify-fresh-schema.js \
+            tests/test_allergen_name_normalize.js \
+            tests/test_allergen_declared.js \
+            tests/test_allergen_evidence_level.js \
+            tests/test_path_parity.js \
+            tests/test_allergen_contract.js \
+            tests/test_schema_constraints.js
+          do
+            node --check "$f"
+          done
+
+      - name: package.json 이 유효한 JSON 인가
+        run: node -e "JSON.parse(require('fs').readFileSync('package.json','utf8'))"
+
+      - name: 앱이 부팅되는가
+        run: node -e "require('./src/app')"
+
+      # ── STEP 2 : 회귀 (스위트마다 별도 단계 — 어느 것이 빨강인지 보이게) ────
+      - name: test: allergen
+        run: npm run test:allergen
+
+      - name: 운영 덤프를 77 이 찾는 위치에 배치
+        # 77 은 PROD_DUMP = <repo>/../IP/production_schema_2026-07-31.txt 를 본다.
+        # 저장소 밖 경로라 CI 에서는 파일이 없어 §F 가 조용히 스킵된다(EXIT 0).
+        # 이 저장소가 가장 경계하는 「거짓 초록」패턴이라 복사본을 심는다.
+        # 정본은 D:\...\먹선\IP\ 이고 schema/ 는 복사본이다(IP 분리 원칙).
+        run: |
+          mkdir -p "${GITHUB_WORKSPACE}/../IP"
+          cp schema/production_schema_2026-07-31.txt "${GITHUB_WORKSPACE}/../IP/"
+
+      - name: verify:fresh-schema  (+ §F 가 실제로 돌았는지 단정)
+        run: |
+          set -o pipefail
+          npm run verify:fresh-schema | tee 77.log
+          if ! grep -q '덤프가 담고 있는 테이블' 77.log; then
+            echo "::error::§F(운영 덤프 성질 대조)가 돌지 않았다. 덤프 배치 단계를 확인할 것 — 이대로면 거짓 초록이다."
+            exit 1
+          fi
+
+      - name: test: contracts (parity / allergen / schema 대장 대조)
+        run: npm run test:contracts
+
+      - name: test: merge
+        run: npm run test:merge
+
+      - name: test: ocr
+        run: npm run test:ocr
+
+      - name: test: serving
+        run: npm run test:serving
+
+      - name: test: parity (앱↔정본 파서 동치)
+        run: npm run test:parity
+
+      - name: test: unit (신호등)
+        run: npm run test:unit
+
+      - name: 63-eval 캡처 파서 (153/153 유지)
+        run: node scripts/63-eval-capture-parser.js
+
+      - name: 실패 시 77 로그 보존
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gate-log-node${{ matrix.node }}
+          path: 77.log
+          if-no-files-found: ignore
+
+  # ────────────────────────────────────────────────────────────────────────────
+  real-postgres:
+    name: 진짜 PostgreSQL 게이트
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    services:
+      postgres:
+        # ★ 16 이 하한선이다 — 77 이 쓰는 EXPLAIN (GENERIC_PLAN) 이 PG16 도입 기능.
+        #   pglite 는 18.3 이므로 여기는 「아래쪽 경계」를 본다.
+        #   ⚠ 운영(Railway) 의 실제 버전은 아직 확인되지 않았다. 확인되면 그 버전을
+        #     matrix 에 추가할 것 — 덤프에 server_version 이 안 찍혀 있다(세션48 §6-4).
+        image: postgres:16
+        env:
+          POSTGRES_USER: meokseon
+          POSTGRES_PASSWORD: meokseon
+          POSTGRES_DB: meokseon_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U meokseon -d meokseon_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    env:
+      DATABASE_URL: postgres://meokseon:meokseon@localhost:5432/meokseon_ci
+      # src/config/database.js:14 — DB_SSL 이 'false' 가 아니면 SSL 을 강제한다.
+      # 서비스 컨테이너는 SSL 을 지원하지 않으므로 반드시 꺼야 한다.
+      DB_SSL: 'false'
+      NODE_ENV: test
+      # src/config/index.js:9 — PORT 기본값은 3000 이다(4000 아님). 명시해서 고정한다.
+      PORT: '4000'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'   # 프로덕션 Dockerfile 과 같은 버전으로 붙인다
+          cache: npm
+
+      - name: 의존성 설치
+        run: npm ci
+
+      - name: psql 확인 (없으면 설치)
+        run: |
+          if ! command -v psql >/dev/null 2>&1; then
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq postgresql-client
+          fi
+          psql --version
+
+      - name: 서버 버전 기록 (운영 버전 대조용)
+        run: psql "$DATABASE_URL" -Atc "SHOW server_version;"
+
+      - name: 마이그레이션 1회차 — baseline 이 진짜 PG 에서 도는가
+        run: npm run migrate
+
+      - name: pg_trgm 이 실제로 생성됐는가 (pglite 는 못 보는 축)
+        run: |
+          set -e
+          HAS=$(psql "$DATABASE_URL" -Atc "SELECT count(*) FROM pg_extension WHERE extname='pg_trgm';")
+          echo "pg_trgm: $HAS"
+          if [ "$HAS" != "1" ]; then
+            echo "::error::pg_trgm 이 생성되지 않았다. baseline 의 조건부 블록이 참이 되지 않아 trigram GIN 인덱스 8개가 만들어지지 않는다."
+            exit 1
+          fi
+          N=$(psql "$DATABASE_URL" -Atc "SELECT count(*) FROM pg_indexes WHERE schemaname='public' AND indexdef LIKE '%gin_trgm_ops%';")
+          echo "trigram GIN 인덱스: $N"
+          if [ "$N" -lt 8 ]; then
+            echo "::error::trigram GIN 인덱스가 $N 개다. 8개여야 한다."
+            exit 1
+          fi
+
+      - name: GENERATED 컬럼이 실제로 채워지는가 (products.search_text)
+        # ⚠ data_source 는 ENUM 이다. 유효 라벨은
+        #   public_c005 | public_nutrition | ocr_crowdsource | open_food_facts |
+        #   manual_seed | c005_miss_queue.  'manual' 은 없다.
+        # 기대값 'cismoketest' 는 .tmp/s49/verify_ci_assertions.js 로 pglite 에서 실측했다.
+        run: |
+          set -e
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -Atc \
+            "INSERT INTO products (barcode, product_name, data_source) VALUES ('9990000000001', '  CI  Smoke  Test  ', 'manual_seed');"
+          OUT=$(psql "$DATABASE_URL" -Atc "SELECT search_text FROM products WHERE barcode='9990000000001';")
+          psql "$DATABASE_URL" -Atc "DELETE FROM products WHERE barcode='9990000000001';"
+          echo "search_text = [$OUT]"
+          if [ "$OUT" != "cismoketest" ]; then
+            echo "::error::GENERATED ALWAYS AS ... STORED 의 결과가 'cismoketest' 가 아니다 (실측 '$OUT')."
+            exit 1
+          fi
+
+      - name: ENUM 확장이 적용됐는가 (ALTER TYPE ... ADD VALUE 3종)
+        # baseline:122-125 — disputed(004) · orange(008) · c005_miss_queue.
+        run: |
+          set -e
+          psql "$DATABASE_URL" -Atc \
+            "SELECT t.typname||':'||e.enumlabel FROM pg_type t JOIN pg_enum e ON e.enumtypid=t.oid
+             WHERE (t.typname='verification_status' AND e.enumlabel='disputed')
+                OR (t.typname='mfras_grade'         AND e.enumlabel='orange')
+                OR (t.typname='data_source_type'    AND e.enumlabel='c005_miss_queue');" | tee enum.log
+          N=$(grep -c . enum.log || true)
+          echo "적용된 라벨 $N 종"
+          if [ "$N" -ne 3 ]; then
+            echo "::error::ALTER TYPE ... ADD VALUE 3종이 전부 적용되지 않았다 (disputed / orange / c005_miss_queue) — 실측 $N 종."
+            exit 1
+          fi
+
+      - name: 마이그레이션 2회차 — 멱등한가
+        run: npm run migrate
+
+      - name: 앱이 진짜 PostgreSQL 에 붙어 부팅되고 /api/health 가 200 인가
+        run: |
+          set -e
+          node src/server.js & echo $! > server.pid
+          for i in $(seq 1 30); do
+            if curl -fsS "http://127.0.0.1:${PORT}/api/health" -o health.json; then
+              echo "health OK"; cat health.json; echo
+              kill "$(cat server.pid)" 2>/dev/null || true
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "::error::/api/health 가 60초 안에 200 을 내지 않았다."
+          kill "$(cat server.pid)" 2>/dev/null || true
+          exit 1

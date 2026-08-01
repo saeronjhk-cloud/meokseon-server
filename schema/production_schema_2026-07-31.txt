@@ -1,0 +1,296 @@
+==============================================================================
+운영 스키마 덤프 — railway   2026-07-31T01:27:38.869Z
+읽기 전용 확인: default_transaction_read_only = on
+==============================================================================
+
+── products ────────────────────────────────────────────────────
+  product_id                   bigint NOT NULL  DEFAULT nextval('products_product_id_seq'::regclass)
+  barcode                      character varying
+  product_name                 character varying NOT NULL
+  brand                        character varying
+  manufacturer                 character varying
+  food_type                    character varying
+  food_category                food_category (enum)  DEFAULT 'general'::food_category
+  serving_size                 numeric
+  serving_unit                 character varying  DEFAULT 'g'::character varying
+  total_content                numeric
+  content_unit                 character varying  DEFAULT 'g'::character varying
+  servings_per_container       numeric
+  image_url                    text
+  image_front_url              text
+  image_label_url              text
+  data_source                  data_source_type (enum) NOT NULL
+  verification                 verification_status (enum)  DEFAULT 'unverified'::verification_status
+  verify_count                 integer  DEFAULT 0
+  is_active                    boolean  DEFAULT true
+  created_at                   timestamp with time zone  DEFAULT now()
+  updated_at                   timestamp with time zone  DEFAULT now()
+  c005_report_no               character varying
+  public_food_cd               character varying
+  normalized_name              text
+  normalized_maker             text
+  pog_daycnt                   character varying  DEFAULT NULL::character varying
+  prms_dt_i1250                character varying  DEFAULT NULL::character varying
+  hieng_lntrt_dvs_nm           character varying  DEFAULT NULL::character varying
+  dispos                       text  DEFAULT NULL::character varying
+  frmlc_mtrqlt                 text  DEFAULT NULL::character varying
+  merged_at                    timestamp with time zone
+  merge_sources_count          integer  DEFAULT 0
+  search_text                  text
+  off_code                     text
+  [인덱스]
+    CREATE UNIQUE INDEX idx_products_barcode_unique ON public.products USING btree (barcode) WHERE (barcode IS NOT NULL)
+    CREATE INDEX idx_products_category ON public.products USING btree (food_category)
+    CREATE INDEX idx_products_name_trgm ON public.products USING gin (product_name gin_trgm_ops)
+    CREATE INDEX idx_products_normalized_maker ON public.products USING btree (normalized_maker)
+    CREATE INDEX idx_products_normalized_name ON public.products USING gin (normalized_name gin_trgm_ops)
+    CREATE INDEX idx_products_report_no ON public.products USING btree (c005_report_no)
+    CREATE INDEX idx_products_search_text ON public.products USING gin (search_text gin_trgm_ops)
+    CREATE UNIQUE INDEX products_pkey ON public.products USING btree (product_id)
+  [제약]
+    products_data_source_not_null: NOT NULL data_source
+    products_pkey: PRIMARY KEY (product_id)
+    products_product_id_not_null: NOT NULL product_id
+    products_product_name_not_null: NOT NULL product_name
+  [행 수] 229,028
+
+── nutrition_data ──────────────────────────────────────────────
+  nutrition_id                 bigint NOT NULL  DEFAULT nextval('nutrition_data_nutrition_id_seq'::regclass)
+  product_id                   bigint NOT NULL
+  calories                     numeric
+  total_fat                    numeric
+  saturated_fat                numeric
+  trans_fat                    numeric
+  cholesterol                  numeric
+  sodium                       numeric
+  total_carbs                  numeric
+  total_sugars                 numeric
+  added_sugars                 numeric
+  dietary_fiber                numeric
+  protein                      numeric
+  calcium                      numeric
+  iron                         numeric
+  vitamin_d                    numeric
+  potassium                    numeric
+  data_source                  data_source_type (enum)  DEFAULT 'public_nutrition'::data_source_type
+  verified_at                  timestamp with time zone
+  created_at                   timestamp with time zone  DEFAULT now()
+  serving_size                 character varying  DEFAULT NULL::character varying
+  ocr_confidence               integer
+  [인덱스]
+    CREATE UNIQUE INDEX nutrition_data_pkey ON public.nutrition_data USING btree (nutrition_id)
+    CREATE UNIQUE INDEX nutrition_data_product_id_key ON public.nutrition_data USING btree (product_id)
+  [제약]
+    nutrition_data_nutrition_id_not_null: NOT NULL nutrition_id
+    nutrition_data_pkey: PRIMARY KEY (nutrition_id)
+    nutrition_data_product_id_fkey: FOREIGN KEY (product_id) REFERENCES products(product_id) ON DELETE CASCADE
+    nutrition_data_product_id_key: UNIQUE (product_id)
+    nutrition_data_product_id_not_null: NOT NULL product_id
+  [행 수] 43,431
+
+── nutrition_traffic_light ─────────────────────────────────────
+  tl_id                        bigint NOT NULL  DEFAULT nextval('nutrition_traffic_light_tl_id_seq'::regclass)
+  product_id                   bigint
+  food_category                food_category (enum)
+  sodium_color                 traffic_light_color (enum)
+  sodium_pct_dv                numeric
+  sodium_basis                 character varying
+  sugars_color                 traffic_light_color (enum)
+  sugars_pct_dv                numeric
+  sugars_basis                 character varying
+  sat_fat_color                traffic_light_color (enum)
+  sat_fat_pct_dv               numeric
+  sat_fat_basis                character varying
+  total_fat_color              traffic_light_color (enum)
+  total_fat_pct_dv             numeric
+  total_fat_basis              character varying
+  cholesterol_color            traffic_light_color (enum)
+  cholesterol_pct_dv           numeric
+  protein_color                traffic_light_color (enum)
+  protein_pct_dv               numeric
+  fiber_color                  traffic_light_color (enum)
+  fiber_pct_dv                 numeric
+  trans_fat_color              traffic_light_color (enum)
+  is_dried_exception           boolean  DEFAULT false
+  context_messages             jsonb  DEFAULT '[]'::jsonb
+  multi_serving_count          numeric
+  evaluated_at                 timestamp with time zone  DEFAULT now()
+  [인덱스]
+    CREATE UNIQUE INDEX nutrition_traffic_light_pkey ON public.nutrition_traffic_light USING btree (tl_id)
+    CREATE UNIQUE INDEX nutrition_traffic_light_product_id_key ON public.nutrition_traffic_light USING btree (product_id)
+  [제약]
+    nutrition_traffic_light_pkey: PRIMARY KEY (tl_id)
+    nutrition_traffic_light_product_id_fkey: FOREIGN KEY (product_id) REFERENCES products(product_id) ON DELETE CASCADE
+    nutrition_traffic_light_product_id_key: UNIQUE (product_id)
+    nutrition_traffic_light_tl_id_not_null: NOT NULL tl_id
+  [행 수] 0
+
+── product_allergens ───────────────────────────────────────────
+  id                           bigint NOT NULL  DEFAULT nextval('product_allergens_id_seq'::regclass)
+  product_id                   bigint NOT NULL
+  allergen_name                character varying NOT NULL
+  source_count                 integer  DEFAULT 1
+  status                       character varying  DEFAULT 'candidate'::character varying
+  detected_via                 character varying
+  created_at                   timestamp with time zone  DEFAULT now()
+  updated_at                   timestamp with time zone  DEFAULT now()
+  evidence_level               character varying NOT NULL  DEFAULT 'contains'::character varying
+  [인덱스]
+    CREATE INDEX idx_product_allergens_level ON public.product_allergens USING btree (product_id, evidence_level)
+    CREATE INDEX idx_product_allergens_product ON public.product_allergens USING btree (product_id)
+    CREATE UNIQUE INDEX idx_product_allergens_unique ON public.product_allergens USING btree (product_id, allergen_name)
+    CREATE UNIQUE INDEX product_allergens_pkey ON public.product_allergens USING btree (id)
+  [제약]
+    product_allergens_allergen_name_not_null: NOT NULL allergen_name
+    product_allergens_evidence_level_chk: CHECK (((evidence_level)::text = ANY ((ARRAY['contains'::character varying, 'inferred'::character varying, 'may_contain'::character varying])::text[])))
+    product_allergens_evidence_level_not_null: NOT NULL evidence_level
+    product_allergens_id_not_null: NOT NULL id
+    product_allergens_pkey: PRIMARY KEY (id)
+    product_allergens_product_id_fkey: FOREIGN KEY (product_id) REFERENCES products(product_id) ON DELETE CASCADE
+    product_allergens_product_id_not_null: NOT NULL product_id
+  [행 수] 5,470
+
+── product_ingredients ─────────────────────────────────────────
+  id                           bigint NOT NULL  DEFAULT nextval('product_ingredients_id_seq'::regclass)
+  product_id                   integer
+  raw_text                     text NOT NULL
+  parsed_ingredients           jsonb
+  prdlst_report_no             character varying
+  source                       character varying  DEFAULT 'c002'::character varying
+  created_at                   timestamp with time zone  DEFAULT now()
+  updated_at                   timestamp with time zone  DEFAULT now()
+  [인덱스]
+    CREATE INDEX idx_product_ingredients_pid ON public.product_ingredients USING btree (product_id)
+    CREATE INDEX idx_product_ingredients_report ON public.product_ingredients USING btree (prdlst_report_no)
+    CREATE UNIQUE INDEX product_ingredients_pkey ON public.product_ingredients USING btree (id)
+  [제약]
+    product_ingredients_id_not_null: NOT NULL id
+    product_ingredients_pkey: PRIMARY KEY (id)
+    product_ingredients_product_id_fkey: FOREIGN KEY (product_id) REFERENCES products(product_id) ON DELETE CASCADE
+    product_ingredients_raw_text_not_null: NOT NULL raw_text
+  [행 수] 101,917
+
+── product_additives ───────────────────────────────────────────
+  product_id                   bigint NOT NULL
+  additive_id                  bigint NOT NULL
+  amount                       numeric
+  unit                         character varying
+  detected_name                character varying
+  confidence                   integer
+  [인덱스]
+    CREATE UNIQUE INDEX idx_product_additives_unique ON public.product_additives USING btree (product_id, additive_id)
+    CREATE UNIQUE INDEX product_additives_pkey ON public.product_additives USING btree (product_id, additive_id)
+  [제약]
+    product_additives_additive_id_fkey: FOREIGN KEY (additive_id) REFERENCES additives(additive_id) ON DELETE CASCADE
+    product_additives_additive_id_not_null: NOT NULL additive_id
+    product_additives_pkey: PRIMARY KEY (product_id, additive_id)
+    product_additives_product_id_fkey: FOREIGN KEY (product_id) REFERENCES products(product_id) ON DELETE CASCADE
+    product_additives_product_id_not_null: NOT NULL product_id
+  [행 수] 182,320
+
+── additives ───────────────────────────────────────────────────
+  additive_id                  bigint NOT NULL  DEFAULT nextval('additives_additive_id_seq'::regclass)
+  name_ko                      character varying NOT NULL
+  name_en                      character varying
+  e_number                     character varying
+  cas_number                   character varying
+  risk_grade                   integer  DEFAULT 0
+  risk_color                   character varying  DEFAULT 'gray'::character varying
+  category                     character varying
+  description                  text
+  max_daily_intake             character varying
+  created_at                   timestamp with time zone  DEFAULT now()
+  aliases                      ARRAY
+  ins_no                       character varying
+  section                      character varying
+  page                         integer
+  usage_standard_raw           text
+  purposes                     ARRAY
+  max_limits                   jsonb
+  has_quantity_limit           boolean
+  usage_type                   character varying
+  adi_type                     character varying
+  adi_value                    character varying
+  edi                          character varying
+  iarc_group                   character varying
+  genotox_status               character varying
+  regulatory_status            character varying
+  klimisch_level               integer
+  last_eval_year               integer
+  data_sufficiency             character varying
+  dim_a_toxicity               numeric
+  dim_b_exposure               numeric
+  dim_c_genotox                numeric
+  dim_d_regulation             numeric
+  dim_e_data_quality           numeric
+  mfras_total                  numeric
+  mfras_grade                  mfras_grade (enum)
+  mfras_override               character varying
+  mfras_rationales             jsonb
+  evaluated_at                 timestamp with time zone  DEFAULT now()
+  [인덱스]
+    CREATE UNIQUE INDEX additives_name_ko_unique ON public.additives USING btree (name_ko)
+    CREATE UNIQUE INDEX additives_pkey ON public.additives USING btree (additive_id)
+    CREATE INDEX idx_additives_ins_no ON public.additives USING btree (ins_no) WHERE (ins_no IS NOT NULL)
+    CREATE INDEX idx_additives_mfras_grade ON public.additives USING btree (mfras_grade)
+    CREATE INDEX idx_additives_section ON public.additives USING btree (section)
+  [제약]
+    additives_additive_id_not_null: NOT NULL additive_id
+    additives_name_ko_not_null: NOT NULL name_ko
+    additives_name_ko_unique: UNIQUE (name_ko)
+    additives_pkey: PRIMARY KEY (additive_id)
+  [행 수] 665
+
+── contributions ───────────────────────────────────────────────
+  contribution_id              bigint NOT NULL  DEFAULT nextval('contributions_contribution_id_seq'::regclass)
+  user_id                      bigint
+  product_id                   bigint
+  contribution_type            character varying
+  data                         jsonb
+  status                       character varying  DEFAULT 'pending'::character varying
+  created_at                   timestamp with time zone  DEFAULT now()
+  device_id                    character varying
+  [인덱스]
+    CREATE UNIQUE INDEX contributions_pkey ON public.contributions USING btree (contribution_id)
+    CREATE INDEX idx_contributions_device ON public.contributions USING btree (device_id, product_id)
+    CREATE INDEX idx_contributions_product ON public.contributions USING btree (product_id, created_at DESC)
+    CREATE INDEX idx_contributions_status ON public.contributions USING btree (status)
+  [제약]
+    contributions_contribution_id_not_null: NOT NULL contribution_id
+    contributions_pkey: PRIMARY KEY (contribution_id)
+    contributions_product_id_fkey: FOREIGN KEY (product_id) REFERENCES products(product_id)
+    contributions_user_id_fkey: FOREIGN KEY (user_id) REFERENCES users(user_id)
+  [행 수] 5
+
+── users ───────────────────────────────────────────────────────
+  user_id                      bigint NOT NULL  DEFAULT nextval('users_user_id_seq'::regclass)
+  firebase_uid                 character varying
+  email                        character varying
+  display_name                 character varying
+  profile_type                 user_profile_type (enum)  DEFAULT 'adult'::user_profile_type
+  created_at                   timestamp with time zone  DEFAULT now()
+  last_login                   timestamp with time zone
+  pulse_consent_version        character varying
+  [인덱스]
+    CREATE INDEX idx_users_pulse_consent ON public.users USING btree (pulse_consent_version) WHERE (pulse_consent_version IS NOT NULL)
+    CREATE UNIQUE INDEX users_firebase_uid_key ON public.users USING btree (firebase_uid)
+    CREATE UNIQUE INDEX users_pkey ON public.users USING btree (user_id)
+  [제약]
+    users_firebase_uid_key: UNIQUE (firebase_uid)
+    users_pkey: PRIMARY KEY (user_id)
+    users_user_id_not_null: NOT NULL user_id
+  [행 수] 0
+
+==============================================================================
+★ UNIQUE 신설 전 중복 검사 (세션46 §5-5 — 중복이 있으면 021 이 실패한다)
+==============================================================================
+  nutrition_data(product_id)                        ✅ 중복 없음   [기존 UNIQUE 1]
+  nutrition_traffic_light(product_id)               ✅ 중복 없음   [기존 UNIQUE 1]
+  users(firebase_uid)                               ✅ 중복 없음   [기존 UNIQUE 1]
+  product_allergens(product_id, allergen_name)      ✅ 중복 없음   [기존 UNIQUE 1]
+  product_additives(product_id, additive_id)        ✅ 중복 없음   [기존 UNIQUE 2]
+
+==============================================================================
+★ 마이그레이션 020 적용 여부: ✅ 적용됨
+    contains       5,470
+==============================================================================

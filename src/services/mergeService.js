@@ -385,6 +385,21 @@ async function mergeAndApply(productId) {
     verification = 'partial';
   }
 
+  // ★★★ 세션47 3차 검증 중대3 — 이 판정은 **반드시 트랜잭션 밖**이어야 한다.
+  //   `hasEvidenceLevelColumn()` 은 내부에서 `db.query`(= `pool.query`)를 쓴다.
+  //   트랜잭션 client 를 쥔 채 부르면 merge 1건이 순간적으로 **커넥션 2개**를 점유한다.
+  //   DB_POOL_MAX 만큼 동시 merge 가 열리면 전원이 두 번째 커넥션을 기다리다
+  //   connectionTimeoutMillis 로 **동시에 실패**하고, 그 실패는 crowdsourceService 가
+  //   삼켜서 `saved: true` 로 나간다(치명1 과 똑같은 침묵 형태).
+  //   ★ 자기증폭이 위험하다 — 판정이 계속 실패하면 성공만 캐싱하므로(중대2 수정)
+  //     캐시가 영원히 안 차고 **매 merge 마다** 중첩 획득이 일어난다.
+  //     그 상황(풀 고갈·콜드 스타트)이 정확히 세션46 이 대비하려던 상황이다.
+  //   pglite 실측: 트랜잭션 보유 중 pool 커넥션 별도 획득 1건 · pg.Pool 모델에서 교착 재현.
+  const canWriteLevel = await hasEvidenceLevelColumn();
+  if (!canWriteLevel) {
+    logger.error('020 미적용 DB — evidence_level 없이 알레르기를 적재한다', { productId });
+  }
+
   // 트랜잭션으로 마스터 갱신
   await db.transaction(async (client) => {
     // ── 1) products 메타 갱신 ──
@@ -535,10 +550,8 @@ async function mergeAndApply(productId) {
     //     API 는 `saved: true` 를 반환한다. `/api/health` 도 정상이다.
     //   → 등급을 못 적더라도 **알레르기 행 자체는 남긴다.** 등급이 없는 경고와
     //     경고가 없는 것은 심각도가 다르다(후자는 경고가 사라지는 방향이다).
-    const canWriteLevel = await hasEvidenceLevelColumn();
-    if (!canWriteLevel) {
-      logger.error('020 미적용 DB — evidence_level 없이 알레르기를 적재한다', { productId });
-    }
+    //   ★ `canWriteLevel` 은 위(트랜잭션 **밖**)에서 이미 판정했다 — 세션47 중대3 참조.
+    //     여기서 부르면 트랜잭션을 쥔 채 풀에서 두 번째 커넥션을 잡는다.
     for (const a of allergens) {
       const status = a.source_count >= AUTO_VERIFY_DISTINCT_DEVICES ? 'confirmed' : 'candidate';
       const level = ALLERGEN_LEVEL_RANK[a.evidence_level] ? a.evidence_level : ALLERGEN_LEVEL_DEFAULT;

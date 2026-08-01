@@ -5,6 +5,7 @@
 
 const db = require('../config/database');
 const { normalizeSearchQuery, isSearchable } = require('../utils/searchNormalize');
+const { normalizeAllergenRows } = require('../services/allergenName');
 
 /**
  * 바코드로 제품 + 영양정보 조회
@@ -205,6 +206,14 @@ async function getAdditives(productId) {
 //     캐시를 버리고 1회 재시도한다. 단방향 캐시는 어느 쪽으로든 굳으면 방어가 없다.
 let _hasEvidenceLevel = null;   // null=미확인/재판정필요 · true/false=확인됨
 
+// ★★ 세션47 3차 검증 경미1 — **측정했고, 고치지 않기로 했다.** (판단 근거를 남긴다)
+//   실측: 판정이 계속 실패하면 `information_schema` 조회가 **요청마다 1회** 추가된다
+//   (getAllergens 200회 → 조회 200회 · 89ms). 바코드 조회는 앱에서 가장 뜨거운 경로다.
+//   TTL 음성 캐시(예: 5초)로 줄일 수 있지만, 그러면 **5초간 등급이 틀린 채로 나간다**
+//   (혼입 가능이 「직접 함유」로 = 과잉경고, 그리고 정렬 계약도 함께 깨진다).
+//   → 거래가 맞지 않는다. ① 이 조회가 실패하는 상태는 본 쿼리도 위태로운 **이미 degraded**
+//     상태이고, ② 알레르기 앱에서 「잠깐이라도 틀린 등급」은 「잠깐 느린 것」보다 비싸다.
+//   세션46 의 **「성공만 캐싱한다」가 정본**이다. 바꾸려면 이 주석부터 반박할 것.
 const UNDEFINED_COLUMN = '42703';   // Postgres: column does not exist
 
 async function hasEvidenceLevelColumn() {
@@ -220,6 +229,7 @@ async function hasEvidenceLevelColumn() {
   } catch (_) {
     // ★ 캐싱하지 않는다. 이번 요청만 보수적으로 "없다" 로 본다.
     //   여기서 true 를 반환하면 본 쿼리가 500 을 낸다 — 치명1 이 그대로 재현된다.
+    //   ★ 실패도 캐싱하지 않는다 — 위 경미1 주석의 판단 근거를 볼 것.
     return false;
   }
 }
@@ -245,11 +255,27 @@ function buildAllergenQuery(hasLevel) {
               allergen_name`;
 }
 
+// ★★★ 세션47 — 노출 경로 알레르겐 이름 정규화.
+//   `product_allergens.allergen_name` 에는 HACCP `parseAllergy` 가 만든 **문장 조각**이 섞여 있다.
+//   실측(2026-07-31, parseAllergy 를 import 해 실제 덤프에 실행): 적재 5,649행 중
+//   **705행(12.5%)·distinct 87종**이 19종 정본이 아니다. 운영 응답에서도 확인됐다:
+//     GET /api/products/8801005013130 → allergens_v2.contains = ["대두", "밀(성분)"]
+//   → 사용자 화면에 「직접 함유: 밀(성분)」으로 나간다.
+//
+//   ★ 왜 여기(model)인가 — 노출 계약을 만드는 `buildAllergens` 는 `productService.js` 에 있지만
+//     이 세션에서 그 파일은 편집 금지였다. `getAllergens` 는 `buildAllergens` 의 **유일한 입력원**
+//     (`grep -rn getAllergens src/` → productService.js:267 1곳)이므로 여기서 걸러도 노출 결과는 같다.
+//     ⚠ 다만 `collected` 판정이 `rows.length > 0` 이라 **여기서 거르면 collected 도 함께 내려간다.**
+//        판정 근거는 인수인계 §회귀보고에 적었다. 이 위치를 옮길 때 반드시 함께 볼 것.
+function normalizeRows(rows) {
+  return normalizeAllergenRows(rows);
+}
+
 async function getAllergens(productId) {
   const hasLevel = await hasEvidenceLevelColumn();
   try {
     const result = await db.query(buildAllergenQuery(hasLevel), [productId]);
-    return result.rows;
+    return normalizeRows(result.rows);
   } catch (e) {
     // ★ 세션46 중대2-(c) — 캐시가 true 인데 컬럼이 사라진 경우(020 롤백).
     //   단방향 캐시라 방어가 없었고, 그대로 던지면 응답 전체가 500 이 된다(치명1 재발).
@@ -257,14 +283,46 @@ async function getAllergens(productId) {
     if (hasLevel && e && e.code === UNDEFINED_COLUMN) {
       _hasEvidenceLevel = null;
       const result = await db.query(buildAllergenQuery(false), [productId]);
-      return result.rows;
+      return normalizeRows(result.rows);
     }
     throw e;
   }
 }
 
+/** 정규화 전 원본 행 (관리자·백필·감사용). 노출 경로에서는 쓰지 말 것. */
+async function getAllergensRaw(productId) {
+  const hasLevel = await hasEvidenceLevelColumn();
+  const result = await db.query(buildAllergenQuery(hasLevel), [productId]);
+  return result.rows;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ⛔ 아래 두 함수(`getTrafficLight` / `upsertTrafficLight`)는 **사용하지 말 것.**
+//
+// ★★★ 세션47 조사 결론 — 운영 `nutrition_traffic_light` 가 0행인 이유는
+//   「쓰는 코드가 저장소 어디에서도 호출되지 않기 때문」이다(호출부 0곳, 시퀀스 미사용).
+//   버그가 아니라 **완성된 채로 배선되지 않은 캐시**다. 그래서 위험하다 —
+//   다음 세션의 누군가가 "캐시가 있는데 왜 안 쓰지?" 하고 한 줄 연결하면 아래가 전부 터진다.
+//
+//   ① 이익이 0이다. 신호등 계산은 **5.8 마이크로초**짜리 순수 CPU 연산으로 요청의 0.09% 다.
+//      반면 캐시 SELECT 는 0.29ms — **재계산보다 50배 비싸다.** 쿼리도 3→4개로 는다.
+//      진짜 병목은 `product_nutrition_resolved` 4-way 뷰 조인(62%)이고 캐시로는 못 없앤다.
+//   ② 무효화가 없다. 신호등 입력을 바꾸는 코드가 20곳(merge·크라우드·관리자 정정·배치)인데
+//      **아무도 이 캐시를 건드리지 않는다.** 채우는 순간부터 적/황/녹이 영원히 옛 값이다.
+//   ③ 판정 규칙 버전 컬럼이 없다. 기준은 v1.0→v1.4 로 계속 바뀌어 왔는데(세션39·42·45),
+//      배포로 기준이 바뀌면 전 행이 조용히 stale 이 되고 **그것을 탐지할 수단이 스키마에 없다.**
+//   ④ 왕복에서 정보가 손실된다. `evaluateNutrition` 의 `is_excluded`·`exclude_reason`·
+//      `sanity_warnings`·`per_100`·`is_withheld` 를 저장할 컬럼이 없다.
+//      주류(`is_excluded`)를 캐시에 넣으면 모든 색이 NULL 로 저장돼
+//      **「평가 제외」와 「영양 데이터 없음」이 구분 불가**가 된다.
+//
+//   → **틀린 캐시는 없는 캐시보다 나쁘다.** 실시간 계산이 정본이다.
+//     제거 여부는 제이 결정 사항으로 인수인계에 올려 두었다(세션47 §4).
+// ─────────────────────────────────────────────────────────────────────────────
+
 /**
- * 제품 ID로 신호등 캐시 조회
+ * ⛔ 미사용 — 위 블록 참조. 조회 경로는 `productService.getProductWithTrafficLight` 가
+ *    매번 실시간 계산한다(캐시 조회 자체를 하지 않는다).
  * @param {number} productId
  * @returns {Promise<Object|null>}
  */
@@ -277,7 +335,8 @@ async function getTrafficLight(productId) {
 }
 
 /**
- * 신호등 판정 결과 저장/갱신
+ * ⛔ 미사용 — 위 `getTrafficLight` 앞 블록 참조. **호출부가 저장소에 0곳이다.**
+ *    연결하기 전에 무효화·규칙버전·손실 컬럼 4가지를 먼저 해결할 것.
  * @param {number} productId
  * @param {Object} evaluation - 판정 결과 객체
  * @returns {Promise<Object>}
@@ -390,7 +449,8 @@ module.exports = {
   searchByName,
   getNutrition,
   getAdditives,
-  getAllergens,                 // 세션45
+  getAllergens,                 // 세션45 (세션47: 이름 정규화 필터 포함)
+  getAllergensRaw,              // 세션47 — 정규화 전 원본(감사·백필용)
   hasEvidenceLevelColumn,       // 세션45 — 배포 순서 방어(치명1)
   _resetEvidenceLevelCache,     // 테스트 전용
   getTrafficLight,

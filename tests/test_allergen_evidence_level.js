@@ -55,52 +55,93 @@ const MIGRATION = path.join(__dirname, '..', 'scripts', 'migrations', '020_aller
 //   **운영과 조용히 갈라진다** — 이 프로젝트가 반복해 겪은 「한쪽만 고치기」다.
 //   → 앞으로 컬럼이 늘어도 이 파일은 고칠 필요가 없다.
 const MIGRATION_DIR = path.join(__dirname, '..', 'scripts', 'migrations');
-const TEST_USER_ID = '00000000-0000-4000-8000-000000000001';
-// 스키마에 필요한 것만. 002/003 은 시드(대용량)라 뺀다.
-const SCHEMA_MIGRATIONS = [
-  '001_init_schema.sql',
-  '004_add_disputed.sql',
-  '005_crowdsource_merge.sql',
-  '006_align_schema_with_production.sql',
-];
+const BASELINE = path.join(MIGRATION_DIR, '000_baseline.sql');
 
-// pglite 가 지원하지 않는 것만 최소로 걷어낸다. **테이블/컬럼/제약은 손대지 않는다.**
-//   - uuid-ossp / pg_trgm 확장 미탑재 → 확장 선언과 trgm 인덱스 제거
-//   - uuid_generate_v4() → pgcrypto 없이 쓸 수 있는 gen_random_uuid() 로 치환
-function sanitizeForPglite(sql) {
-  return sql
-    .replace(/^\s*CREATE\s+EXTENSION[^;]*;/gim, '')
-    .replace(/^\s*CREATE\s+INDEX[^;]*gin_trgm_ops[^;]*;/gim, '')
-    .replace(/uuid_generate_v4\(\)/gi, 'gen_random_uuid()');
-}
+// ══════════════════════════════════════════════════════════════════════════
+// ★★★ 세션47 — 픽스처를 `000_baseline.sql` 로 옮겼다. `PRODUCTION_ONLY_SCHEMA` 는 사라졌다.
+//
+//   세션46 판은 001+004+005+006 을 돌린 뒤, 마이그레이션에 없고 운영에만 있던
+//   `nutrition_data(product_id)` UNIQUE 를 `PRODUCTION_ONLY_SCHEMA` 라는 이름으로
+//   **테스트가 몰래 보태서** 통과시키고 있었다. 그 상수는 「저장소가 운영을 재현하지 못한다」는
+//   부채의 잔량 표시기였다.
+//
+//   이제 `000_baseline.sql`(= 운영 덤프 IP/production_schema_2026-07-31.txt 정본)이
+//   그 UNIQUE 를 포함한 운영 스키마 전체를 만든다. 그래서 상수를 **지웠다.**
+//   → 픽스처가 운영과 같다. 갈라지면 `npm run verify:fresh-schema` 가 먼저 잡는다.
+//
+//   ⚠ 따라온 결과: `users.user_id` 가 **bigint** 다(001 의 UUID 가 아니다). 운영이 그렇다.
+//     그래서 아래 픽스처는 user_id 를 하드코딩하지 않고 INSERT … RETURNING 으로 받는다.
+//     `users.nickname` 도 없다 — 운영 컬럼은 `display_name` 이다.
+//
+//   ⚠ pglite 는 pg_trgm 을 탑재하지 않지만 baseline 이 그것을 **조건부로** 처리하므로
+//     세션46 의 `sanitizeForPglite` 같은 「테스트가 SQL 을 고치는」 단계가 필요 없어졌다.
+//     정본 SQL 을 글자 하나 바꾸지 않고 그대로 돌린다.
+// ══════════════════════════════════════════════════════════════════════════
 
-// ⚠★★ 마이그레이션 파일만으로는 운영 스키마가 재현되지 않는다 (세션46 실측).
-//   `mergeService.mergeAndApply` 는 `INSERT INTO nutrition_data … ON CONFLICT (product_id)` 를 쓰는데
-//   `nutrition_data(product_id)` UNIQUE 를 만드는 마이그레이션이 **저장소에 없다.**
-//   운영 DB 에는 있다 — `013_resolved_view_perf.sql:4` 가 "인덱스 nutrition_data_product_id_key 확인됨"
-//   이라고 적어 두었다. 즉 운영에 손으로 넣고 마이그레이션에 남기지 않은 것이다.
-//   → 빈 DB 에 마이그레이션만 돌려 만든 환경에서는 **모든 크라우드 merge 가 실패한다.**
-//   여기서는 그 운영 상태를 재현하되, **어디가 갈라졌는지 코드로 남긴다.**
-const PRODUCTION_ONLY_SCHEMA = `
-  CREATE UNIQUE INDEX IF NOT EXISTS nutrition_data_product_id_key
-    ON nutrition_data(product_id);
+// baseline 은 020 을 이미 흡수했다. 「020 미적용 DB」(배포 순서 역전)는
+// **020 의 DDL 을 정확히 되돌려** 만든다. 손으로 적은 축소 스키마가 아니다.
+const ROLLBACK_020 = `
+  DROP INDEX IF EXISTS idx_product_allergens_level;
+  ALTER TABLE product_allergens DROP CONSTRAINT IF EXISTS product_allergens_evidence_level_chk;
+  ALTER TABLE product_allergens DROP COLUMN IF EXISTS evidence_level;
 `;
 
 /**
- * 정본 마이그레이션으로 pglite 스키마를 만든다.
- * @param {boolean} with020 false 면 **020 을 적용하지 않는다** — 배포 순서 역전(치명1) 재현용.
+ * 운영 정본 baseline 으로 pglite 스키마를 만든다.
+ * @param {boolean} with020 false 면 **020 의 결과물만 되돌린다** — 배포 순서 역전(치명1) 재현용.
  */
 async function applyRealMigrations(db, with020 = true) {
-  const files = with020 ? [...SCHEMA_MIGRATIONS, path.basename(MIGRATION)] : SCHEMA_MIGRATIONS;
-  for (const f of files) {
-    const sql = sanitizeForPglite(fs.readFileSync(path.join(MIGRATION_DIR, f), 'utf8'));
-    try {
-      await db.exec(sql);
-    } catch (e) {
-      throw new Error(`마이그레이션 ${f} 적용 실패 — 픽스처가 아니라 정본 SQL 문제다: ${e.message}`);
-    }
+  try {
+    await db.exec(fs.readFileSync(BASELINE, 'utf8'));
+  } catch (e) {
+    throw new Error(`000_baseline.sql 적용 실패 — 픽스처가 아니라 정본 SQL 문제다: ${e.message}`);
   }
-  await db.exec(PRODUCTION_ONLY_SCHEMA);
+  if (!with020) await db.exec(ROLLBACK_020);
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// ★ pglite 인스턴스 재사용 (세션47)
+//   세션46 판은 인스턴스를 8개 띄웠다 — 부팅이 전체 시간의 거의 전부였다.
+//   변형은 「020 적용 / 미적용」 두 가지뿐이므로 **인스턴스도 두 개만** 둔다.
+//   매 획득 시 스키마를 정본으로 되돌리고 데이터를 비운다.
+//   ⚠ 격리는 유지된다 — 아래 reset 이 앞 테스트의 행·스키마 변경(020 DROP 시험 포함)을 지운다.
+// ══════════════════════════════════════════════════════════════════════════
+const _dbPool = new Map();   // 'with020' | 'no020' → PGlite
+
+async function acquireDb(PGliteCtor, with020 = true) {
+  const key = with020 ? 'with020' : 'no020';
+  let db = _dbPool.get(key);
+  if (!db) {
+    db = new PGliteCtor();
+    await applyRealMigrations(db, with020);
+    _dbPool.set(key, db);
+    return db;
+  }
+  // 스키마 원복 — 020 은 멱등이라 그대로 다시 돌리면 DROP 된 컬럼·CHECK·인덱스가 살아난다.
+  await db.exec(fs.readFileSync(MIGRATION, 'utf8'));
+  if (!with020) await db.exec(ROLLBACK_020);
+  // 데이터 원복
+  await db.exec(`
+    DELETE FROM contributions;
+    DELETE FROM product_allergens;
+    DELETE FROM nutrition_data;
+    DELETE FROM product_additives;
+    DELETE FROM product_ingredients;
+    DELETE FROM nutrition_traffic_light;
+    DELETE FROM products;
+    DELETE FROM users;
+    ALTER SEQUENCE products_product_id_seq       RESTART WITH 1;
+    ALTER SEQUENCE users_user_id_seq             RESTART WITH 1;
+    ALTER SEQUENCE product_allergens_id_seq      RESTART WITH 1;
+    ALTER SEQUENCE nutrition_data_nutrition_id_seq RESTART WITH 1;
+    ALTER SEQUENCE contributions_contribution_id_seq RESTART WITH 1;
+  `);
+  return db;
+}
+
+async function closeAllDbs() {
+  for (const db of _dbPool.values()) await db.close();
+  _dbPool.clear();
 }
 
 // mergeService.mergeAndApply 의 INSERT 와 **문자 단위로 같은** upsert.
@@ -283,23 +324,14 @@ async function main() {
   }
 
   if (PGlite) {
-    const db = new PGlite();
-    // 005 의 최소 전제만 세운다. products 는 FK 대상이라 필요.
+    // ★★ 세션47 — 손으로 적은 축소 스키마를 없앴다.
+    //   세션46 판은 여기서 `CREATE TABLE products/product_allergens` 를 직접 적었다.
+    //   그러면 020 을 「테스트가 만든 테이블」에 적용해 보는 것이라 운영과 무관해진다.
+    //   지금은 **운영 정본 baseline 에서 020 만 되돌린 스키마**(= 020 직전 운영 상태)에
+    //   정본 020 을 적용한다. 실제 배포에서 일어나는 일 그대로다.
+    const db = await acquireDb(PGlite, false);
     await db.exec(`
-      CREATE TABLE products (product_id BIGSERIAL PRIMARY KEY, product_name TEXT);
-      CREATE TABLE product_allergens (
-        id            BIGSERIAL PRIMARY KEY,
-        product_id    BIGINT NOT NULL REFERENCES products(product_id) ON DELETE CASCADE,
-        allergen_name VARCHAR(50) NOT NULL,
-        source_count  INT DEFAULT 1,
-        status        VARCHAR(20) DEFAULT 'candidate',
-        detected_via  VARCHAR(30),
-        created_at    TIMESTAMPTZ DEFAULT NOW(),
-        updated_at    TIMESTAMPTZ DEFAULT NOW()
-      );
-      CREATE UNIQUE INDEX idx_product_allergens_unique
-        ON product_allergens(product_id, allergen_name);
-      INSERT INTO products (product_name) VALUES ('테스트제품');
+      INSERT INTO products (product_name, data_source) VALUES ('테스트제품', 'manual_seed');
     `);
 
     // 마이그레이션 이전에 쌓인 행 — 의미는 「직접 함유」다.
@@ -388,7 +420,7 @@ async function main() {
       assert.strictEqual(r.rows[0].n, 1);
     });
 
-    await db.close();
+    // ★ 인스턴스를 닫지 않는다 — §6 이 같은 것을 재사용한다(acquireDb 가 원복한다).
   }
 
   // ════════════════════════════════════════════════════════════════════════
@@ -507,13 +539,18 @@ async function main() {
 
     /** src/config/database 를 pglite 로 갈아끼우고 정본 모듈을 새로 로드한다. */
     async function withPgliteDb(applyMigration020 = true) {
-      const db = new PGModule.PGlite();
-      await applyRealMigrations(db, applyMigration020);
-      // ★ contributions.user_id 는 users 를 참조하는 NOT NULL 이다(001). 기여자를 먼저 만든다.
+      // ★ 세션47 — 인스턴스를 새로 띄우지 않고 재사용한다(acquireDb 가 스키마·데이터를 원복).
+      const db = await acquireDb(PGModule.PGlite, applyMigration020);
+      const origQuery = db.query.bind(db);   // 중대2 테스트가 query 를 갈아끼운다 → 원복용
       await db.exec(`
         INSERT INTO products (product_name, data_source) VALUES ('실경로테스트', 'manual_seed');
-        INSERT INTO users (user_id, nickname) VALUES ('${TEST_USER_ID}', '테스트기여자');
       `);
+      // ★ contributions.user_id 는 users 를 참조한다. 기여자를 먼저 만든다.
+      //   ⚠ 세션47 — `users.user_id` 는 **bigint** 다(운영 실측). 하드코딩하지 않고 받아 온다.
+      //     `nickname` 은 운영에 없다 — `display_name` 이다.
+      const testUserId = (await db.query(
+        `INSERT INTO users (firebase_uid, display_name) VALUES ('test-uid-1', '테스트기여자')
+         RETURNING user_id`)).rows[0].user_id;
 
       // pg 와 같은 인터페이스만 흉내낸다(query / transaction).
       const shim = {
@@ -549,7 +586,9 @@ async function main() {
         merge,
         model,
         svc,
+        testUserId,
         restore() {
+          db.query = origQuery;   // ★ 인스턴스를 공유하므로 갈아끼운 query 를 반드시 되돌린다
           if (saved) require.cache[dbPath] = saved; else delete require.cache[dbPath];
           for (const p of ['../src/services/mergeService', '../src/models/productModel',
             '../src/services/productService']) {
@@ -569,7 +608,7 @@ async function main() {
         parsed_nutrition: {}, parsed_ingredients: [],
         allergens: flat, allergens_v2: v2, user_input: {},
         device_id: device, avg_confidence: 0.9,
-      }), TEST_USER_ID],
+      }), h.testUserId],
     );
 
     await t('★★ 치명2 — 식약처 적재분이 크라우드 merge 1건으로 삭제되지 않는다', async () => {
@@ -591,7 +630,7 @@ async function main() {
         assert.ok(byName['우유'], `우유가 삭제됐다: ${JSON.stringify(byName)}`);
         assert.strictEqual(byName['대두'], 'contains',
           `대두가 혼입으로 강등됐다: ${JSON.stringify(byName)}`);
-      } finally { h.restore(); await h.db.close(); }
+      } finally { h.restore(); }   // ★ 인스턴스는 공유 — 닫지 않는다
     });
 
     await t('★★ 치명2-B — admin_verified 가 merge 2회에도 살아남는다', async () => {
@@ -609,7 +648,7 @@ async function main() {
         assert.strictEqual(r.rows.length, 1, '대두 행이 사라졌다');
         assert.strictEqual(r.rows[0].status, 'admin_verified', 'status 가 깎였다');
         assert.strictEqual(r.rows[0].evidence_level, 'contains', '등급이 강등됐다');
-      } finally { h.restore(); await h.db.close(); }
+      } finally { h.restore(); }   // ★ 인스턴스는 공유 — 닫지 않는다
     });
 
     await t('★ 크라우드 merge 가 만든 행은 다음 merge 에서 정리된다 (누적 쓰레기 방지)', async () => {
@@ -625,7 +664,7 @@ async function main() {
         await h.merge.mergeAndApply(1);
         rows = await h.model.getAllergens(1);
         assert.deepStrictEqual(rows.map((r) => r.allergen_name), ['밀'], JSON.stringify(rows));
-      } finally { h.restore(); await h.db.close(); }
+      } finally { h.restore(); }   // ★ 인스턴스는 공유 — 닫지 않는다
     });
 
     // ══════════════════════════════════════════════════════════════════════
@@ -646,7 +685,7 @@ async function main() {
           `020 미적용 DB 에서 알레르기가 적재되지 않았다: ${JSON.stringify(rows.rows)}`);
         const p = await h.db.query(`SELECT merged_at FROM products WHERE product_id = 1`);
         assert.ok(p.rows[0].merged_at, 'merged_at 이 비었다 — 트랜잭션이 롤백됐다(영양·메타도 함께 사라진다)');
-      } finally { h.restore(); await h.db.close(); }
+      } finally { h.restore(); }   // ★ 인스턴스는 공유 — 닫지 않는다
     });
 
     await t('★★ 세션46 중대2 — 컬럼 판정 실패를 영구 캐싱하지 않는다', async () => {
@@ -677,7 +716,7 @@ async function main() {
           second.map((r) => `${r.allergen_name}=${r.evidence_level}`),
           ['밀=contains', '대두=may_contain'],
           `실패가 캐싱돼 회복하지 못했다: ${JSON.stringify(second)}`);
-      } finally { h.restore(); await h.db.close(); }
+      } finally { h.restore(); }   // ★ 인스턴스는 공유 — 닫지 않는다
     });
 
     await t('★★ 세션46 중대2-(c) — 020 롤백(컬럼 DROP)에도 조회가 500 이 되지 않는다', async () => {
@@ -692,7 +731,7 @@ async function main() {
         assert.strictEqual(rows.length, 1, JSON.stringify(rows));
         assert.strictEqual(rows[0].evidence_level, 'contains',
           '대체 등급이 contains 가 아니다(약하게 만들면 안 된다)');
-      } finally { h.restore(); await h.db.close(); }
+      } finally { h.restore(); }   // ★ 인스턴스는 공유 — 닫지 않는다
     });
 
     await t('★ 세션46 경미6 — detected_via 가 NULL 인 행이 merge 2회에 삭제되지 않는다', async () => {
@@ -715,7 +754,7 @@ async function main() {
         r = await h.db.query(`SELECT allergen_name FROM product_allergens WHERE allergen_name='게'`);
         assert.strictEqual(r.rows.length, 1,
           '★ 게(비-크라우드소싱 출처)가 merge 2회 만에 삭제됐다 — 경고가 사라지는 방향이다');
-      } finally { h.restore(); await h.db.close(); }
+      } finally { h.restore(); }   // ★ 인스턴스는 공유 — 닫지 않는다
     });
 
     await t('★★ 맹점 M9 — getAllergens 가 혼입·추정을 실제 SQL 에서 빠뜨리지 않는다', async () => {
@@ -729,15 +768,14 @@ async function main() {
         // 정렬 계약: 직접 함유가 먼저
         assert.strictEqual(rows[0].allergen_name, '밀', JSON.stringify(rows.map((r) => r.allergen_name)));
         assert.strictEqual(rows[2].allergen_name, '대두');
-      } finally { h.restore(); await h.db.close(); }
+      } finally { h.restore(); }   // ★ 인스턴스는 공유 — 닫지 않는다
     });
 
     await t('★★★ 치명1 — 마이그레이션 020 미적용 DB 에서도 getAllergens 가 죽지 않는다', async () => {
       // 020 을 **적용하지 않은** 스키마를 만든다(배포 순서 역전 재현).
-      const db = new PGModule.PGlite();
-      // ★ 손으로 적은 축소 스키마가 아니라 **정본 마이그레이션에서 020 만 뺀 것**이다.
+      // ★ 손으로 적은 축소 스키마가 아니라 **운영 정본 baseline 에서 020 의 결과물만 되돌린 것**이다.
       //   운영에서 실제로 일어날 수 있는 상태(코드 먼저 배포 · 020 미적용)를 그대로 만든다.
-      await applyRealMigrations(db, false);
+      const db = await acquireDb(PGModule.PGlite, false);
       await db.exec(`
         INSERT INTO products (product_name, data_source) VALUES ('구스키마', 'manual_seed');
         INSERT INTO product_allergens (product_id, allergen_name) VALUES (1,'우유'), (1,'대두');
@@ -761,7 +799,7 @@ async function main() {
       } finally {
         if (saved) require.cache[dbPath] = saved; else delete require.cache[dbPath];
         delete require.cache[require.resolve('../src/models/productModel')];
-        await db.close();
+        // ★ 인스턴스는 공유 — 닫지 않는다
       }
     });
   }
@@ -894,6 +932,14 @@ async function main() {
     assert.deepStrictEqual(onlyMay.flat, [], '혼입은 flat 에 넣지 않는다');
     assert.strictEqual(onlyMay.collected, true, '혼입만 있어도 수집된 것이다');
 
+    // ★ 세션47 3차 검증 경미2 — `collected` 는 **유효 이름 개수**여야 한다.
+    //   `rows.length` 를 쓰면 공백 이름 1행짜리 제품이 「확인했고 알레르겐 없음」으로 나간다.
+    assert.strictEqual(
+      buildAllergens([{ allergen_name: '   ', evidence_level: 'contains' }]).collected, false,
+      '이름이 전부 필터로 떨어졌는데 collected 가 true 다 — 「없음」으로 단정되어 나간다(과소경고)');
+    assert.strictEqual(
+      buildAllergens([{ allergen_name: null, evidence_level: 'contains' }]).collected, false);
+
     // 계약 2 — 응답 배선이 collected 를 실제로 게이트로 쓴다.
     const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'services', 'productService.js'), 'utf8');
     assert.ok(!/allergens_available:\s*!!allergens\s*,/.test(src),
@@ -907,6 +953,55 @@ async function main() {
   });
 
   // ════════════════════════════════════════════════════════════════════════
+  // §10 세션47 3차 검증 중대1 — 「혼입만 있는 제품」이 「알레르기 없음」으로 나가지 않는다
+  // ════════════════════════════════════════════════════════════════════════
+  await t('★★★ 중대1 — flat 이 비었는데 available=true 인 상태를 클라이언트가 구분할 수 있다', async () => {
+    // 세션46 §3-7 은 **0행(미수집)** 만 고쳤다. 행이 있는데 전부 `may_contain` 이면
+    //   allergens: []  +  allergens_available: true  ← 짜왕 사고와 문자 그대로 같은 응답이다.
+    //   실측: 전사 68건 중 8건(12%)이 이 클래스다. 세션46 배포로 **도달 가능해졌다.**
+    // flat 에 혼입을 넣는 것은 세션44·45 가 옳게 거부했으므로(구버전이 붉게 표시한다)
+    //   대신 **「flat 이 전부인가」를 명시 신호로** 낸다.
+    const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'services', 'productService.js'), 'utf8');
+    // ⚠ 주석에도 이 단어가 나온다. **응답 객체의 키**를 봐야 한다(줄머리 + 콜론).
+    //   뮤테이션 M-A 에서 그냥 `/allergens_flat_complete/` 는 주석 때문에 통과했다 — 거짓 초록.
+    assert.ok(/^\s*allergens_flat_complete:/m.test(src),
+      'flat 이 빈 채로 available=true 가 나가는데 그것을 알릴 **응답 키**가 없다 — 과소경고');
+    assert.ok(/^\s*allergens_flat_complete:[\s\S]{0,200}mayContain\.length === 0/m.test(src),
+      'allergens_flat_complete 가 mayContain 을 보지 않는다 — 신호가 실제 근거와 무관해진다');
+
+    // 동작 계약 — 세 상태가 서로 구분된다.
+    const onlyMay = buildAllergens([{ allergen_name: '대두', evidence_level: 'may_contain' }]);
+    const hasOne = buildAllergens([{ allergen_name: '밀', evidence_level: 'contains' }]);
+    const none = buildAllergens([]);
+    assert.strictEqual(onlyMay.v2.mayContain.length > 0 && onlyMay.flat.length === 0, true,
+      '혼입만 있는 제품은 flat 이 비고 v2 에만 남는다 — 이 상태를 응답이 구분해야 한다');
+    assert.strictEqual(hasOne.flat.length, 1);
+    assert.strictEqual(none.collected, false);
+  });
+
+  // ════════════════════════════════════════════════════════════════════════
+  // §11 세션47 3차 검증 중대3 — 컬럼 판정을 트랜잭션 안에서 하지 않는다
+  // ════════════════════════════════════════════════════════════════════════
+  await t('★★★ 중대3 — mergeService 가 트랜잭션을 쥔 채 두 번째 커넥션을 잡지 않는다', async () => {
+    // `hasEvidenceLevelColumn()` 은 내부에서 `db.query`(= pool.query)를 쓴다.
+    //   트랜잭션 client 를 쥔 채 부르면 merge 1건이 커넥션 2개를 점유하고,
+    //   DB_POOL_MAX 만큼 동시 merge 가 열리면 전원이 connectionTimeout 으로 동시에 실패한다.
+    //   그 실패는 crowdsourceService 가 삼켜서 `saved:true` 로 나간다(치명1 과 같은 침묵).
+    const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'services', 'mergeService.js'), 'utf8');
+    const txStart = src.indexOf('await db.transaction(');
+    assert.ok(txStart > 0, 'db.transaction 을 찾지 못했다 — 이 검사의 전제가 깨졌다');
+    const decl = src.indexOf('const canWriteLevel = await hasEvidenceLevelColumn();');
+    assert.ok(decl > 0, 'canWriteLevel 판정을 찾지 못했다');
+    assert.ok(decl < txStart,
+      'hasEvidenceLevelColumn() 이 트랜잭션 **안**에서 호출된다 — 풀에서 두 번째 커넥션을 잡는다');
+    assert.strictEqual(
+      (src.match(/await hasEvidenceLevelColumn\(\)/g) || []).length, 1,
+      '판정 호출이 2곳 이상이다 — 트랜잭션 안쪽에 다시 생겼을 수 있다');
+  });
+
+  // ════════════════════════════════════════════════════════════════════════
+  await closeAllDbs();   // ★ 세션47 — 공유 인스턴스는 여기서 한 번에 닫는다
+
   console.log(`\n${'═'.repeat(62)}`);
   console.log(`📊 세션45 알레르기 근거 등급: ${pass} 통과 / ${fail} 실패 (총 ${pass + fail})`);
   if (fail > 0) {

@@ -339,6 +339,18 @@ async function getProductWithTrafficLight(barcode) {
     allergens_v2: allergens && allergens.collected ? allergens.v2 : null,
     // 화면이 "정보 없음" 과 "없음" 을 분기할 수 있는 명시 신호. 배열 길이로 추론하게 두지 않는다.
     allergens_available: !!(allergens && allergens.collected),
+    // ★★★ 세션47 3차 검증 중대1 — §3-7 이 고친 것은 **절반**이었다.
+    //   0행(미수집)은 null 로 냈지만, **행은 있는데 전부 `may_contain`** 인 제품은
+    //   flat 규칙상 혼입이 빠지므로 `allergens: []` + `allergens_available: true` 가 된다.
+    //   = 짜왕 사고와 **문자 그대로 같은 응답**이 다른 입력 클래스에서 재현된다(과소경고).
+    //   실측: 전사 68건 중 **8건(12%)** 이 「혼입만 있는 제품」이다.
+    //   ★ flat 에 혼입을 넣는 것은 세션44·45 가 옳게 거부했다(구버전이 붉게 표시한다).
+    //     그러므로 넣지 않고 **「flat 이 전부인가」를 명시 신호로 낸다.**
+    //   앱 계약: `allergens_available === true && allergens.length === 0` 이라도
+    //     `allergens_flat_complete === false` 면 **「알레르기 없음」이라고 말하면 안 된다.**
+    //     그 경우 allergens_v2.mayContain 을 읽어 「혼입 가능」으로 표시할 것.
+    allergens_flat_complete: !(allergens && allergens.collected)
+      || allergens.v2.mayContain.length === 0,
     context,
     sources: buildSources(trafficLight),
     data_freshness: buildFreshness(product),
@@ -385,7 +397,13 @@ function buildAllergens(rows) {
   //   19-apply-haccp 3 · 26-apply-haccp-dump 3) **전부 발견된 알레르겐만 넣는다.**
   //   「확인했으나 없음」을 기록하는 행·컬럼·코드가 **존재하지 않는다.**
   //   → 0행은 예외 없이 「미수집」이다. 이것을 「없음」으로 내보내면 과소경고다.
-  return { flat: flattenAllergensV2(v2, []), v2, collected: rows.length > 0 };
+  //
+  // ★ 세션47 3차 검증 경미2 — `rows.length` 가 아니라 **유효 이름 개수**다.
+  //   위 루프는 빈 이름을 건너뛴다. `rows.length` 를 쓰면 공백 이름 1행짜리 제품이
+  //   `collected: true` + 빈 배열 = 「확인했고 알레르겐 없음」으로 나간다(과소경고).
+  //   필터로 전부 떨어졌다면 그것은 「없음」이 아니라 「읽지 못했다」다.
+  const kept = v2.contains.length + v2.inferred.length + v2.mayContain.length;
+  return { flat: flattenAllergensV2(v2, []), v2, collected: kept > 0 };
 }
 
 /**

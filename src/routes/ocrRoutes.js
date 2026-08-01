@@ -11,6 +11,9 @@ const {
   analyzeText, detectNutritionBasis, reconcileAllergens, mergeAllergensV2, flattenAllergensV2,
 } = require('../services/ocrParser');
 const { evaluateNutrition, sanityCheck } = require('../services/nutritionTrafficLight');
+const { getRaccPolicy } = require('../services/raccPolicy');
+// ★ 세션48 — 사용자 입력 쓰기 경로 방어. 노출 경로(productModel.getAllergens)와 **같은 정규화기**를 쓴다.
+const { normalizeAllergenNames } = require('../services/allergenName');
 const { ValidationError } = require('../middleware/errorHandler');
 const { saveOcrContribution, reportError } = require('../services/crowdsourceService');
 
@@ -53,6 +56,98 @@ const BASIS_OK = {
   per_100ml: 'per_100ml',
   per_total: 'per_total',      // ★ 세션42 신규 — 신호등 배선이 끝나서 열었다
 };
+
+/**
+ * 사용자가 보낸 알레르기 목록을 배열로 정규화한다.
+ *
+ * ★★ 세션47 3차 검증 경미4 — 이전에는 `Array.isArray` 만 봤다.
+ *   클라이언트가 `"밀,대두"` 처럼 **문자열로** 보내면 조건이 false 라 **통째로 버려졌다.**
+ *   그 값이 흘러가는 `data.user_input.allergens` 는 `extractCandidatesFromContribution` 이
+ *   한 번도 읽지 않으므로(세션46 §3-4 부수 발견) 회수 경로도 없다 = **과소경고**.
+ *   → 문자열은 구분자로 쪼개 배열로 만든다. 조용히 버리지 않는다.
+ *   ⚠ 배열이 아니고 문자열도 아니면(객체·숫자 등) 여전히 무시한다 — 의미를 추측할 수 없다.
+ */
+function coerceUserAllergens(v) {
+  if (Array.isArray(v)) return v.filter((x) => typeof x === 'string' && x.trim()).map((x) => x.trim());
+  if (typeof v === 'string') {
+    return splitUserAllergenText(v);
+  }
+  return [];
+}
+
+/**
+ * 사용자 자유 입력 문자열을 항목으로 쪼갠다. **괄호 안의 구분자는 경계가 아니다.**
+ *
+ * ★★ 세션48 외부검증 — 세션47 판은 `v.split(/[,;/·\n]+/)` 였다. 실측 반례:
+ *     "조개류(굴,전복,홍합 포함)" → ["조개류(굴", "전복", "홍합 포함)"]
+ *   조개류 하나가 **세 개의 쓰레기 행**이 되어 product_allergens 에 들어갔다.
+ *   그리고 정규화가 그 셋을 다시 `조개류` 로 모으면서 source_count 를 3배로 부풀린다.
+ *   → 괄호 depth 를 추적해 **괄호 밖에서만** 자른다.
+ * ★ 구분자 집합은 `ocrParser.ALLERGEN_DELIM` 과 맞췄다. 세션44 가 전각 콤마·읽점·가운뎃점을
+ *   빠뜨려 밀을 놓친 사고가 있었는데, 세션47 의 새 경로가 그 교훈을 이월받지 못했다.
+ *   ⚠ 괄호는 구분자로 쓰지 않는다 — 위 반례가 그 이유다(ocrParser 와 의도적으로 다르다).
+ */
+function splitUserAllergenText(s) {
+  const out = [];
+  let buf = '';
+  let depth = 0;
+  for (const ch of String(s)) {
+    if ('([［（'.includes(ch)) { depth += 1; buf += ch; continue; }
+    if (')]］）'.includes(ch)) { depth = Math.max(0, depth - 1); buf += ch; continue; }
+    if (depth === 0 && ',;/\n\t，、·ㆍ‧∙／'.includes(ch)) { out.push(buf); buf = ''; continue; }
+    buf += ch;
+  }
+  out.push(buf);
+  return out.map((x) => x.trim()).filter(Boolean);
+}
+
+// ★★★ 세션48 — 사용자 입력이 도달하는 곳에 대한 상한. 실측 근거:
+//   allergen_name 에 **20,000자**가 저장됐고, `<script>x</script>` 가 쪼개져 들어갔다.
+//   product_allergens 는 **바코드 단위 공용 마스터**다 — 한 사람의 입력이 그 바코드를
+//   조회하는 전원에게 간다. 쓰기 경로에 화이트리스트도 길이 상한도 없었다.
+const USER_ALLERGEN_MAX_ITEMS = 20;
+const USER_ALLERGEN_MAX_LEN = 40;
+
+/**
+ * ⚠⚠ **잠정 조치다.** 외부 검증 2인이 독립적으로 「사용자 자유 입력을 공용 마스터에
+ *   직접 넣지 말라」(D안: 격리 검토 큐)고 권고했고 제이가 채택했다.
+ *   그 구조(`allergen_contributions` + `product_allergen_observations` 2테이블 + 자동승격 규칙)는
+ *   스키마 변경이라 별도 세션이다. **이 함수는 그때까지의 방어막이며, 그 작업에서 제거된다.**
+ *   → `IP/외부검증_회신종합_2026-08-01_세션48.md` §3 · §5-3
+ *
+ * 규칙:
+ *   ① 항목 수 20 · 항목 길이 40자 상한 (초과분은 버리지 않고 감사용으로 센다)
+ *   ② 식약처 19종 canonical 에 붙는 것만 통과 — `normalizeAllergenNames` 재사용.
+ *      같은 정규화기를 쓰는 것이 중요하다. 여기서 새 규칙을 쓰면 노출 경로와 갈라진다.
+ *   ③ 붙지 않은 원문은 **버리지 않고** 호출부가 `user_input` 에 남긴다(회수 경로 보존).
+ *   ★ 19종 밖 실제 알레르겐(아몬드·참깨·생선 등)도 여기서 떨어진다. 그것이 옳아서가 아니라
+ *     **공용 마스터에 넣을 채널이 아직 없어서**다. 별도 필드(`allergens_extra`)는 §5-3 ⑤ 과제다.
+ */
+function sanitizeUserAllergens(items) {
+  const accepted = [];
+  const rejected = [];
+  const seen = new Set();
+  for (const raw of items.slice(0, USER_ALLERGEN_MAX_ITEMS)) {
+    const s = raw.slice(0, USER_ALLERGEN_MAX_LEN);
+    let hits = [];
+    try {
+      hits = normalizeAllergenNames(s) || [];
+    } catch (e) {
+      hits = [];   // 정규화기가 죽어도 사용자 요청 전체를 죽이지 않는다
+    }
+    if (!hits.length) { rejected.push(raw); continue; }
+    for (const h of hits) {
+      const name = h && h.name;
+      if (!name || seen.has(name)) continue;
+      seen.add(name);
+      accepted.push(name);
+    }
+  }
+  if (items.length > USER_ALLERGEN_MAX_ITEMS) {
+    rejected.push(...items.slice(USER_ALLERGEN_MAX_ITEMS));
+  }
+  return { accepted, rejected };
+}
 
 function judgeNutrition({ productData, nutrition, labelText, explicitServingSize = null }) {
   const nutritionData = {
@@ -100,7 +195,15 @@ function judgeNutrition({ productData, nutrition, labelText, explicitServingSize
     productData = { ...productData, serving_size: explicitServingSize };
   }
 
-  const trafficLight = evaluateNutrition(productData, nutritionData);
+  // ★★ 세션47 — RACC 정책을 **넘기지 않고 있었다.**
+  //   `productService.getProductWithTrafficLight` 는 4번째 인자로 `getRaccPolicy(food_type)` 를
+  //   넘기는데 이 경로와 `productRoutes /evaluate` 는 안 넘겼다. 같은 제품이
+  //   바코드 조회와 OCR 조회에서 **서로 다른 신호등**을 받는다(참기름·간장·조미김 등 소량식품).
+  //   세션42 가 basis 에서 고친 것과 같은 유형의 누락이다 — 한쪽만 고치면 이렇게 남는다.
+  //   ★ food_type 이 없거나 매핑에 없으면 `getRaccPolicy` 는 null 을 돌려준다 = 종전 동작.
+  const trafficLight = evaluateNutrition(
+    productData, nutritionData, undefined, getRaccPolicy(productData.food_type),
+  );
 
   // per_total 은 신호등이 환산 후 자체 sanityCheck 를 돌린다(총량 그대로 검사하면 전부 오탐).
   // ★ 세션45: basis 가 unknown 이면 sanityCheck 의 전제(1회분 상한)가 성립하지 않는다.
@@ -210,13 +313,26 @@ router.post('/analyze', upload.single('image'), async (req, res) => {
   //   `allergens: []` 를 보내면 flat 이 비고 3분리도 null 이 되어 **알레르기 카드가 통째로 사라진다.**
   //   빈 배열은 "사용자가 전부 지웠다" 와 "클라이언트가 기본값으로 보냈다" 를 구별하지 못한다.
   //   → 항목이 하나 이상일 때만 덮어쓰기로 본다. 지우는 것은 별도 플래그가 필요하다(미구현).
-  if (Array.isArray(productInfo?.allergens) && productInfo.allergens.length > 0) {
-    analysis.allergens = productInfo.allergens;
-    // ★ 세션44: 사용자가 알레르기 목록을 직접 덮어썼다.
-    //   그 목록에는 「직접함유 / 혼입가능」 구분 정보가 없다.
-    //   서버가 라벨에서 뽑은 예전 3분리를 그대로 두면 화면에 **모순된 두 값**이 뜬다.
-    //   → 근거가 사라졌으므로 3분리를 내리는 것이 맞다(추측해서 채우지 않는다).
-    analysis.allergens_v2 = null;
+  //   ★ 세션47 경미4 — 문자열로 온 것도 배열로 받는다(위 coerceUserAllergens 주석 참조).
+  const userAllergens = coerceUserAllergens(productInfo?.allergens);
+  if (userAllergens.length > 0) {
+    // ★★★ 세션48 외부검증 — 세션47 판은 `analysis.allergens = userAllergens` 였다(**덮어쓰기**).
+    //   실측: 라벨에서 ["밀","우유","대두","새우(혼입)"] 를 읽은 상태에서 사용자가 "밀" 한 글자를
+    //   보내면 응답이 ["밀"] + allergens_v2=null 이 된다 — **우유·대두·새우가 사라진다(과소경고).**
+    //   옛 코드는 문자열을 무시했으므로(무해) 세션47 수정이 **새 과소경고를 만들었다.**
+    //   ★ 배열 경로에는 「전부 지웠다」는 명시적 계약이 있었지만(세션44 경미M),
+    //     문자열 경로에는 그런 의도의 근거가 없다. 계약을 모르는 클라이언트가 보내는 값이다.
+    //   → **합집합**으로 받는다. 3분리(v2)도 내리지 않는다 — 라벨에서 읽은 등급 근거는 유효하다.
+    //     사용자가 준 이름은 등급을 모르므로 `inferred` 로 넣는다(직접함유로 단정하지 않는다).
+    const { accepted, rejected } = sanitizeUserAllergens(userAllergens);
+    if (accepted.length > 0) {
+      analysis.allergens = Array.from(new Set([...(analysis.allergens || []), ...accepted]));
+      analysis.allergens_v2 = mergeAllergensV2(analysis.allergens_v2, {
+        contains: [], inferred: accepted, mayContain: [],
+      });
+    }
+    // ★ 정규화에 붙지 않은 원문은 **버리지 않는다.** 회수 경로가 사라지면 다음 세션이 못 찾는다.
+    if (rejected.length > 0) analysis._user_allergens_rejected = rejected;
   }
 
   // Step 4: 영양 신호등
@@ -398,9 +514,19 @@ router.post(
       merged.nutrition = { ...merged.nutrition, ...productInfo.nutrition };
     }
     // ★ 세션44 2차: /analyze 와 같은 이유 — 빈 배열은 덮어쓰기로 보지 않는다(경미M).
-    if (Array.isArray(productInfo?.allergens) && productInfo.allergens.length > 0) {
-      merged.allergens = productInfo.allergens;
-      merged.allergens_v2 = null;   // ★ 세션44: /analyze 와 같은 이유 — 사용자 덮어쓰기 시 3분리 근거 소멸
+    //   ★ 세션47 경미4 — /analyze 와 같은 정규화. 문자열로 와도 버리지 않는다.
+    const userAllergensMulti = coerceUserAllergens(productInfo?.allergens);
+    if (userAllergensMulti.length > 0) {
+      // ★★★ 세션48 — /analyze 와 **같은 규칙**이다. 두 경로가 갈라지면 한쪽만 고쳐지는 사고가 난다
+      //   (세션44 치명B·세션47 RACC 누락이 전부 이 유형이었다).
+      const { accepted, rejected } = sanitizeUserAllergens(userAllergensMulti);
+      if (accepted.length > 0) {
+        merged.allergens = Array.from(new Set([...(merged.allergens || []), ...accepted]));
+        merged.allergens_v2 = mergeAllergensV2(merged.allergens_v2, {
+          contains: [], inferred: accepted, mayContain: [],
+        });
+      }
+      if (rejected.length > 0) merged._user_allergens_rejected = rejected;
     }
 
     // ─── 4. 영양 신호등 판정 ───
@@ -566,3 +692,5 @@ module.exports = router;
 //   그 순간 "두 파서 중 한쪽만 고치기" 사고가 basis 관문에서도 반복된다(세션42~44에서 4회).
 //   라우터는 함수 객체이므로 속성 부착은 기존 `app.use(router)` 사용에 영향이 없다.
 module.exports.judgeNutrition = judgeNutrition;
+// ★ 세션47 경미4: 같은 이유로 노출한다. 테스트가 복사본을 만들면 두 벌이 갈라진다.
+module.exports.coerceUserAllergens = coerceUserAllergens;

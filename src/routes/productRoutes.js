@@ -9,6 +9,7 @@ const { query: checkQuery, param, validationResult } = require('express-validato
 const productModel = require('../models/productModel');
 const productService = require('../services/productService');
 const { evaluateNutrition, sanityCheck } = require('../services/nutritionTrafficLight');
+const { getRaccPolicy } = require('../services/raccPolicy');
 const { ValidationError } = require('../middleware/errorHandler');
 
 const router = express.Router();
@@ -84,7 +85,9 @@ router.post('/evaluate', async (req, res) => {
   //   per_total 라벨이면 evaluation 은 1회분 환산값, sanity_warnings 는 총량 기준 —
   //   같은 응답 안에서 모순된 값이 나간다. (세션39가 /multi-photo 를 놓친 것과 같은 유형)
   //   per_total 은 신호등이 환산 후 자체 sanityCheck 를 돌리므로 그 결과를 그대로 쓴다.
-  const result = evaluateNutrition(product, nutrition);
+  // ★★ 세션47 — RACC 정책 누락(ocrRoutes 와 같은 사고). productService 만 넘기고 있었다.
+  //   food_type 이 없거나 매핑에 없으면 null 이므로 종전 동작과 같다.
+  const result = evaluateNutrition(product, nutrition, undefined, getRaccPolicy(product.food_type));
   const basis = nutrition.basis || 'per_serving';
   const warnings = (basis === 'per_total')
     ? (result.sanity_warnings || [])

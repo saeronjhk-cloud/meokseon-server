@@ -332,11 +332,44 @@ t('★ ocrRoutes 의 두 엔드포인트 응답에 allergens_v2 가 실린다 (�
     '두 엔드포인트가 같은 객체를 쓴다 — 한쪽 배선이 복사된 것이다');
 });
 
-t('사용자가 알레르기 목록을 덮어쓰면 3분리를 null 로 내린다 (모순 표시 방지)', () => {
+t('★★ 세션48 — 사용자 입력은 라벨 판독을 덮어쓰지 않고 합집합으로 더한다 (과소경고 방지)', () => {
+  // ★★★ 이 검사는 세션44~47 동안 **정반대 계약**을 못 박고 있었다:
+  //     "덮어쓰면 3분리를 null 로 내린다" → `allergens_v2 = null` 이 2곳 있는지 소스로 셌다.
+  //   세션48 4차 검증이 그 계약의 대가를 실측했다 —
+  //     라벨 판독 ["밀","우유","대두","새우(혼입)"] 상태에서 사용자가 "밀" 한 글자를 보내면
+  //     응답이 ["밀"] + v2=null 이 된다. **우유·대두·새우가 사라진다(과소경고).**
+  //   옛 코드는 문자열을 아예 무시했으므로(무해) 세션47 수정이 새 과소경고를 만든 것이다.
+  //   ★ 「회귀가 결함을 계약으로 못 박고 있는지 확인하라」(세션47 §10)의 실제 사례다.
+  //     코드만 고치고 이 단정을 남겼다면 다음 수정이 되돌렸을 것이다.
   const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'routes', 'ocrRoutes.js'), 'utf8');
-  const overrides = src.match(/allergens_v2\s*=\s*null/g) || [];
-  assert.ok(overrides.length >= 2,
-    `사용자 덮어쓰기 시 null 처리가 ${overrides.length}곳 — /analyze·/multi-photo 두 곳 필요`);
+  // ⚠⚠ 세션48 실사고 — 처음엔 `/allergens_v2\s*=\s*null/g` 였는데 **바로 위 주석**이 매칭됐다.
+  //   세션47 M-A 와 **글자 그대로 같은 함정**을 이 검사를 쓰면서 다시 밟았다.
+  //   → 줄머리 + 좌변 형태로 **구조**를 묻는다. 그리고 주석 줄을 먼저 제거한다.
+  const codeOnly = src.split('\n').filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l)).join('\n');
+  assert.strictEqual((codeOnly.match(/^\s*[\w.]+\.allergens_v2\s*=\s*null\s*;/gm) || []).length, 0,
+    '사용자 입력 경로에 v2 를 null 로 내리는 코드가 남아 있다 — 라벨 등급 근거가 사라진다');
+
+  // 동작으로 고정한다. 소스 문자열만 보면 다음 리팩터에서 또 갈라진다(세션48 뮤테이션 M-A 사고).
+  const { coerceUserAllergens } = require('../src/routes/ocrRoutes');
+  const { normalizeAllergenNames } = require('../src/services/allergenName');
+
+  // ① 괄호 안 구분자는 항목 경계가 아니다 — 실측 반례: 조개류 하나가 쓰레기 3행이 됐다
+  assert.deepStrictEqual(coerceUserAllergens('조개류(굴,전복,홍합 포함)'), ['조개류(굴,전복,홍합 포함)'],
+    '괄호 안 콤마로 쪼개면 "조개류(굴" · "전복" · "홍합 포함)" 세 행이 공용 마스터에 들어간다');
+  assert.deepStrictEqual(normalizeAllergenNames('조개류(굴,전복,홍합 포함)').map((h) => h.name), ['조개류'],
+    '괄호를 보존하면 정규화가 하나의 정본으로 모은다');
+
+  // ② 구분자 집합이 ocrParser 와 맞아야 한다 — 세션44 가 전각 콤마·가운뎃점을 빠뜨려 밀을 놓쳤다
+  for (const [input, want] of [
+    ['밀，대두', ['밀', '대두']], ['밀、대두', ['밀', '대두']],
+    ['밀ㆍ대두', ['밀', '대두']], ['밀\t대두', ['밀', '대두']],
+  ]) assert.deepStrictEqual(coerceUserAllergens(input), want, `구분자 미처리: ${input}`);
+
+  // ③ 19종에 붙지 않는 것은 공용 마스터로 가지 않는다 (20,000자·XSS 실측 근거)
+  for (const junk of ['아무거나쓴글자', '<script>x<', 'ㅁㄴㅇㄹ', 'x'.repeat(500)]) {
+    assert.deepStrictEqual(normalizeAllergenNames(junk.slice(0, 40)).map((h) => h.name), [],
+      `정규화가 쓰레기를 통과시킨다: ${junk.slice(0, 20)}`);
+  }
 });
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -781,10 +814,34 @@ t('경미I — 「포함되어/포함된/포함하고」 선언이 배제되지 
 });
 
 t('경미M — allergens: [] 를 보내도 서버가 읽은 알레르기를 지우지 않는다', () => {
+  // ★★ 세션47 — 옛 검사는 `Array.isArray(productInfo?.allergens) && …length > 0` 라는
+  //   **구현 문자열**을 2번 세었다. 경미4 수정으로 그 문자열이 사라지자 적색이 됐다.
+  //   여기서 개수만 0으로 맞추면 이 검사는 아무것도 지키지 못한다(세션46 §9 가 못 박은 함정).
+  //   → 원래 의도(**빈 배열은 덮어쓰기로 보지 않는다**)를 두 경로 모두에서 검사한다.
   const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'routes', 'ocrRoutes.js'), 'utf8');
-  const guards = src.match(/Array\.isArray\(productInfo\??\.allergens\)\s*&&\s*productInfo\.allergens\.length\s*>\s*0/g) || [];
+  const guards = src.match(/coerceUserAllergens\(productInfo\??\.allergens\)/g) || [];
   assert.strictEqual(guards.length, 2,
-    `빈 배열 가드가 ${guards.length}곳 — /analyze·/multi-photo 두 곳이어야 한다`);
+    `사용자 알레르기 정규화가 ${guards.length}곳 — /analyze·/multi-photo 두 곳이어야 한다`);
+  const gates = src.match(/const\s+userAllergens\w*\s*=\s*coerceUserAllergens[\s\S]{0,120}?\.length\s*>\s*0/g) || [];
+  assert.strictEqual(gates.length, 2,
+    `길이 가드가 ${gates.length}곳 — 빈 배열이 덮어쓰기로 처리되면 알레르기 카드가 통째로 사라진다`);
+
+  // 그리고 **동작**으로도 고정한다. 소스 문자열 검사만 두면 다음 리팩터에서 또 갈라진다.
+  const { coerceUserAllergens } = require('../src/routes/ocrRoutes');
+  assert.deepStrictEqual(coerceUserAllergens([]), [], '빈 배열은 빈 배열이어야 한다(덮어쓰기 아님)');
+  assert.deepStrictEqual(coerceUserAllergens(undefined), []);
+  assert.deepStrictEqual(coerceUserAllergens({ 밀: true }), [], '의미를 추측할 수 없는 형태는 무시한다');
+  assert.deepStrictEqual(coerceUserAllergens(['  밀 ', '', '대두']), ['밀', '대두'], '공백만 있는 항목은 버린다');
+});
+
+t('★ 세션47 경미4 — 문자열로 온 사용자 알레르기를 버리지 않는다 (과소경고)', () => {
+  const { coerceUserAllergens } = require('../src/routes/ocrRoutes');
+  // 옛 코드는 `Array.isArray` 가 false 라 **통째로 무시**했다. 그 값이 가는
+  // `user_input.allergens` 는 extractCandidatesFromContribution 이 읽지 않으므로 회수도 안 된다.
+  assert.deepStrictEqual(coerceUserAllergens('밀,대두'), ['밀', '대두']);
+  assert.deepStrictEqual(coerceUserAllergens('밀 · 대두 / 우유'), ['밀', '대두', '우유']);
+  assert.deepStrictEqual(coerceUserAllergens('밀\n대두;우유'), ['밀', '대두', '우유']);
+  assert.deepStrictEqual(coerceUserAllergens(''), [], '빈 문자열은 덮어쓰기가 아니다');
 });
 
 t('경미L — 세그먼트 상한이 실사용 라벨의 함유 선언을 잘라내지 않는다', () => {

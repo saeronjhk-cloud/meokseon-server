@@ -7,6 +7,106 @@ const db = require('../config/database');
 const { normalizeSearchQuery, isSearchable } = require('../utils/searchNormalize');
 const { normalizeAllergenRows } = require('../services/allergenName');
 
+// ─────────────────────────────────────────────────────────────────────────────
+// ★★★ 세션49 D3 — 읽기 경계에서 NUMERIC 을 숫자로 좁힌다.
+//
+// 왜 필요한가 (실측, .tmp/s49/agentD3/repro.js):
+//   pg(node-postgres)·pglite 는 NUMERIC(OID 1700)을 **정밀도 보존을 위해 문자열**로 준다.
+//   그 문자열이 그대로 신호등 엔진까지 흘러가 비교가 **사전식**이 됐다:
+//     nutritionTrafficLight.js:313  '7' > '13' = true · '15' > '100' = true
+//       → 포화지방 7 g · 총지방 13 g 인 **정상 제품**에 「포화지방이 총지방을 초과」
+//         거짓 경고가 운영 응답으로 나가고 있었다.
+//     nutritionTrafficLight.js:330  '60' + '4' + '13' = '60413' (문자열 접합)
+//       → mass_balance 비교가 NaN 이 되어 검사가 조용히 무동작이었다.
+//   OCR 경로는 파서가 숫자를 만들어 넘기므로 영향이 없다 = **바코드 경로 전용 결함**이었다.
+//
+// 왜 **여기**인가 (모델 · 쿼리 레이어) —
+//   ① DB 행이 도메인 객체가 되는 **가장 앞선 한 지점**이다. 이 아래로는 전부 소비자다.
+//   ② productService 에서 고치면 `searchByName`·`getRecent` 를 **직접** 부르는
+//      productRoutes.js:35·46 이 남는다. 즉 같은 규칙을 두 곳에 적게 된다 —
+//      세션48 §4-5 가 근본 원인으로 지목한 「같은 의미를 여러 경로에서 재해석한다」다.
+//   ③ sanityCheck(엔진) 안에서 방어적으로 변환하면 규칙이 읽기 경계와 엔진 두 곳에
+//      생기고, OCR 경로(이미 숫자)와 이중 변환이 된다. 그래서 엔진은 건드리지 않는다.
+//
+// 왜 `pg.types.setTypeParser(1700, …)` 가 아닌가 —
+//   전역 부작용이다. 앱 전체의 모든 NUMERIC(마이그레이션·배치·집계 쿼리 포함)이 한꺼번에
+//   바뀌는데 이 저장소에는 그 광범위한 변경을 검증할 수단이 없다. 인수인계도 보류 상태다.
+//
+// 왜 `Number(x)` 를 그대로 쓰지 않는가 —
+//   `Number(null) === 0` · `Number('') === 0` 이다. 「데이터 없음」이 「0」이 되면
+//   신호등이 **없는 데이터를 근거로 초록을 칠한다**(당류 0 g·포화지방 0 g).
+//   과소경고는 이 도메인에서 가장 비싼 실수다. 그래서 아래는 null 을 null 로 남긴다.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * NUMERIC 컬럼 1개 값 → number | null
+ *  · null/undefined → null   (「없음」을 0 으로 만들지 않는다)
+ *  · ''/공백        → null   (Number('') === 0 함정)
+ *  · 숫자로 못 읽는 값 → null (조용히 0 으로 만들지 않는다)
+ *  · 이미 number    → 그대로 (이중 변환 없음. OCR 경로와 공유되는 코드를 위해)
+ */
+function toNumericOrNull(v) {
+  if (v === null || v === undefined) return null;
+  if (typeof v === 'number') return Number.isFinite(v) ? v : null;
+  if (typeof v === 'bigint') return Number(v);
+  if (typeof v !== 'string') return null;
+  const s = v.trim();
+  if (s === '') return null;
+  const n = Number(s);
+  return Number.isFinite(n) ? n : null;
+}
+
+/** 행(또는 행 배열)의 지정 컬럼만 숫자로 좁힌다. 행에 없는 키는 만들지 않는다. */
+function numify(row, cols) {
+  if (!row) return row;
+  for (const c of cols) {
+    if (Object.prototype.hasOwnProperty.call(row, c)) row[c] = toNumericOrNull(row[c]);
+  }
+  return row;
+}
+function numifyAll(rows, cols) {
+  if (!Array.isArray(rows)) return rows;
+  for (const r of rows) numify(r, cols);
+  return rows;
+}
+
+// ── 어느 컬럼이 NUMERIC 인가 — 하드코딩 추측이 아니라 스키마 정본에서 뽑았다 ──
+//   근거 ①: scripts/migrations/000_baseline.sql (정본 DDL)
+//   근거 ②: schema/production_schema_2026-07-31.txt (운영 information_schema 덤프)
+//   ⚠ 목록을 늘릴 때는 반드시 위 두 파일을 다시 확인할 것. 타입이 아니라 이름으로 고르면
+//     VARCHAR 를 숫자로 만들어 basis 마커 같은 문자열 계약을 깬다(아래 제외 항목 참조).
+
+/** products — 000_baseline.sql:143·145·147 / production_schema:14·16·18 */
+const NUM_PRODUCTS = ['serving_size', 'total_content', 'servings_per_container'];
+
+/**
+ * nutrition_data (및 이를 그대로 물려주는 product_nutrition_resolved 뷰)
+ *   000_baseline.sql:243~257 / production_schema:60~74
+ * ⚠ 제외: nutrition_data.serving_size 는 **VARCHAR** 다
+ *   (000_baseline.sql:261 · production_schema:78). '100g'/'100ml' basis 마커 문자열이고
+ *   `deriveBasis()` 가 그 문자열로 판정한다. 숫자로 바꾸면 전 제품 basis 가 무너진다.
+ *   findByBarcode 는 이 컬럼을 `nutrition_serving_size` 로 별칭하므로 애초에 이 목록과 겹치지 않는다.
+ */
+const NUM_NUTRITION = [
+  'calories', 'total_fat', 'saturated_fat', 'trans_fat', 'cholesterol', 'sodium',
+  'total_carbs', 'total_sugars', 'added_sugars', 'dietary_fiber', 'protein',
+  'calcium', 'iron', 'vitamin_d', 'potassium',
+];
+
+/**
+ * additives — 000_baseline.sql:435~440 / production_schema:221~226
+ * ⚠ 제외: adi_value·edi 는 **VARCHAR** 다(000_baseline.sql:427·428 / production_schema:213·214).
+ *   "0.5 mg/kg bw" 같은 단위 포함 문자열이 들어 있어 숫자로 좁히면 근거 텍스트가 사라진다.
+ * ⚠ risk_grade·klimisch_level·last_eval_year·page 는 INTEGER 라 드라이버가 이미 number 로 준다.
+ */
+const NUM_ADDITIVES = [
+  'dim_a_toxicity', 'dim_b_exposure', 'dim_c_genotox',
+  'dim_d_regulation', 'dim_e_data_quality', 'mfras_total',
+];
+
+/** product_additives — 000_baseline.sql:495 / production_schema:176 */
+const NUM_PRODUCT_ADDITIVES = ['amount'];
+
 /**
  * 바코드로 제품 + 영양정보 조회
  * @param {string} barcode
@@ -35,7 +135,8 @@ async function findByBarcode(barcode) {
      LIMIT 1`,
     [barcode]
   );
-  return result.rows[0] || null;
+  // ★ 세션49 D3 — 읽기 경계. 여기서 좁히지 않으면 NUMERIC 문자열이 그대로 신호등에 간다.
+  return numify(result.rows[0] || null, [...NUM_PRODUCTS, ...NUM_NUTRITION]);
 }
 
 /**
@@ -115,7 +216,10 @@ async function searchByName(query, limit = 20, offset = 0) {
      LIMIT $2 OFFSET $3`,
     [qn, limit, offset]
   );
-  return result.rows;
+  // ★ 세션49 D3 — productRoutes.js:35 가 productService 를 거치지 않고 이 결과를 직접 응답에 싣는다.
+  //   서비스 계층에서 고쳤다면 이 경로만 문자열로 남았을 것이다(같은 규칙의 2중화).
+  //   score 는 SQL 식 결과라 이 목록에 없다(NUMERIC 컬럼이 아니다).
+  return numifyAll(result.rows, NUM_PRODUCTS);
 }
 
 /**
@@ -128,7 +232,9 @@ async function getNutrition(productId) {
     `SELECT * FROM nutrition_data WHERE product_id = $1 LIMIT 1`,
     [productId]
   );
-  return result.rows[0] || null;
+  // ★ 세션49 D3. `SELECT *` 이므로 serving_size(VARCHAR basis 마커)도 행에 있다 —
+  //   NUM_NUTRITION 에 그 이름이 없는 것이 의도다. 위 목록 주석 참조.
+  return numify(result.rows[0] || null, NUM_NUTRITION);
 }
 
 /**
@@ -159,7 +265,12 @@ async function getAdditives(productId) {
      ORDER BY COALESCE(a.mfras_total, 0) DESC, a.risk_grade DESC NULLS LAST, a.name_ko`,
     [productId]
   );
-  return result.rows;
+  // ★ 세션49 D3 — mfras_total·dim_* 도 NUMERIC 이라 문자열로 온다.
+  //   productService.buildMfras 가 `Math.max(...scores.map(parseFloat))` 로 매번 되돌리고 있었다
+  //   (productService.js:93·121·125~130) = 같은 규칙의 2중화. 여기서 한 번만 좁힌다.
+  //   ⚠ parseFloat 는 이미 number 인 값에 대해 항등이므로 그 코드는 그대로 두어도 안전하다
+  //     (이중 변환이 생기지 않는다). 정리는 별건으로 남긴다.
+  return numifyAll(result.rows, [...NUM_ADDITIVES, ...NUM_PRODUCT_ADDITIVES]);
 }
 
 /**
@@ -323,6 +434,10 @@ async function getAllergensRaw(productId) {
 /**
  * ⛔ 미사용 — 위 블록 참조. 조회 경로는 `productService.getProductWithTrafficLight` 가
  *    매번 실시간 계산한다(캐시 조회 자체를 하지 않는다).
+ * ★ 세션49 D3 — 그래서 numify 를 걸지 않았다(호출부 0곳인 코드에 규칙을 늘리지 않는다).
+ *   ⚠ 이것을 **배선하려는 사람에게** — `*_pct_dv`·`multi_serving_count` 는 NUMERIC 이다
+ *     (000_baseline.sql:295~315). 배선하는 순간 D3 와 **똑같은 문자열 비교 결함**이 생긴다.
+ *     연결하기 전에 NUM_* 목록에 nutrition_traffic_light 용 항목을 먼저 추가할 것.
  * @param {number} productId
  * @returns {Promise<Object|null>}
  */
@@ -441,6 +556,9 @@ async function getRecent(limit = 20) {
      LIMIT $1`,
     [limit]
   );
+  // ★ 세션49 D3 — 이 SELECT 목록에는 NUMERIC 컬럼이 하나도 없다
+  //   (serving_size·total_content 를 뽑지 않는다). 그래서 numify 를 걸지 않는다.
+  //   컬럼을 추가하게 되면 NUM_PRODUCTS 로 좁힐 것.
   return result.rows;
 }
 
@@ -456,4 +574,5 @@ module.exports = {
   getTrafficLight,
   upsertTrafficLight,
   getRecent,
+  _toNumericOrNull: toNumericOrNull,   // 세션49 D3 — 경계 변환기(테스트·감사용)
 };

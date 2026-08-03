@@ -31,12 +31,39 @@ const RACC_MAP = {
   '양념젓갈': { racc: 15, unit: 'g',  exempt: true, guards: ['sodium'], basis: 'imputed' },
 };
 
+// ★★★ 세션49 — 치명A 수정. 여기가 「배선은 살아 있는데 한 번도 발동하지 않던」 지점이다.
+//   세션47 이 이 함수를 두 라우트에 배선했지만 본체가 `RACC_MAP[foodType.trim()]` 정확 일치라
+//   **캡처 68건 중 매칭 0건**이었다. 실측 미스: "가공김(조미김)" · "혼합장(살균제품)".
+//   같은 저장소의 raccTable 이 이미 L0~L4 정규화로 같은 68건에서 43/68 을 맞히고 있었다.
+//   → 정규화를 공용 모듈로 뽑아(src/services/foodTypeMatch.js) 양쪽이 같은 것을 쓴다.
+//   ⚠ 부분 문자열 매칭은 하지 않는다. 정규화 후에도 전체가 같아야 매칭이다
+//     ('초고추장'→'고추장', '양조간장'→'간장' 같은 근거 없는 면제를 만들지 않는다).
+const { buildFoodTypeIndex, matchFoodType } = require('./foodTypeMatch');
+
+const RACC_INDEX = buildFoodTypeIndex(Object.keys(RACC_MAP));
+
 /**
- * food_type 정확 매칭만 면제 적용(애매하면 null → 엔진 per-100g worse-of).
+ * food_type → 소량섭취 면제 정책.
+ * @returns {{racc,unit,exempt,guards,basis?,matchedKey,matchLevel,ambiguousWith}|null}
+ *   못 찾으면 null → 엔진이 종전대로 per-100g worse-of 로 판정한다(추정하지 않는다).
+ *
+ * ★ 반환 객체에 `matchedKey`/`matchLevel` 을 실어 보낸다. 「어떻게 매칭됐는가」가 보이지 않으면
+ *   치명A 처럼 **매칭률 0 인 상태로 몇 세션이 지나간다.** 값과 근거는 항상 함께 흐른다.
+ * ★ RACC_MAP 원본 객체를 그대로 돌려주지 않고 사본을 만든다 — 호출부가 변형해도
+ *   다음 호출에 새지 않게(엔진이 guards 배열을 만지는 경로가 있다).
  */
 function getRaccPolicy(foodType) {
-  if (!foodType || typeof foodType !== 'string') return null;
-  return RACC_MAP[foodType.trim()] || null;
+  const m = matchFoodType(RACC_INDEX, foodType);
+  if (!m) return null;
+  const p = RACC_MAP[m.key];
+  if (!p) return null;
+  return {
+    ...p,
+    guards: Array.isArray(p.guards) ? [...p.guards] : [],
+    matchedKey: m.key,
+    matchLevel: m.matchLevel,
+    ambiguousWith: m.ambiguousWith,
+  };
 }
 
 /**

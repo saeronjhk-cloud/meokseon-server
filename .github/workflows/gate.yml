@@ -75,9 +75,17 @@ jobs:
             src/models/productModel.js \
             src/routes/ocrRoutes.js \
             src/routes/productRoutes.js \
+            src/routes/userRoutes.js \
             src/services/mergeService.js \
             src/services/productService.js \
             src/services/allergenName.js \
+            src/services/crowdsourceService.js \
+            src/services/foodTypeMatch.js \
+            src/services/nutritionTrafficLight.js \
+            src/services/pulseConsentService.js \
+            src/services/raccPolicy.js \
+            src/services/raccTable.js \
+            src/utils/foodCategory.js \
             scripts/lib/allergenUpsert.js \
             scripts/19-apply-haccp.js \
             scripts/26-apply-haccp-dump.js \
@@ -86,6 +94,7 @@ jobs:
             tests/test_allergen_name_normalize.js \
             tests/test_allergen_declared.js \
             tests/test_allergen_evidence_level.js \
+            tests/test_parse_allergy.js \
             tests/test_path_parity.js \
             tests/test_allergen_contract.js \
             tests/test_schema_constraints.js
@@ -100,7 +109,7 @@ jobs:
         run: node -e "require('./src/app')"
 
       # ── STEP 2 : 회귀 (스위트마다 별도 단계 — 어느 것이 빨강인지 보이게) ────
-      - name: test: allergen
+      - name: "test: allergen"
         run: npm run test:allergen
 
       - name: 운영 덤프를 77 이 찾는 위치에 배치
@@ -121,22 +130,33 @@ jobs:
             exit 1
           fi
 
-      - name: test: contracts (parity / allergen / schema 대장 대조)
+      - name: "test: contracts (parity / allergen / schema 대장 대조)"
         run: npm run test:contracts
 
-      - name: test: merge
+      # ── 대장이 낡는 것을 막는 유일한 장치 ─────────────────────────────
+      # 결함을 「고쳤다」고 선언하고 대장 줄을 지웠으면, 그 파일의 STRICT 는
+      # 초록이어야 한다. 지우기만 하고 실제로는 안 고친 경우를 여기서 잡는다.
+      # ⚠ PARITY_STRICT · ALLERGEN_STRICT 는 아직 빨강이 정상이다
+      #   (D4·D5 / A1 4건이 대장에 남아 있다). 그 대장이 비면 여기에 추가할 것.
+      - name: "STRICT: schema-constraints (PC1·PC2 — 세션49)"
+        run: npm run test:schema-constraints:strict
+
+      - name: "STRICT: parse-allergy (소실 3건 — 세션50)"
+        run: npm run test:parse-allergy:strict
+
+      - name: "test: merge"
         run: npm run test:merge
 
-      - name: test: ocr
+      - name: "test: ocr"
         run: npm run test:ocr
 
-      - name: test: serving
+      - name: "test: serving"
         run: npm run test:serving
 
-      - name: test: parity (앱↔정본 파서 동치)
+      - name: "test: parity (앱↔정본 파서 동치)"
         run: npm run test:parity
 
-      - name: test: unit (신호등)
+      - name: "test: unit (신호등)"
         run: npm run test:unit
 
       - name: 63-eval 캡처 파서 (153/153 유지)

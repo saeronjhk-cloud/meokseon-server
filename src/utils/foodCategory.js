@@ -103,10 +103,29 @@ const CONTEXT_MESSAGES = {
 
 /**
  * food_type 문자열 → context 객체 (스펙 §2.2 형태)
+ *
+ * ★★★ 세션50 D2 — **이 함수는 이제 「건조식품인가」·「평가 대상인가」를 판정하지 않는다.**
+ *   종전에는 위 KEYWORD_RULES(13분류)로 `is_dried_exception` 을 **두 번째로** 판정했고,
+ *   그 답이 엔진(`nutritionTrafficLight.detectFoodCategory`)과 갈렸다. 실측:
+ *     조미김·김자반 → 엔진 dried=true / 여기 dried=false
+ *     간장          → 엔진 beverage  / 여기 fermented
+ *   그래서 **같은 바코드 응답**이 `traffic_light.is_dried_exception = true` 와
+ *   `context.is_dried_exception = false` 를 동시에 실어 나갔다(OCR 의 sanity 이중 노출과 같은 형태).
+ *   → 판정은 엔진 한 곳에서만 하고, 여기서는 그 결과를 **받아 쓴다.**
+ *   ⚠ 대안(여기서 `detectFoodCategory` 를 호출)은 **쓰지 않는다.** 읽기 경계에 판정 호출이
+ *     하나 더 생기면 「같은 의미를 여러 경로에서 재해석」이 그대로 재발한다(세션48 근본원인).
+ *   ⚠ `category` · `category_label` · `messages` 는 계속 여기서 정한다. 엔진의 카테고리 어휘는
+ *     6종(general/beverage/fermented/dried/alcohol/supplement)뿐이라 13분류 안내 문구를 만들 수 없다.
+ *     남아 있는 두 어휘의 불일치는 대장에 **D5** 로 등록했다(tests/test_path_parity.js).
+ *
  * @param {string|null} foodType - C005 식품유형명 (예: '스낵과자류', '김치류')
+ * @param {Object|null} [trafficLight] - `evaluateNutrition` 결과. 영양정보가 없어 판정을 못 했으면 null.
  * @returns {Object} context — { category, category_label, is_excluded, exclude_reason, is_dried_exception, is_beverage, detection_method, messages[] }
+ *   ★ `is_excluded` · `exclude_reason` · `is_dried_exception` 은 **3-상태**다:
+ *     `true`/`false` = 엔진이 판정했다 · **`null` = 판정 자체가 없다**(영양정보 없음).
+ *     `false` 로 채우면 「건조식품이 아니다」·「평가 대상이다」라고 **없는 근거로 단정**하는 것이 된다.
  */
-function getContext(foodType) {
+function getContext(foodType, trafficLight = null) {
   const ft = (foodType || '').trim();
   let category = 'general';
   let detectionMethod = 'silent_fallback';
@@ -129,9 +148,12 @@ function getContext(foodType) {
   return {
     category,
     category_label: meta.label,
-    is_excluded: !!meta.excluded,
-    exclude_reason: meta.excludeReason || null,
-    is_dried_exception: category === 'dried',
+    // ── 아래 3키는 엔진 결과를 그대로 옮긴다. 여기서 판정하지 않는다(세션50 D2).
+    is_excluded: trafficLight ? !!trafficLight.is_excluded : null,
+    exclude_reason: trafficLight ? (trafficLight.exclude_reason || null) : null,
+    is_dried_exception: trafficLight ? !!trafficLight.is_dried_exception : null,
+    // ⚠ is_beverage 는 아직 여기서 정한다. 엔진은 `food_category === 'beverage'` 로 같은 뜻을 내는데
+    //   두 답이 갈린다(간장: 엔진 beverage · 여기 fermented). 대장 **D5** 로 등록했다 — 세션50 미해결.
     is_beverage: category === 'beverage' || category === 'juice',
     detection_method: detectionMethod,
     messages,

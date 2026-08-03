@@ -273,7 +273,11 @@ async function getProductWithTrafficLight(barcode) {
   }
 
   // 카테고리 맥락
-  const context = getContext(product.food_type);
+  // ★★ 세션50 D2 — 신호등 결과를 **함께 넘긴다.** getContext 가 건조·제외 여부를 두 번째로
+  //   판정하던 것을 끊었다. 종전에는 같은 응답이 traffic_light.is_dried_exception=true 와
+  //   context.is_dried_exception=false 를 동시에 실어 나갔다(조미김·김자반 실측).
+  //   trafficLight 가 null(영양정보 없음)이면 그 3키는 false 가 아니라 **null**(=판정 없음)이다.
+  const context = getContext(product.food_type, trafficLight);
 
   return {
     product: {

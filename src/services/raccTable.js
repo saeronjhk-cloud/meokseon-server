@@ -68,31 +68,18 @@ function loadTable(paths = CANDIDATE_PATHS) {
 }
 
 // ── 정규화 ──────────────────────────────────────────────────────────────────
-// 공백만 제거 (L1)
-function stripSpace(s) { return s.replace(/\s+/g, ''); }
-// 공백 + 분리자 제거 (L2). '과/채 주스' 와 '과·채주스' 를 같은 '과채주스' 로 만든다.
-//   · 는 U+00B7 외에 U+318D(ㆍ) · U+2027 · U+22C5 등으로도 들어온다 — 실물 OCR·공공DB 모두에서 관측되는 변종.
-function stripSep(s) { return s.replace(/[\s·ㆍ․‧⋅∙/／.,\-‐‑–—~_]/g, ''); }
-// 괄호 밖 (L3): '프레스햄(살균제품)' → '프레스햄'
-function outsideParen(s) { return s.replace(/[(（[［][^)）\]］]*[)）\]］]/g, '').trim(); }
-// 괄호 안 (L4): '가공김(조미김)' → '조미김'. 마지막 괄호를 쓴다(부가표기가 뒤에 오는 실물 패턴).
-function insideParen(s) {
-  const all = [...s.matchAll(/[(（[［]([^)）\]］]+)[)）\]］]/g)].map((m) => m[1].trim()).filter(Boolean);
-  return all.length ? all[all.length - 1] : null;
-}
+// ★★ 세션49 — 정규화 4종과 인덱스를 이 파일에서 들어냈다.
+//   세션48 치명A 의 원인이 「이 파일에는 정규화가 있는데 raccPolicy 에는 없었다」였다.
+//   같은 규칙이 두 파일에 각각 있으면 한쪽만 고쳐지고 다른 쪽은 몇 세션이고 무동작으로 남는다.
+//   → src/services/foodTypeMatch.js 하나로 모았다. **동작은 그대로다**(함수 본문 그대로 이관).
+//   test_racc_table.js 의 71 단정(L0~L4 전 계층 + 충돌 시 먼저 등록 키 유지)이 그것을 지킨다.
+const { buildFoodTypeIndex, matchFoodType, _norm } = require('./foodTypeMatch');
+const { stripSpace, stripSep, outsideParen, insideParen } = _norm;
 
-let IDX_EXACT = null, IDX_SPACE = null, IDX_SEP = null;
+let INDEX = null;
 
 function buildIndexes() {
-  IDX_EXACT = new Map();
-  IDX_SPACE = new Map();
-  IDX_SEP = new Map();
-  for (const key of Object.keys(TABLE)) {
-    IDX_EXACT.set(key, key);
-    // 충돌 시 **먼저 등록된 키를 유지**한다. 나중 키가 덮어쓰면 조회 결과가 파일 순서에 좌우된다.
-    const sp = stripSpace(key); if (!IDX_SPACE.has(sp)) IDX_SPACE.set(sp, key);
-    const se = stripSep(key);   if (!IDX_SEP.has(se))   IDX_SEP.set(se, key);
-  }
+  INDEX = buildFoodTypeIndex(Object.keys(TABLE));
 }
 
 loadTable();
@@ -100,10 +87,10 @@ loadTable();
 // ── 조회 ────────────────────────────────────────────────────────────────────
 const MISS = Object.freeze({
   matched: false, matchLevel: null, key: null,
-  racc: null, unit: null, supplement: false, src: null, note: null,
+  racc: null, unit: null, supplement: false, src: null, note: null, ambiguousWith: null,
 });
 
-function hit(key, matchLevel) {
+function hit(key, matchLevel, ambiguousWith = null) {
   const e = TABLE[key] || {};
   return {
     matched: true,
@@ -114,49 +101,23 @@ function hit(key, matchLevel) {
     supplement: e.supplement === true,
     src: e.src || null,
     note: e.note || null,
+    // ★ 세션49 — L3(괄호 밖)과 L4(괄호 안)가 서로 다른 키에 걸린 경우. 판정은 종전대로 L3 우선이되
+    //   모호했다는 사실을 남긴다. 조용히 한쪽을 고르면 나중에 왜 그 값이 나왔는지 알 수 없다.
+    ambiguousWith,
   };
-}
-
-/** 한 후보 문자열을 3개 인덱스로 시도. 맞으면 표 키를, 아니면 null. */
-function probe(cand) {
-  if (!cand) return null;
-  if (IDX_EXACT.has(cand)) return { key: IDX_EXACT.get(cand), via: 0 };
-  const sp = stripSpace(cand); if (IDX_SPACE.has(sp)) return { key: IDX_SPACE.get(sp), via: 1 };
-  const se = stripSep(cand);   if (IDX_SEP.has(se))   return { key: IDX_SEP.get(se), via: 2 };
-  return null;
 }
 
 /**
  * 식품유형 → RACC 조회.
  * @param {string} foodType products.food_type 또는 라벨에서 읽은 식품유형
- * @returns {{matched, matchLevel, key, racc, unit, supplement, src, note}}
+ * @returns {{matched, matchLevel, key, racc, unit, supplement, src, note, ambiguousWith}}
  *   matchLevel: 'L0' 정확 | 'L1' 공백무시 | 'L2' 분리자무시 | 'L3' 괄호밖 | 'L4' 괄호안
+ *   ★ 매칭 규칙 본체는 foodTypeMatch.matchFoodType 에 있다(raccPolicy 와 공유).
  */
 function lookupRacc(foodType) {
-  if (foodType == null) return MISS;
-  const raw = String(foodType).trim();
-  if (!raw) return MISS;
-
-  // L0~L2 — 원문 그대로
-  const direct = probe(raw);
-  if (direct) return hit(direct.key, ['L0', 'L1', 'L2'][direct.via]);
-
-  // L3 — 괄호 밖. '프레스햄(살균제품)' 처럼 괄호가 **부가 설명**인 경우.
-  const out = outsideParen(raw);
-  if (out && out !== raw) {
-    const p = probe(out);
-    if (p) return hit(p.key, 'L3');
-  }
-
-  // L4 — 괄호 안. '가공김(조미김)' 처럼 괄호가 **더 구체적인 유형**인 경우.
-  //   L3 을 먼저 보는 이유: 괄호 밖이 주된 유형인 경우가 더 흔하다(살균제품·비살균 등 공정 표기).
-  const inn = insideParen(raw);
-  if (inn) {
-    const p = probe(inn);
-    if (p) return hit(p.key, 'L4');
-  }
-
-  return MISS;
+  const m = matchFoodType(INDEX, foodType);
+  if (!m) return MISS;
+  return hit(m.key, m.matchLevel, m.ambiguousWith);
 }
 
 /** 건강기능식품 여부 — 신호등 평가 제외 판정에 쓴다(evaluateNutrition excludedCategories 와 짝). */

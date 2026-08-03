@@ -43,9 +43,43 @@ const dice = (a, b) => {
   let inter = 0; for (const x of A) if (B.has(x)) inter++;
   return (2 * inter) / (A.size + B.size);
 };
+// ── 알레르겐 파싱 ────────────────────────────────────────────────────────────
+// 세션50 수정 3건. 기준선 `.tmp/s50/parse/FINDINGS.md` · 수정 후 `.tmp/s50/parse3/RESULT.md`.
+//   ① `/알수없음|없음|해당없음/.test(s)` 가 **부분 일치**라, 라벨 어딘가의 `해당없음` 한 줄이
+//      입력 전체를 `[]` 로 만들었다 (전사 014 = 함유 8종 + 혼입 7종이 동시에 사라졌다).
+//      → **절(clause) 단위**로만 무효화한다. 「진짜 알레르겐 없음」은 그대로 `[]` 다.
+//   ② 구분자가 `, · / |` 4개뿐이라 개행·괄호·마침표·공백이 문장을 자르지 못했고,
+//      마지막 알레르겐이 뒤따르는 안내문을 통째로 삼킨 뒤 `length <= 15` 에 버려졌다
+//      (L1 의 84~90%. 잣 검출률 52% · 전사 031 은 우유 제품에서 우유 소실 · 전사 013 은 16자).
+//      → 문장·라벨항목·괄호·공백까지 분리하고, **길이가 아니라 정본 19종 사전**으로 거른다.
+//        길이 필터를 그냥 늘리면 오검출(L4)이 는다. 정밀도는 사전이 맡는다.
+//   ③ 정본 이름이 없어 `계란`·`알류`·`달걀`·`조개류(굴` 이 그대로 DB 로 갔다
+//      (난류·조개류의 D_raw 검출률 0% / 3.6%). → 정본 19종으로 반환하고 중복을 없앤다.
+// ⚠ 반환형은 그대로 `string[]` 이다. 근거 등급(L3)은 여기서 만들지 않는다 —
+//   `scripts/lib/allergenUpsert.js` 주석 참조(등급 보정은 76 이 문장을 보고 한다).
+// ⚠ `19-apply-haccp.js` 에 **같은 함수**가 있다. 반드시 함께 고칠 것.
+//   `tests/test_parse_allergy.js` §0 과 `tests/test_allergen_name_normalize.js:395` 가 동일성을 강제한다.
+const { normalizeAllergenNames } = require('../src/services/allergenName');
+/** 「알레르겐 없음」 선언 — 절 단위로만 본다. 입력 전체를 무효화하지 않는다. */
+const ALLERGY_NONE_RE = /알\s*수\s*없음|해당\s*(?:사항\s*)?없음|없\s*음|없슴/;
+/** 절(문장·라벨 항목) 경계. `없음` 판정은 이 단위로 한다. */
+const ALLERGY_CLAUSE_RE = /[\r\n.。;；!?！？/／|｜•※▶◆■▲▼★☆◎●○]+/;
+/** 절 안의 토큰 경계. 정밀도는 정본 사전이 맡으므로 넉넉히 자른다. */
+const ALLERGY_TOKEN_RE = /[\s,，、·ㆍ‧∙:：()（）[\]{}<>「」『』"'“”‘’*+~=%\-–—0-9]+/;
 const parseAllergy = (s) => {
-  if (!s || /알수없음|없음|해당없음/.test(s)) return [];
-  return s.replace(/함유|포함/g, '').split(/[,·\/|]/).map(x => x.trim()).filter(x => x && x.length <= 15);
+  if (!s) return [];
+  const out = [];
+  const seen = new Set();
+  for (const clause of String(s).replace(/함유|포함/g, ' ').split(ALLERGY_CLAUSE_RE)) {
+    if (!clause.trim() || ALLERGY_NONE_RE.test(clause)) continue;   // ① 절 단위 무효화
+    for (const token of clause.split(ALLERGY_TOKEN_RE)) {           // ② 문장·괄호·공백까지 분리
+      if (!token) continue;
+      for (const hit of normalizeAllergenNames(token)) {            // ③ 정본 19종으로
+        if (!seen.has(hit.name)) { seen.add(hit.name); out.push(hit.name); }
+      }
+    }
+  }
+  return out;
 };
 const tok = (s) => new Set((s || '').split(/[,、\/()\[\]{}:·]+/).map(t => normName(t)).filter(t => t.length >= 2));
 

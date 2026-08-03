@@ -12,7 +12,11 @@
 
 const db = require('../config/database');
 const logger = require('../config/logger');
-const { sanityCheck, scaleNutrition } = require('./nutritionTrafficLight');
+// ★ 세션50 D2 — 저장 게이트의 sanity 는 **엔진(evaluateNutrition)** 이 낸 것을 쓴다.
+//   sanityCheck 를 아직 import 하는 이유는 「평가 대상 외」(주류·건기식·원료)일 때뿐이다.
+//   그때도 건조 판정은 엔진 결과(is_dried_exception)를 넘긴다 — 여기서 새로 판정하지 않는다.
+const { evaluateNutrition, sanityCheck, scaleNutrition } = require('./nutritionTrafficLight');
+const { getRaccPolicy } = require('./raccPolicy');
 // 세션42: per_total 라벨을 저장 게이트 **통과 전에** 1회분으로 환산하기 위해 사용
 const { resolveServings, totalToServingDivisor } = require('./servingResolver');
 const { mergeAndApply, AUTO_VERIFY_DISTINCT_DEVICES } = require('./mergeService');
@@ -162,7 +166,36 @@ async function saveOcrContribution(params) {
     checkBasis = 'per_serving';   // 환산 완료
   }
 
-  const sanityWarnings = sanityCheck(checkNutrition, checkServing, false, checkBasis);
+  // ★★★ 세션50 D2 — **저장 게이트도 엔진 판정을 받아 쓴다.**
+  //   종전: `sanityCheck(checkNutrition, checkServing, false, checkBasis)` — 3번째 인자가
+  //     하드코딩 false 라 **건조식품(김·김자반·육포·미역)의 사용자 제보가 부당하게 반려**됐다.
+  //     100g 당 열량·지방이 자연히 높은 것이 건조식품의 정의인데, 화면(신호등)은 면제하고
+  //     저장만 거부하는 「화면은 통과 · 등록은 반려」 상태였다.
+  //   ⚠ 여기는 화면이 아니라 **DB 영구 저장 관문**이다. 방향이 「거부 → 허용」으로 바뀌는
+  //     유일한 축은 **건조식품의 per_100g 상한**뿐이다. per_serving 상한·음수·mass balance 는
+  //     건조식품에도 그대로 살아 있다(tests/test_path_parity.js §8 이 두 방향을 다 고정한다).
+  //   ⚠ 평가 대상 외(주류·건강기능식품·원료식품)는 엔진이 판정 전에 반환해 `sanity_warnings` 가
+  //     빈 배열이다. 그것을 그대로 게이트에 쓰면 **이상치가 통과해 영구 저장**된다.
+  //     그래서 그 경우에만 엔진의 건조 판정(`is_dried_exception`)을 받아 같은 함수를 직접 부른다 —
+  //     판정을 여기서 새로 하는 것이 아니라 **엔진이 낸 답을 넘기는 것**이다.
+  const gateProduct = {
+    product_name: productInfo.product_name || analysis?.product_meta?.product_name || '',
+    food_type: productInfo.food_type || analysis?.product_meta?.food_type || '',
+    content_unit: productInfo.content_unit || nutrition.content_unit || null,
+    // ★ checkServing 은 위에서 정한 값 그대로다. 여기서 `Number(...)`·`|| 100` 을 새로 넣지 말 것
+    //   (`Number(null)===0`, `Number('')===0` — 「데이터 없음」이 「0」이 되면 게이트가 헛돈다).
+    serving_size: checkServing,
+    total_content: productInfo.total_content ?? nutrition.total_content ?? null,
+  };
+  const gateEval = evaluateNutrition(
+    gateProduct,
+    { ...checkNutrition, basis: checkBasis },
+    undefined,
+    getRaccPolicy(gateProduct.food_type),
+  );
+  const sanityWarnings = (gateEval.is_excluded || gateEval.is_withheld)
+    ? sanityCheck(checkNutrition, checkServing, gateEval.is_dried_exception, checkBasis)
+    : gateEval.sanity_warnings;
   const criticalWarnings = sanityWarnings.filter(w =>
     w.type === 'per_serving_exceeded' || w.type === 'per_100g_exceeded' || w.type === 'negative_value'
   );

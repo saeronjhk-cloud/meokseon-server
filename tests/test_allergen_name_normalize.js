@@ -60,6 +60,18 @@ function section(title) {
 /** 이름만 뽑는다(순서 무관 비교용). */
 const names = (raw) => normalizeAllergenNames(raw).map((x) => x.name).sort();
 
+/**
+ * 76 의 apply 루프와 **같은 규칙**으로 「반영 후 그 행에 실제로 남는 출처」를 계산한다.
+ *   `scripts/76-normalize-allergen-names.js:385` —
+ *     if (u.via) { params.push(u.via); sets.push(`detected_via = $N`); }
+ *   즉 승격이 있을 때만 SET 하고, 없으면 대표 행의 원래 출처가 그대로 남는다.
+ * ⚠ 소스 문자열을 regex 로 보는 대신 **buildPlan 이 실제로 돌려준 객체**만 본다.
+ *   (세션46·47·48 에서 소스 regex 단정이 세 번 연속 뚫렸다 — 주석/본문 오염.)
+ */
+const appliedVia = (u) => u.via || u.fromVia || null;
+/** 같은 규칙의 status 판. */
+const appliedStatus = (u) => u.status || u.fromStatus || null;
+
 // ════════════════════════════════════════════════════════════════════════════
 // 실측 표본 — 2026-07-31 `parseAllergy` 를 그대로 import 해 실제 HACCP 덤프에 돌려 얻은 것.
 //   **하나도 손으로 지어내지 않았다.** 괄호가 짝이 안 맞는 것들이 실제 DB 값이다.
@@ -206,6 +218,104 @@ async function main() {
     assert.deepStrictEqual(names('게'), ['게']);
     assert.deepStrictEqual(names('게추출물(게)'), ['게']);
     assert.deepStrictEqual(names('게농축액(게)'), ['게']);
+  });
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // ★★★ 세션50 — 「게」 경계 가드(완화안2R) **양방향** 고정
+  //
+  // 왜 필요한가 (실측 근거):
+  //   세션50 이전의 게 단정은 바로 위 4줄뿐이었고 **전부 「가드가 통과시키는」 경로만** 봤다.
+  //   「가드가 거부해야 한다」를 확인하는 단정이 **한 줄도 없었다.** 그래서 가드 함수를
+  //   통째로 `return false`(무력화)로 바꿔도 테스트가 초록이었다 —
+  //   뮤테이션 6종을 걸어 본 결과 기존 테스트는 **5종을 놓쳤다**(M1~M5 생존).
+  //   아래는 그 구멍을 막는다: 긍정(게로 읽어야 한다) + 부정(게로 읽으면 안 된다) 양쪽.
+  //
+  // 각 군 옆의 [Mn] 은 「이 단정이 죽이도록 설계된 뮤테이션」이다.
+  //   M1 규칙 E 의 `$` 앵커 제거 · M2 가드 무력화 · M3 접미 목록 현행 원복 ·
+  //   M4 토큰 앞 문맥 미사용 · M5 종 수식어 목록 축소 · M6 가드 항상 거부
+  //
+  // ⚠ 커버리지 함정 — 반드시 알고 읽을 것:
+  //   별칭표의 `꽃게`·`대게` 는 **2글자라 가드를 타지 않는다.** 그래서
+  //   `붉은대게살`·`붉은대게농축분말`·`붉은대게다리살`·`냉동꽃게` 는 새 가드를
+  //   **한 번도 실행하지 않는다**(가드 호출 계수로 확인). `게란` 도 오타표가 먼저 잡아
+  //   가드를 타지 않는다. 이 5종은 **동작 계약**으로만 남기고 가드 커버리지로 세지 않는다.
+  //   가드를 실제로 실행하는 등가 입력은 `게`·`홍게*`·`황게`·`참게`·`털게`·`냉동게` 계열이며
+  //   A1~A6 의 나머지 66종이 전부 그 경로를 지난다(계수로 확인).
+  // ══════════════════════════════════════════════════════════════════════════
+  const hasCrab = (raw) => names(raw).includes('게');
+  const crabYes = (raw) => assert.ok(hasCrab(raw),
+    `게를 잃었다(과소경고): ${JSON.stringify(raw)} → ${JSON.stringify(names(raw))}`);
+  const crabNo = (raw) => assert.ok(!hasCrab(raw),
+    `게가 아닌데 게로 읽었다(과잉경고): ${JSON.stringify(raw)} → ${JSON.stringify(names(raw))}`);
+
+  await t('★★ A1 [M2·M4·M6] 부사형 어미 「-게」를 갑각류로 읽지 않는다 (진짜 게는 살린다)', () => {
+    // 실데이터 근거: HACCP nm·c003 nm·캡처전사에서 -게 어미 토큰 실측 69종 — 현행 가드는 전부 오탐.
+    ['풍부하게', '맛있게', '고소하게', '가볍게', '않게',
+      '너에게', '아무도모르게', '건강하게', '어떻게'].forEach(crabNo);
+    crabYes('게');
+  });
+
+  await t('★★ A2 [M1] 게부위 접미는 「토큰을 끝맺어야」 한다 — OCR 공백 붕괴 오탐 차단', () => {
+    // 이 5건이 규칙 E 의 `$` 앵커가 존재하는 유일한 이유다.
+    // 앵커를 빼면 `게살`↔`부드럽게살짝` · `게장`↔`달콤하게장식` · `게알`↔`고소하게알알이` ·
+    // `게육수`↔`진하게육수를` 를 원리적으로 구분할 수 없다.
+    ['부드럽게살짝 데친 나물', '부드럽게살짝', '진하게육수를 우려냈습니다',
+      '고소하게알알이 씹히는 콩', '달콤하게장식한 케이크'].forEach(crabNo);
+  });
+
+  await t('★★ A3 [M3·M6] 게 부위·가공형태 복합명사에서 게가 소실되지 않는다', () => {
+    // 실데이터 근거: HACCP raw 실측(게다리살·홍게다리살·홍게껍질·붉은대게딱지장 …).
+    // ★ `게맛살`·`게향` 이 여기에 있는 것은 제이의 정책 결정이다(세션50, 안전 우선).
+    //   게맛살은 어육이 주재료이나 게 추출물을 넣는 제품이 실재하고, `게향` 도 천연향 혼재
+    //   가능성이 있어 과소경고보다 과잉경고를 택했다. 오탐으로 오해해 지우지 말 것.
+    ['게살', '게장', '양념게장', '간장게장', '무말랭이게장',
+      '게알', '게딱지', '게내장', '게육수',
+      '게다리살', '게껍질', '게가루', '게분말', '게엑기스',
+      '게농축액', '게추출물', '게맛살', '게향', '냉동게살'].forEach(crabYes);
+  });
+
+  await t('★★ A4 [M5] 게 종류 수식어(꽃·대·홍·털·참·청·황)를 앞에 달아도 게로 읽는다', () => {
+    // 실데이터 근거: HACCP raw 실측 — 홍게·황게·홍게살·홍게다리살·홍게엑기스분말·홍게껍질.
+    ['홍게', '황게', '참게', '털게',
+      '홍게살', '홍게다리살', '홍게껍질', '홍게엑기스분말'].forEach(crabYes);
+    // ⚠ 아래 3종은 별칭 `대게`(2글자)가 먼저 잡아 **가드를 타지 않는다.** 동작 계약으로만 남긴다.
+    ['붉은대게살', '붉은대게농축분말', '붉은대게다리살'].forEach(crabYes);
+  });
+
+  await t('★★ A5 [M2·M6] 상태 수식어 + 게 (닫힌 목록)', () => {
+    // 실데이터 근거: 「게엑기스54.2%(냉동게89.5%)」.
+    crabYes('냉동게');
+    // ⚠ `냉동꽃게` 는 별칭 `꽃게`(2글자)가 먼저 잡아 가드를 타지 않는다. 동작 계약으로만 남긴다.
+    crabYes('냉동꽃게');
+  });
+
+  await t('★★ A6 [M2·M4] 게가 아닌 것을 게로 읽지 않는다 — 24종 전부 실데이터 실측 문자열', () => {
+    ['멍게', '멍게젓', '멍게식이섬유',
+      '스파게티', '토마토스파게티소스', '짜파게티범벅',
+      '바게트', '마늘바게트', '가라아게', '치킨가라아게',
+      '게토레이', '프로게이너', '게이트', '투게더',
+      '게랑드천일염', '부대찌게향미유', '유화게', '커드무게의',
+      '말토게닉아밀라아제', '일동락토바실루스스포로게네스', '바이오게르마늄',
+      '게란가루', '게이지', '게시일'].forEach(crabNo);
+  });
+
+  await t('★ A7 [가드 무관 경로 방어] 오타표가 「게란」을 난류로 보낸다', () => {
+    // ⚠ 이것은 **가드 단정이 아니다.** TYPO_EXACT 가 먼저 잡아 가드를 타지 않는다.
+    //   가드 교체가 오타표 경로를 건드리지 않았음을 고정하는 회귀 단정이다.
+    assert.deepStrictEqual(names('게란'), ['난류(가금류)']);
+  });
+
+  await t('★★ A8 [회귀] 게 가드 교체가 나머지 18종을 건드리지 않는다', () => {
+    const R18 = [['계란', '난류(가금류)'], ['우유', '우유'], ['메밀', '메밀'], ['땅콩', '땅콩'],
+      ['대두', '대두'], ['밀', '밀'], ['고등어', '고등어'], ['새우', '새우'],
+      ['돼지고기', '돼지고기'], ['복숭아', '복숭아'], ['토마토', '토마토'], ['아황산류', '아황산류'],
+      ['호두', '호두'], ['닭고기', '닭고기'], ['쇠고기', '쇠고기'], ['오징어', '오징어'],
+      ['조개류(굴)', '조개류'], ['잣', '잣'], ['통밀크래커', '밀'], ['굴비', null]];
+    for (const [inp, exp] of R18) {
+      const got = names(inp);
+      if (exp === null) assert.deepStrictEqual(got, [], `${inp} 가 무언가로 읽혔다: ${JSON.stringify(got)}`);
+      else assert.ok(got.includes(exp), `${inp} → ${JSON.stringify(got)} (기대: ${exp} 포함)`);
+    }
   });
 
   await t('★★ 한 조각에 여러 알레르겐이 있으면 전부 낸다 (하나만 내면 나머지가 사라진다)', () => {
@@ -387,16 +497,26 @@ async function main() {
     assert.strictEqual(a.toString(), b.toString(), '두 스크립트의 parseAllergy 가 갈라졌다');
   });
 
-  await t('★★ parseAllergy 는 여전히 오염을 만든다 (그래서 노출 필터가 필요하다)', () => {
+  await t('★★ parseAllergy 는 이제 정본만 낸다 (세션50 결함3 수정) — 그래도 노출 필터는 남는다', () => {
     const { parseAllergy } = require('../scripts/19-apply-haccp');
     // ★ HACCP 덤프에 실재하는 원문이다(scripts/output/haccp_dump.ndjson).
+    //   세션49까지 이 입력은 조각 이름 ['대두','밀','쇠고기','새우','조개류(굴','바지락)'] 을 냈다.
+    //   세션50 에서 19/26 의 parseAllergy 가 분리→정본화까지 하도록 고쳐져 조각이 사라졌다.
+    //   ⚠ 이 단정은 「파서가 정본을 낸다」를 고정한다. 깨지면 결함3 이 되돌아간 것이다.
     const raw = '대두, 밀, 쇠고기, 새우, 조개류(굴, 바지락) 함유';
     const got = parseAllergy(raw);
-    assert.deepStrictEqual(got, ['대두', '밀', '쇠고기', '새우', '조개류(굴', '바지락)'],
+    assert.deepStrictEqual([...got].sort(), ['대두', '밀', '새우', '조개류', '쇠고기'].sort(),
       'parseAllergy 의 동작이 바뀌었다 — 이 회귀 전체의 전제가 달라졌으니 필터 설계를 재검토할 것');
-    assert.ok(got.some((x) => !isCanonicalAllergenName(x)), '오염이 없다면 필터 설계를 재검토할 것');
-    // 그리고 정규화가 그 오염을 정확히 되돌린다.
-    const fixed = [...new Set(got.flatMap((x) => normalizeAllergenNames(x).map((y) => y.name)))].sort();
+    assert.ok(got.every((x) => isCanonicalAllergenName(x)),
+      `파서가 비정본 이름을 다시 만들고 있다(결함3 회귀): ${JSON.stringify(got)}`);
+
+    // ★ 그렇다고 노출 필터를 걷어내면 안 된다 — 재적재 전까지 **DB 에 옛 조각 행이 남아 있고**,
+    //   크라우드·레거시 경로는 여전히 임의 문자열을 넣을 수 있다.
+    //   정규화가 그 옛 조각을 정확히 되돌리는지를 여기서 계속 지킨다(§9 pglite 시나리오의 전제이기도 하다).
+    const LEGACY_FRAGMENTS = ['대두', '밀', '쇠고기', '새우', '조개류(굴', '바지락)'];
+    assert.ok(LEGACY_FRAGMENTS.some((x) => !isCanonicalAllergenName(x)),
+      '레거시 조각 표본에 비정본이 없다 — 표본이 잘못됐다');
+    const fixed = [...new Set(LEGACY_FRAGMENTS.flatMap((x) => normalizeAllergenNames(x).map((y) => y.name)))].sort();
     assert.deepStrictEqual(fixed, ['대두', '밀', '새우', '조개류', '쇠고기'].sort());
   });
 
@@ -460,6 +580,123 @@ async function main() {
     assert.strictEqual(plan.updates[0].toLevel, 'may_contain');
   });
 
+  // ──────────────────────────────────────────────────────────────────────────
+  // ★★★ 세션48 4차 검증 결함1 회귀 — keeper 출처 승계
+  //
+  //   HACCP(19·26)가 만든 행의 이름은 `parseAllergy` 산 **조각**(`계란`·`조개류(굴`)이고
+  //   크라우드 merge 행은 **정본 이름**이다. 76 이 둘을 한 그룹으로 묶으면
+  //   「이미 그 이름인 행을 대표로」 규칙상 **항상 크라우드 행이 대표**가 되고
+  //   haccp_api 행이 DELETE 된다. 승계가 없으면 살아남는 행의 detected_via 가
+  //   crowdsource_merge 로 **강등**되고, 다음 크라우드 merge 의
+  //     DELETE ... AND detected_via = 'crowdsource_merge'  (mergeService.js:531)
+  //   가 식약처 확인 알레르겐을 지운다. 세션47 중대2 가 76 을 통해 되살아나는 경로다.
+  //
+  //   → 아래 3건은 「어느 행이 대표가 되는가」와 **무관하게** 「어떤 출처가 남는가」를 못 박는다.
+  // ──────────────────────────────────────────────────────────────────────────
+
+  await t('★★★ (a) HACCP 조각 + 크라우드 정본이 병합돼도 출처가 강등되지 않는다', () => {
+    const plan = buildPlan([
+      { id: 1, product_id: 10, allergen_name: '계란', evidence_level: 'contains', source_count: 1, status: 'candidate', detected_via: 'haccp_api' },
+      { id: 2, product_id: 10, allergen_name: '난류(가금류)', evidence_level: 'contains', source_count: 1, status: 'candidate', detected_via: 'crowdsource_merge' },
+    ]);
+    // 전제 — 공적 출처 행(id 1)이 지워지고 크라우드 행(id 2)이 살아남는 시나리오다.
+    assert.deepStrictEqual(plan.deletes.map((d) => d.id), [1],
+      `시나리오 전제가 깨졌다(공적 출처 행이 지워지지 않는다): ${JSON.stringify(plan)}`);
+    assert.strictEqual(plan.updates.length, 1, JSON.stringify(plan.updates));
+    const u = plan.updates[0];
+    assert.strictEqual(u.id, 2);
+    assert.strictEqual(u.to, '난류(가금류)');
+    // ★ 본체 — 병합 후 그 제품의 난류(가금류) 행에 실제로 남는 출처.
+    assert.strictEqual(appliedVia(u), 'haccp_api',
+      `공적 출처가 강등됐다(${appliedVia(u)}) — 다음 크라우드 merge 의 `
+      + `DELETE ... detected_via='crowdsource_merge' 가 식약처 확인 알레르겐을 지운다`);
+    assert.strictEqual(u.via, 'haccp_api', '승계가 UPDATE 의 SET 목록에 실리지 않는다');
+    assert.strictEqual(plan.stats.viaPromoted, 1, `viaPromoted 집계가 ${plan.stats.viaPromoted}`);
+    // ★ 그리고 그룹의 강한 status 도 함께 승계돼야 한다(admin_verified 가 위 DELETE 의 다른 방패다).
+    const plan2 = buildPlan([
+      { id: 1, product_id: 10, allergen_name: '계란', evidence_level: 'contains', source_count: 1, status: 'admin_verified', detected_via: 'haccp_api' },
+      { id: 2, product_id: 10, allergen_name: '난류(가금류)', evidence_level: 'contains', source_count: 1, status: 'candidate', detected_via: 'crowdsource_merge' },
+    ]);
+    assert.strictEqual(appliedStatus(plan2.updates[0]), 'admin_verified',
+      'admin_verified 방패가 병합으로 깎였다');
+  });
+
+  await t('★★★ (b) 대표가 누구든 강한 출처가 남는다 (keeper 선택 ≠ 출처 승계)', () => {
+    // ① 대표 = 크라우드 행. 그래도 haccp_api 를 물려받는다.
+    const A = buildPlan([
+      { id: 1, product_id: 10, allergen_name: '조개류(굴', evidence_level: 'contains', source_count: 1, status: 'candidate', detected_via: 'haccp_api' },
+      { id: 2, product_id: 10, allergen_name: '조개류', evidence_level: 'contains', source_count: 1, status: 'candidate', detected_via: 'crowdsource_merge' },
+    ]);
+    assert.strictEqual(A.updates.length, 1, JSON.stringify(A.updates));
+    assert.strictEqual(A.updates[0].id, 2, '대표는 이미 정본 이름인 크라우드 행이어야 한다(UNIQUE 충돌 회피 장치)');
+    assert.strictEqual(A.updates[0].fromVia, 'crowdsource_merge', '전제: 대표 행의 원래 출처는 크라우드다');
+    assert.strictEqual(appliedVia(A.updates[0]), 'haccp_api',
+      `대표가 크라우드 행일 때 공적 출처가 증발했다(${appliedVia(A.updates[0])})`);
+
+    // ② 대표 = HACCP 행. 크라우드 쪽으로 **강등되지 않는다**(승계는 단방향).
+    const B = buildPlan([
+      { id: 1, product_id: 11, allergen_name: '조개류', evidence_level: 'contains', source_count: 1, status: 'candidate', detected_via: 'haccp_api' },
+      { id: 2, product_id: 11, allergen_name: '조개류(굴', evidence_level: 'contains', source_count: 1, status: 'candidate', detected_via: 'crowdsource_merge' },
+    ]);
+    assert.strictEqual(B.updates.length, 1, JSON.stringify(B.updates));
+    assert.strictEqual(B.updates[0].id, 1, '전제: 대표가 haccp_api 행이어야 한다');
+    assert.strictEqual(appliedVia(B.updates[0]), 'haccp_api',
+      `대표의 공적 출처가 크라우드로 강등됐다(${appliedVia(B.updates[0])})`);
+
+    // ③ 76 은 어떤 경우에도 detected_via 를 **비공적 값으로 SET 하지 않는다**(승격 전용).
+    for (const [label, plan] of [['A', A], ['B', B]]) {
+      for (const u of plan.updates) {
+        assert.ok(u.via === null || u.via === 'haccp_api',
+          `${label}: 76 이 detected_via 를 ${JSON.stringify(u.via)} 로 덮어쓰려 한다 — 승계는 승격만 해야 한다`);
+      }
+      for (const i of plan.inserts) {
+        assert.ok(i.via === null || i.via === 'haccp_api',
+          `${label}: INSERT 가 detected_via 를 ${JSON.stringify(i.via)} 로 쓴다`);
+      }
+    }
+  });
+
+  await t('★★★ (c) 출처 승계가 입력 행 순서에 의존하지 않는다', () => {
+    // 같은 두 행, 순서만 다르다. id 는 그대로다 — 즉 대표 선택 결과도 같아야 한다.
+    const H = { id: 7, product_id: 10, allergen_name: '계란', evidence_level: 'contains', source_count: 1, status: 'candidate', detected_via: 'haccp_api' };
+    const C = { id: 3, product_id: 10, allergen_name: '난류(가금류)', evidence_level: 'contains', source_count: 1, status: 'candidate', detected_via: 'crowdsource_merge' };
+
+    /** 계획을 「반영 후 무엇이 남는가」로 환원한다(순서 무관 비교). */
+    const shape = (plan) => ({
+      updates: plan.updates
+        .map((u) => ({ id: u.id, to: u.to, level: u.toLevel, via: appliedVia(u), status: appliedStatus(u) }))
+        .sort((a, b) => a.id - b.id),
+      deletes: plan.deletes.map((d) => d.id).sort((a, b) => a - b),
+      inserts: plan.inserts.map((i) => ({ name: i.name, via: i.via })).sort((a, b) => (a.name < b.name ? -1 : 1)),
+      viaPromoted: plan.stats.viaPromoted,
+    });
+
+    const fwd = shape(buildPlan([H, C]));   // HACCP 조각이 먼저
+    const rev = shape(buildPlan([C, H]));   // 크라우드 정본이 먼저
+    assert.deepStrictEqual(rev, fwd,
+      `입력 순서만 바꿨는데 계획이 달라졌다.\n  [H,C]=${JSON.stringify(fwd)}\n  [C,H]=${JSON.stringify(rev)}`);
+    // 그리고 **두 순서 모두** 공적 출처가 남아야 한다 (둘 다 crowdsource 로 같아도 안 된다).
+    for (const [label, s] of [['[H,C]', fwd], ['[C,H]', rev]]) {
+      assert.strictEqual(s.updates.length, 1, `${label}: ${JSON.stringify(s)}`);
+      assert.strictEqual(s.updates[0].via, 'haccp_api',
+        `${label} 순서에서 공적 출처가 사라졌다(${s.updates[0].via}) — 승계가 첫 행/마지막 행에 의존한다`);
+    }
+
+    // 3행(크라우드-공적-크라우드)에서도 공적 출처가 가운데 있든 끝에 있든 같아야 한다.
+    const rows3 = [
+      { id: 11, product_id: 12, allergen_name: '난류', evidence_level: 'contains', source_count: 1, status: 'candidate', detected_via: 'crowdsource_merge' },
+      { id: 12, product_id: 12, allergen_name: '계란', evidence_level: 'contains', source_count: 1, status: 'candidate', detected_via: 'haccp_api' },
+      { id: 13, product_id: 12, allergen_name: '난각칼슘(계란)', evidence_level: 'contains', source_count: 1, status: 'candidate', detected_via: 'crowdsource_merge' },
+    ];
+    const perms = [[0, 1, 2], [2, 1, 0], [1, 0, 2], [0, 2, 1], [2, 0, 1], [1, 2, 0]];
+    const base = shape(buildPlan(perms[0].map((i) => rows3[i])));
+    assert.strictEqual(base.updates[0].via, 'haccp_api', `3행 기준안에서 공적 출처가 사라졌다: ${JSON.stringify(base)}`);
+    for (const p of perms.slice(1)) {
+      assert.deepStrictEqual(shape(buildPlan(p.map((i) => rows3[i]))), base,
+        `행 순서 ${JSON.stringify(p)} 에서 계획이 달라졌다`);
+    }
+  });
+
   // ════════════════════════════════════════════════════════════════════════
   section('§9. ★★★ 진짜 Postgres(pglite) — 실 경로');
 
@@ -493,6 +730,7 @@ async function main() {
       await db.exec(`
         INSERT INTO products (product_name, data_source) VALUES ('오염정규화테스트', 'manual_seed');
         INSERT INTO products (product_name, data_source) VALUES ('출처승격테스트', 'manual_seed');
+        INSERT INTO products (product_name, data_source) VALUES ('76출처승계E2E', 'manual_seed');
         INSERT INTO users (user_id, nickname) VALUES ('${TEST_USER_ID}', '테스트기여자');
       `);
 
@@ -607,6 +845,110 @@ async function main() {
             `백필 후: ${JSON.stringify(got)}`);
           // ★ 정규화 불가 「평양물냉면」이 **살아 있다.** 지우는 것은 사용자 결정이다.
           assert.ok(got.includes('평양물냉면'), '정규화 불가 행을 백필이 지웠다');
+        });
+
+        // ── (d) ★★★ 세션48 4차 검증 결함1 — 실행 순서 19/26 → 76 의 end-to-end ──
+        //   19/26 이 HACCP 조각 이름으로 승격 UPSERT 를 하고, 그 위에 76 을 **실제로 적용**한다.
+        //   승계가 없으면 살아남는 행이 crowdsource_merge 로 강등되고, 그 다음 크라우드 merge 의
+        //   DELETE ... detected_via='crowdsource_merge' 가 식약처 확인 알레르겐을 지운다.
+        await t('★★★ 실 DB — 19/26 HACCP 승격 → 76 백필 후에도 haccp_api 가 남고 알레르겐이 소실되지 않는다', async () => {
+          const PID = 3;
+          const { parseAllergy } = require('../scripts/19-apply-haccp');
+
+          // ① 크라우드가 먼저 **정본 이름**으로 적재해 둔 상태(merge 산출물과 같은 모양).
+          for (const n of ['조개류', '난류(가금류)']) {
+            await db.query(
+              `INSERT INTO product_allergens (product_id, allergen_name, evidence_level, source_count, status, detected_via)
+               VALUES ($1, $2, 'contains', 1, 'candidate', 'crowdsource_merge')`, [PID, n]);
+          }
+
+          // ② 19/26 **상당** — 공적 출처가 남긴 **조각 이름**으로 UPSERT.
+          //    ⚠ 세션50 에서 parseAllergy 가 정본만 내도록 고쳐졌으므로 더 이상 파서로 조각을 만들 수 없다.
+          //    그런데 이 시나리오가 검증하려는 것은 「**과거에 적재된** 조각 행을 76 백필이 안전하게
+          //    병합하는가」이고, 그 옛 행 705건은 재적재 전까지 운영 DB 에 **실재한다.**
+          //    따라서 파서 호출을 지우지 않고 **옛 파서의 실제 출력값을 하드코딩**해 계약을 계속 지킨다.
+          //    (출처: 세션50 이전 parseAllergy('대두, 밀, 쇠고기, 새우, 조개류(굴, 바지락) 함유')
+          //           / parseAllergy('계란 함유') 의 실측 출력. 원문 2건 모두 haccp_dump.ndjson 에 실재.)
+          const haccpNames = ['대두', '밀', '쇠고기', '새우', '조개류(굴', '바지락)', '계란'];
+          assert.ok(haccpNames.some((n) => !isCanonicalAllergenName(n)),
+            `전제가 깨졌다 — 옛 조각 표본에 비정본이 없다: ${JSON.stringify(haccpNames)}`);
+          // 그리고 현행 파서는 더 이상 그런 조각을 만들지 않는다(결함3 수정이 살아 있다는 확인).
+          assert.ok(parseAllergy('대두, 밀, 쇠고기, 새우, 조개류(굴, 바지락) 함유')
+            .every((n) => isCanonicalAllergenName(n)),
+            '현행 parseAllergy 가 조각을 다시 만들고 있다 — 세션50 결함3 이 되돌아갔다');
+          const { rows: cols } = await db.query(
+            `SELECT column_name FROM information_schema.columns WHERE table_name='product_allergens'`);
+          const upsert = buildAllergenUpsert(cols.map((c) => c.column_name));
+          for (const n of haccpNames) await db.query(upsert, [PID, n]);
+
+          const before = await db.query(
+            `SELECT id, product_id, allergen_name, evidence_level, source_count, status, detected_via
+               FROM product_allergens WHERE product_id=$1 ORDER BY id`, [PID]);
+          // 소실 여부의 기준선 — 백필 전 행들이 가리키는 정본 알레르겐 전부.
+          const expected = [...new Set(before.rows
+            .flatMap((r) => normalizeAllergenNames(r.allergen_name).map((x) => x.name)))].sort();
+          assert.deepStrictEqual(expected, ['난류(가금류)', '대두', '밀', '새우', '조개류', '쇠고기'].sort(),
+            `시나리오 전제가 깨졌다: ${JSON.stringify(expected)}`);
+          assert.ok(before.rows.some((r) => r.detected_via === 'crowdsource_merge'),
+            '전제: 크라우드 정본 행이 남아 있어야 병합에서 대표가 된다');
+
+          // ③ 76 백필 적용 — apply 루프와 **같은 SQL 규칙**으로 돌린다(via/status 는 승격이 있을 때만 SET).
+          const plan = buildPlan(before.rows);
+          let uniqueViolation = 0;
+          const applyErrors = [];
+          try {
+            await db.exec('BEGIN');
+            for (const d of plan.deletes) await db.query('DELETE FROM product_allergens WHERE id=$1', [d.id]);
+            for (const u of plan.updates) {
+              const params = [u.id, u.to, u.toLevel, u.sourceCount];
+              const sets = ['allergen_name = $2', 'evidence_level = $3', 'source_count = $4'];
+              if (u.via) { params.push(u.via); sets.push(`detected_via = $${params.length}`); }
+              if (u.status) { params.push(u.status); sets.push(`status = $${params.length}`); }
+              sets.push('updated_at = NOW()');
+              await db.query(`UPDATE product_allergens SET ${sets.join(', ')} WHERE id = $1`, params);
+            }
+            for (const i of plan.inserts) {
+              const src = before.rows.find((r) => r.id === i.fromId);
+              await db.query(
+                `INSERT INTO product_allergens (product_id, allergen_name, evidence_level, source_count, status, detected_via)
+                 VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT (product_id, allergen_name) DO NOTHING`,
+                [i.product_id, i.name, i.level || (src && src.evidence_level) || 'contains',
+                  src ? src.source_count : 1, i.status || (src && src.status) || 'candidate',
+                  i.via || (src ? src.detected_via : null) || null]);
+            }
+            await db.exec('COMMIT');
+          } catch (e) {
+            await db.exec('ROLLBACK');
+            if (/duplicate key|unique/i.test(e.message)) uniqueViolation += 1;
+            applyErrors.push(e.message);
+          }
+          assert.strictEqual(applyErrors.length, 0,
+            `백필이 터졌다 (UNIQUE 충돌 ${uniqueViolation}건): ${applyErrors.join(' / ')}`);
+
+          // ④ 노출 경로로 읽는다 — 소실 0 · 강등 0.
+          const shown = await model.getAllergens(PID);
+          const got = shown.map((r) => r.allergen_name).sort();
+          assert.deepStrictEqual(got, expected, `백필이 알레르겐을 잃었다: ${JSON.stringify(got)}`);
+          const demoted = shown.filter((r) => r.detected_via !== 'haccp_api')
+            .map((r) => `${r.allergen_name}=${r.detected_via}`);
+          assert.deepStrictEqual(demoted, [],
+            `76 백필이 HACCP 승격을 되돌렸다 (강등된 행: ${JSON.stringify(demoted)}) — `
+            + `다음 크라우드 merge 의 DELETE ... detected_via='crowdsource_merge' 가 이 행들을 지운다`);
+
+          // ⑤ ★ 그 「다음 크라우드 merge」를 실제로 돌린다. 알레르기 0건 사진이어도 살아남아야 한다.
+          await db.query(
+            `INSERT INTO contributions (user_id, product_id, contribution_type, device_id, data)
+             VALUES ($1, $2, 'ocr_nutrition', 'dev-C', $3)`,
+            [TEST_USER_ID, PID, JSON.stringify({
+              parsed_nutrition: {}, parsed_ingredients: [],
+              allergens: [], allergens_v2: { contains: [], inferred: [], mayContain: [] },
+              user_input: {}, device_id: 'dev-C', avg_confidence: 0.9,
+            })],
+          );
+          await merge.mergeAndApply(PID);
+          const survived = (await model.getAllergens(PID)).map((r) => r.allergen_name).sort();
+          assert.deepStrictEqual(survived, expected,
+            `merge 가 ${expected.length - survived.length}종을 지웠다 (${JSON.stringify(survived)}) — 경고 소실`);
         });
       } finally {
         if (savedDb) require.cache[dbPath] = savedDb; else delete require.cache[dbPath];

@@ -29,6 +29,69 @@
 const CONSENT_SCOPE = 'b2b_aggregate_insights';
 const CURRENT_VERSION = 'v2';
 
+// ══════════════════════════════════════════════════════════════════════════
+// 스키마에서 온 상수 (세션49 — PC1·PC2 방어)
+// ══════════════════════════════════════════════════════════════════════════
+
+/**
+ * pulse_consents.user_agent 의 실제 타입은 **VARCHAR(500)** 이다.
+ *   근거: scripts/migrations/007_pulse_hooks.sql:54  `user_agent VARCHAR(500)`
+ *         scripts/migrations/000_baseline.sql:653    `user_agent  VARCHAR(500)`
+ * 501자 이상을 그대로 넣으면 [22001] value too long 이 나고, 이 INSERT 는
+ * 회원가입(POST /api/users/me)과 **같은 트랜잭션** 안이라 가입 전체가 HTTP 500 으로 죽는다.
+ *
+ * ★ 절단은 **이 파일에서만** 한다 (아래 truncateUserAgent). 호출부는 헤더를 가공하지 않는다.
+ *   근거: `pulse_consents` 에 INSERT 하는 코드는 저장소 전체에서 recordGrant/recordRevoke 둘뿐이고,
+ *         둘 다 이 파일에 있다. 즉 이 파일이 그 컬럼의 **유일한 관문**이다.
+ *         반대로 라우트에서 자르면 호출 지점 3곳(userRoutes:120·234·272)으로 규칙이 흩어져
+ *         「한 경로만 고쳐지고 다른 경로가 샌다」가 재발한다(세션48 §4-5).
+ *   ⇒ 관문에서 한 번 자르면 호출부가 무엇을 넘기든 이 컬럼은 안전하다.
+ */
+const USER_AGENT_MAX = 500;
+
+/**
+ * pulse_consents.consent_version 은 **VARCHAR(20) NOT NULL** 이다.
+ *   근거: scripts/migrations/007_pulse_hooks.sql:48 `consent_version VARCHAR(20) NOT NULL, -- 'v2', 'v3', ...`
+ *
+ * ★★★ 허용 동의 버전 화이트리스트 — **새 약관 버전을 낼 때 반드시 이 배열에 추가해야 한다.**
+ *     (여기에 없는 버전은 라우트가 HTTP 400 으로 거절한다. 배포 순서: 이 상수 먼저 → 클라이언트 나중.)
+ *
+ * 2026-08-01 저장소 전수 실측(grep) 결과 실제로 쓰이는 값은 **'v2' 하나뿐**이다:
+ *   · CURRENT_VERSION = 'v2'                                    (이 파일 30행)
+ *   · 007_pulse_hooks.sql:43-44  "NULL = 미동의 / 'v2' = 약관 v2 동의"
+ *   · users.pulse_consent_version COMMENT 도 "''v2'' 등 약관 식별자"
+ *   · 테스트 픽스처 전건 'v2' (test_user_routes.js:329 · test_scan_routes.js:253,299 ·
+ *     test_pulse_consent_service.js:43,69,97 · test_schema_constraints.js:515,534,594)
+ *   · 운영 스키마 덤프(schema/production_schema_2026-07-31.txt) users 행 수 0 → 실데이터 근거 없음
+ * 007 주석의 'v3' 은 **형식 예시**일 뿐 이를 쓰는 코드·데이터가 아직 없어 넣지 않았다.
+ */
+const ALLOWED_CONSENT_VERSIONS = Object.freeze(['v2']);
+
+/** 화이트리스트 검사. 문자열이 아니거나 목록에 없으면 false. */
+function isAllowedConsentVersion(version) {
+  return typeof version === 'string' && ALLOWED_CONSENT_VERSIONS.indexOf(version) !== -1;
+}
+
+/**
+ * user_agent 를 VARCHAR(500) 에 맞게 자른다 — **이 컬럼 길이 책임의 유일한 지점**.
+ * 자른 사실은 **조용히 삼키지 않고** 경고로 남긴다.
+ * (logger 는 지연 require — 순수 단위 테스트가 winston 파일 트랜스포트를 열지 않게 하기 위함)
+ */
+function truncateUserAgent(ua) {
+  if (ua === null || ua === undefined) return null;
+  const s = String(ua);
+  if (s.length <= USER_AGENT_MAX) return s || null;
+  try {
+    // eslint-disable-next-line global-require
+    require('../config/logger').warn('pulse_consents.user_agent truncated (VARCHAR(500))', {
+      original_length: s.length,
+      kept: USER_AGENT_MAX,
+      where: 'pulseConsentService',
+    });
+  } catch (_) { /* 로깅 실패가 동의 기록을 막아서는 안 된다 */ }
+  return s.slice(0, USER_AGENT_MAX);
+}
+
 /**
  * 동의 기록 — users.pulse_consent_version SET + pulse_consents INSERT(grant).
  * ★ 트랜잭션 안에서 호출 필수 (SELECT FOR UPDATE 사용).
@@ -52,7 +115,9 @@ async function recordGrant(db, userId, version = CURRENT_VERSION, metadata = {})
   await db.query(
     `INSERT INTO pulse_consents (user_id, consent_version, consent_scope, event_type, client_ip_hash, user_agent)
      VALUES ($1, $2, $3, 'grant', $4, $5)`,
-    [userId, version, CONSENT_SCOPE, metadata.client_ip_hash || null, metadata.user_agent || null]
+    // ★ user_agent 는 VARCHAR(500) — 방어적으로 자른다 (USER_AGENT_MAX 주석 참조)
+    [userId, version, CONSENT_SCOPE, metadata.client_ip_hash || null,
+      truncateUserAgent(metadata.user_agent)]
   );
 }
 
@@ -79,7 +144,9 @@ async function recordRevoke(db, userId, version = CURRENT_VERSION, metadata = {}
   await db.query(
     `INSERT INTO pulse_consents (user_id, consent_version, consent_scope, event_type, client_ip_hash, user_agent)
      VALUES ($1, $2, $3, 'revoke', $4, $5)`,
-    [userId, version, CONSENT_SCOPE, metadata.client_ip_hash || null, metadata.user_agent || null]
+    // ★ user_agent 는 VARCHAR(500) — 방어적으로 자른다 (USER_AGENT_MAX 주석 참조)
+    [userId, version, CONSENT_SCOPE, metadata.client_ip_hash || null,
+      truncateUserAgent(metadata.user_agent)]
   );
 }
 
@@ -123,6 +190,10 @@ async function getConsentHistory(db, userId) {
 module.exports = {
   CONSENT_SCOPE,
   CURRENT_VERSION,
+  USER_AGENT_MAX,
+  ALLOWED_CONSENT_VERSIONS,
+  isAllowedConsentVersion,
+  truncateUserAgent,
   recordGrant,
   recordRevoke,
   getCurrentConsent,

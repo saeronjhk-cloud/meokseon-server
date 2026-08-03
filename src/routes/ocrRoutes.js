@@ -10,7 +10,9 @@ const { callVisionAPI, correctOcrText } = require('../services/ocrService');
 const {
   analyzeText, detectNutritionBasis, reconcileAllergens, mergeAllergensV2, flattenAllergensV2,
 } = require('../services/ocrParser');
-const { evaluateNutrition, sanityCheck } = require('../services/nutritionTrafficLight');
+// ★ 세션50 D2 — `sanityCheck` 를 **일부러 import 하지 않는다.** 판정은 엔진 한 곳에서만 한다.
+//   (되돌리려면 import 부터 다시 넣어야 하므로, 이 한 줄이 다음 세션에 보내는 신호다)
+const { evaluateNutrition } = require('../services/nutritionTrafficLight');
 const { getRaccPolicy } = require('../services/raccPolicy');
 // ★ 세션48 — 사용자 입력 쓰기 경로 방어. 노출 경로(productModel.getAllergens)와 **같은 정규화기**를 쓴다.
 const { normalizeAllergenNames } = require('../services/allergenName');
@@ -185,13 +187,15 @@ function judgeNutrition({ productData, nutrition, labelText, explicitServingSize
     nutritionData._label_text = labelText || '';
     nutritionData._totalContent = productData.total_content ?? nutrition.total_content ?? null;
 
-    // ★★ 세션42 검증에서 잡힌 치명 결함 —
-    //   productData.serving_size 는 호출부에서 `|| 100` 으로 **기본값이 채워져 온다.**
-    //   per_total 라벨은 1회 제공량이 라벨에 없어서 per_total 인 것이므로 이 100 은 **가짜 값**이다.
-    //   그대로 두면 신호등의 "serving_size 가 비면 총 내용량을 쓴다" 가드가 영원히 안 돈다
-    //   (`!100` 은 false). 30g 단품 과자가 100g 기준으로 환산돼 per-100 이 1/3 로 줄고
-    //   **빨강이어야 할 제품이 노랑으로 나간다 = 거짓 초록.**
-    //   → 진짜 근거가 있는 값만 남기고, 없으면 null 로 넘겨 신호등이 총 내용량으로 잡게 한다.
+    // ★★ 세션42 검증에서 잡힌 치명 결함의 흔적 — **세션49 에 원인이 제거됐다.**
+    //   당시: 호출부가 `|| 100` 으로 기본값을 채워 보냈고, per_total 라벨은 1회 제공량이
+    //   라벨에 없어서 per_total 인 것이므로 그 100 은 **가짜 값**이었다. 그대로 두면 신호등의
+    //   "serving_size 가 비면 총 내용량을 쓴다" 가드가 영원히 안 돈다(`!100` 은 false).
+    //   30g 단품 과자가 100g 기준으로 환산돼 per-100 이 1/3 로 줄고 = **거짓 초록.**
+    //   ★ 세션49: 호출부 두 곳(/analyze · /multi-photo)이 이제 explicitServingSize 를
+    //     **그대로** 넘긴다(치명B 수정). 따라서 이 줄은 값을 바꾸지 않는 항등이다.
+    //     그래도 남겨 둔다 — 호출부가 다시 기본값을 채우기 시작하면 여기가 마지막 방어선이고,
+    //     "per_total 에서 serving_size 는 근거 있는 값뿐" 이라는 계약을 이 줄이 명시한다.
     productData = { ...productData, serving_size: explicitServingSize };
   }
 
@@ -205,13 +209,20 @@ function judgeNutrition({ productData, nutrition, labelText, explicitServingSize
     productData, nutritionData, undefined, getRaccPolicy(productData.food_type),
   );
 
-  // per_total 은 신호등이 환산 후 자체 sanityCheck 를 돌린다(총량 그대로 검사하면 전부 오탐).
-  // ★ 세션45: basis 가 unknown 이면 sanityCheck 의 전제(1회분 상한)가 성립하지 않는다.
-  //   총량 기준 값을 1회분 상한으로 재면 경고가 무더기로 뜨고, 그 경고는 근거가 없다.
-  //   판정을 보류한 제품에 대해 "값이 이상하다" 고 단정하는 것도 같은 오류다. 보류는 보류로 끝낸다.
-  const sanityWarnings = (basis === 'per_total' || basis === 'unknown' || trafficLight?.is_withheld)
-    ? (trafficLight?.sanity_warnings || [])
-    : sanityCheck(nutritionData, productData.serving_size, false, basis);
+  // ★★★ 세션50 D2 해결 — **라우터는 sanity 를 다시 계산하지 않는다.**
+  //   종전: per_total·unknown·보류일 때만 엔진 결과를 쓰고, **그 밖의 정상 경로 전부**에서
+  //     `sanityCheck(nutritionData, productData.serving_size, false, basis)` 로 다시 계산했다.
+  //     3번째 인자 `isDried` 가 **하드코딩 false** 라 엔진(detectFoodCategory → dried)과 답이 갈렸고,
+  //     같은 응답에 `traffic_light.sanity_warnings`(엔진)와 `data.sanity_warnings`(라우터)가
+  //     **서로 반대 값으로** 동시에 실렸다(김자반: "" vs "calories:per_100g_exceeded").
+  //     화면(public/ocr-test.html:465)은 하필 라우터 쪽 = 틀린 쪽을 읽고 있었다.
+  //   지금: 엔진 배열을 **같은 참조로** 그대로 내보낸다. 값이 두 번 계산될 수 없으므로
+  //     모순이 **구조적으로 불가능**해진다(값 비교가 아니라 참조 동일성이 그것을 보증한다).
+  //   ★ 판정이 없을 때(영양정보를 못 읽어 trafficLight 가 null)는 `[]` 가 아니라 **null** 이다.
+  //     `[] = 검사했고 이상 없음` · `null = 검사 못 함`. 이 저장소가 알레르기에서 이미 쓰는 규칙이다
+  //     (productService.js:335-337). 종전 분기(per_total·unknown·보류)는 엔진이 이미 같은 정책으로
+  //     `[]` 를 내므로 **동작이 바뀌지 않는다** — tests/test_path_parity.js §7 이 그것을 고정한다.
+  const sanityWarnings = trafficLight ? trafficLight.sanity_warnings : null;
 
   if (trafficLight) {
     trafficLight.basis_detected = basisRaw;
@@ -337,16 +348,27 @@ router.post('/analyze', upload.single('image'), async (req, res) => {
 
   // Step 4: 영양 신호등
   let trafficLight = null;
-  let sanityWarnings = [];
+  // ★ 세션50 D2 — 영양정보를 못 읽으면 sanity 는 `[]`(=이상 없음)가 아니라 **null**(=검사 못 함)이다.
+  let sanityWarnings = null;
   const nutrition = analysis.nutrition;
 
   if (nutrition.calories || nutrition.sodium || nutrition.total_sugars) {
+    // ★★★ 세션49 — 치명B 수정. 이 한 줄이 RACC 정책을 통째로 무력화하고 있었다.
+    //   종전: `serving_size: nutrition.serving_size || productInfo?.serving_size || 100`
+    //   RACC_MAP 13종의 racc 는 전부 4~15 g 이라 `100 >= 0.5 × racc` 가 **항상 참**이다.
+    //   그래서 신호등이 "라벨값이 sane 하면 라벨 우선" 규칙을 적용해 **RACC 1회량을
+    //   한 번도 쓰지 않았다.** 실측 불일치: 샘표 진간장 바코드 sodium=yellow(14.8%) ↔ OCR red(295%).
+    //   ★ 다른 상수로 바꾸면 안 된다. 근거 없는 값을 넣지 말고 **null 을 넘겨**
+    //     신호등이 RACC 로 정하게 한다(정책 결정은 엔진 한 곳에서만).
+    //   ★ 아래 explicitServingSize 와 **같은 식을 두 번 쓰지 않는다.** 한 번 계산해 둘 다에 넘긴다 —
+    //     같은 의미를 두 곳에서 재해석하던 것이 세션48 외부 검증의 근본 원인 진단이었다.
+    const explicitServingSize = nutrition.serving_size ?? productInfo?.serving_size ?? null;
     const productData = {
       product_name: productInfo?.product_name || analysis.product_meta?.product_name || '(OCR 분석)',
       // ★ 세션42: food_type 이 비면 RACC 매칭이 통째로 실패한다. 라벨에서 읽은 값을 폴백으로 쓴다.
       food_type: productInfo?.food_type || analysis.product_meta?.food_type || '',
       content_unit: nutrition.serving_unit || nutrition.content_unit || productInfo?.content_unit || 'g',
-      serving_size: nutrition.serving_size || productInfo?.serving_size || 100,
+      serving_size: explicitServingSize,
       // ★ 세션42: 총 내용량이 null 이면 per_total 환산(총량 ÷ RACC)이 아예 못 돈다.
       //   `/multi-photo` 는 product_meta 폴백이 있었는데 여기만 없었다.
       total_content: productInfo?.total_content ?? nutrition.total_content
@@ -359,8 +381,9 @@ router.post('/analyze', upload.single('image'), async (req, res) => {
       productData,
       nutrition,
       labelText: corrected,
-      // 기본값 100 을 섞지 않은 **근거 있는 값만** — per_total 판정에 쓰인다
-      explicitServingSize: nutrition.serving_size ?? productInfo?.serving_size ?? null,
+      // 기본값 100 을 섞지 않은 **근거 있는 값만** — per_total 판정에 쓰인다.
+      // ★ 세션49: productData.serving_size 와 같은 값이다(위에서 한 번 계산했다).
+      explicitServingSize,
     }));
   }
 
@@ -414,6 +437,9 @@ router.post('/analyze', upload.single('image'), async (req, res) => {
         product_meta: analysis.product_meta,
       },
       traffic_light: trafficLight,
+      // ⚠ deprecated (세션50 D2) — `traffic_light.sanity_warnings` 와 **같은 배열**이다.
+      //   지우지 않는 이유: public/ocr-test.html:465 와 배포된 앱이 이 키를 읽는다(계약 미확인).
+      //   새 클라이언트는 `traffic_light.sanity_warnings` 를 읽을 것. null = 검사 못 함.
       sanity_warnings: sanityWarnings,
       save_result: saveResult,
     },
@@ -532,14 +558,20 @@ router.post(
     // ─── 4. 영양 신호등 판정 ───
     const nutrition = merged.nutrition;
     let trafficLight = null;
-    let sanityWarnings = [];
+    // ★ 세션50 D2 — /analyze 와 같은 계약: 판정이 없으면 `[]` 가 아니라 **null**(=검사 못 함).
+    let sanityWarnings = null;
 
     if (nutrition.calories || nutrition.sodium || nutrition.total_sugars) {
+      // ★★★ 세션49 — 치명B 수정. /analyze 와 **같은 결함이 여기에도 있었다.**
+      //   세션39 가 basis 를 /analyze 만 고치고 이 엔드포인트를 놓쳤던 것과 같은 유형이다.
+      //   `|| 100` 이 RACC 1회량을 영원히 덮어써서 소량식품(참기름·간장·조미김)의
+      //   판정이 바코드 경로와 갈라졌다. 근거 없는 값 대신 null 을 넘겨 엔진이 정하게 한다.
+      const explicitServingSize = nutrition.serving_size ?? productInfo?.serving_size ?? null;
       const productData = {
         product_name: productInfo?.product_name || merged.product_meta.product_name || '(OCR 분석)',
         food_type: productInfo?.food_type || merged.product_meta.food_type || '',
         content_unit: nutrition.serving_unit || productInfo?.content_unit || merged.product_meta.content_unit || 'g',
-        serving_size: nutrition.serving_size || productInfo?.serving_size || 100,
+        serving_size: explicitServingSize,
         total_content: productInfo?.total_content || merged.product_meta.total_content || null,
       };
       // ★★ 세션42 수정 — 여기가 basis 미배선 지점이었다(세션41 §5-4 발견).
@@ -557,7 +589,8 @@ router.post(
         productData,
         nutrition,
         labelText,
-        explicitServingSize: nutrition.serving_size ?? productInfo?.serving_size ?? null,
+        // ★ 세션49: productData.serving_size 와 같은 값이다(위에서 한 번 계산했다).
+        explicitServingSize,
       }));
     }
 
@@ -635,6 +668,7 @@ router.post(
           allergens_v2: reconcileAllergens(merged.allergens, merged.allergens_v2),
         },
         traffic_light: trafficLight,
+        // ⚠ deprecated (세션50 D2) — `traffic_light.sanity_warnings` 와 **같은 배열**이다. null = 검사 못 함.
         sanity_warnings: sanityWarnings,
         save_result: saveResult,
         corrected_text: {

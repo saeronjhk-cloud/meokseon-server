@@ -18,6 +18,13 @@
 //   순환참조 없음: servingResolver 는 이 파일을 require 하지 않는다.
 const servingResolver = require('./servingResolver');
 
+// ★★ 세션49 — 신호등 판정 규칙의 버전. 응답에 실어 보낸다.
+//   v1.4 = 세션49 치명A·B 수정. RACC 정책이 실제로 발동하기 시작한 버전이다
+//   (그 전까지는 배선만 있고 매칭률 0 이라 사실상 RACC 없는 v1.3 과 같은 답을 냈다).
+//   ⚠ 판정 규칙(임계값·가드·1회량 선택)을 바꾸면 **반드시 여기를 올릴 것.**
+//     클라이언트·평가셋이 "왜 색이 달라졌는가" 를 물을 수 있는 유일한 단서다.
+const TRAFFIC_LIGHT_POLICY_VERSION = 'v1.4-s49';
+
 // ============================================================
 // 1. Config 로더 (DB 또는 인메모리)
 // ============================================================
@@ -273,13 +280,36 @@ const SANITY_LIMITS = {
 
 /**
  * OCR 데이터 Sanity Check.
+ *
+ * ★★★ 세션50 D2 — **이 함수는 엔진 전용이다.** 라우터·서비스에서 직접 부르지 말 것.
+ *   `evaluateNutrition` 이 `detectFoodCategory` 로 정한 건조 여부를 넘겨 호출하고,
+ *   결과는 `result.sanity_warnings` **한 배열**로만 흐른다. 소비자(ocrRoutes·productRoutes·
+ *   crowdsourceService)는 그 배열을 **그대로 받아 쓴다**(같은 참조).
+ *   ⚠ 여기를 다시 부르기 시작하면 「같은 규칙을 두 곳에서 재해석」이 재발하고,
+ *     같은 응답에 서로 반대되는 sanity 가 두 번 실리는 D2 가 그대로 돌아온다.
+ *   ※ 여전히 export 하는 이유는 tests/test_traffic_light.js·test_100_products.js 가
+ *     이 함수를 단위 검사하기 때문이다(그 두 파일은 이번 세션 소관이 아니다).
+ *
  * @param {Object} nutritionData - 영양정보 객체
  * @param {number} servingSize - 1회 제공량(g 또는 mL)
- * @param {boolean} isDried - 건조식품 여부. true면 per_100g 체크 면제 (김·육포·미역·다시마 등 작은 serving 제품의 100g 환산 자연 초과 케이스 보호). 2026-05-27 추가.
+ * @param {boolean|null} isDried - 건조식품 여부.
+ *   · `true`  = 건조식품 → per_100g 상한 **면제**(김·육포·미역·다시마 등 작은 serving 제품의
+ *               100g 환산 자연 초과 보호. 2026-05-27 추가)
+ *   · `false` = 비건조 → per_100g 상한 검사
+ *   · `null`  = **판정 없음.** 상한 검사를 하지 않고 그 사실을 `dried_unknown` 경고로 남긴다.
+ *               「모른다」를 조용히 「건조 아님」으로 굳히면 없는 근거로 경고를 만든다
+ *               (`Number(null)===0` 함정과 같은 구조다).
+ *   ⚠ 기본값 `= false` 는 **세션50 에 제거했다.** 인자를 빠뜨린 호출이 조용히
+ *     「건조 아님」이 되던 것이 D2 의 형태였다(ocrRoutes·productRoutes·crowdsourceService 3곳).
+ *   ※ `undefined`(인자 2개만 넘기는 레거시 호출 — tests/test_traffic_light.js:343·369)는
+ *     종전대로 `false` 와 같이 다룬다. **새 호출부는 반드시 명시할 것.**
  * @returns {Array} 경고 목록 [{ nutrient, value, limit, type }]
  */
-function sanityCheck(nutritionData, servingSize, isDried = false, basis = 'per_serving') {
+function sanityCheck(nutritionData, servingSize, isDried, basis = 'per_serving') {
   const warnings = [];
+  // null 만 「모른다」다. undefined 는 위 주석대로 레거시 호환으로 false 취급한다.
+  const _driedKnown = isDried !== null;
+  const _isDried = isDried === true;
   const _isPer100 = basis === 'per_100g' || basis === 'per_100ml';
   const _toServing = (amt) => _isPer100 ? (servingSize > 0 ? (amt * servingSize) / 100 : amt) : amt;
   const _toPer100 = (amt) => _isPer100 ? amt : (servingSize > 0 ? calcPer100(amt, servingSize) : null);
@@ -300,12 +330,22 @@ function sanityCheck(nutritionData, servingSize, isDried = false, basis = 'per_s
     }
 
     // 100g당 상한 — 건조식품은 면제 (신호등 평가와 동일 정책. evaluateNutrition의 is_dried_exception과 일관)
-    if (!isDried && limits.per_100g !== null) {
+    // ★ isDried === null(판정 없음)이면 검사 자체를 하지 않는다. 아래에서 그 사실을 경고로 남긴다.
+    if (_driedKnown && !_isDried && limits.per_100g !== null) {
       const per100 = _toPer100(value);
       if (per100 !== null && per100 > limits.per_100g) {
         warnings.push({ nutrient, value: per100, limit: limits.per_100g, type: 'per_100g_exceeded' });
       }
     }
+  }
+
+  // ★ 세션50 D2 — 「건조 여부를 모른다」를 침묵으로 처리하지 않는다.
+  //   경고가 없는 것과 검사를 못 한 것은 다르다(`null = 판정 없음 ≠ 안전`).
+  if (!_driedKnown) {
+    warnings.push({
+      nutrient: 'is_dried', value: null, limit: null, type: 'dried_unknown',
+      message: '건조식품 여부를 판정하지 못해 100g당 상한 검사를 하지 않았습니다.',
+    });
   }
 
   // 포화지방 > 총지방 체크
@@ -472,6 +512,13 @@ function evaluateNutrition(product, nutrition, config = DEFAULT_CONFIG, raccPoli
     context_messages: [],
     sanity_warnings: [],
     multi_serving: null,
+    // ★★ 세션49 — 「어떤 1회량으로 판정했고 그 근거가 무엇인가」를 응답에 싣는다.
+    //   세션48 치명B 가 정확히 이것이 없어서 몇 세션을 살아남았다: 라우트가 근거 없이
+    //   `|| 100` 을 채워 넣었고, 100 은 언제나 `0.5×RACC` 보다 커서 RACC 1회량이
+    //   **한 번도 쓰이지 않았다.** 값만 흐르고 출처가 안 흐르면 그 사실이 보이지 않는다.
+    serving_basis: null,
+    // 정책 버전 — 신호등 규칙이 바뀌었는데 클라이언트·평가셋이 눈치채지 못하는 것을 막는다.
+    traffic_light_policy_version: TRAFFIC_LIGHT_POLICY_VERSION,
   };
 
   // ----------------------------------------------------------
@@ -571,9 +618,38 @@ function evaluateNutrition(product, nutrition, config = DEFAULT_CONFIG, raccPoli
   const basis = nutrition.basis || 'per_serving';
   // per_100_unknown: 값은 per-100(이중변환 방지 위해 isPer100 취급), 단 단위불명이라 절대량 컷오프는 스킵.
   const isPer100 = basis === 'per_100g' || basis === 'per_100ml' || basis === 'per_100_unknown';
-  const _serving = (raccPolicy && raccPolicy.racc)
-    ? ((product.serving_size && product.serving_size > 0 && product.serving_size >= 0.5 * raccPolicy.racc) ? product.serving_size : raccPolicy.racc)
-    : (product.serving_size || 100);
+  // ★★★ 세션49 — 치명B 의 착지점. 값과 **출처**를 함께 정한다.
+  //   규칙 자체는 종전과 같다(라벨값이 0.5×RACC 이상이면 라벨 우선 — raccPolicy.resolveServing 과 같은 규칙).
+  //   달라진 것은 ① 호출부가 더 이상 `|| 100` 으로 가짜 값을 채워 보내지 않는다는 것과
+  //   ② 여기서 고른 근거가 응답에 남는다는 것이다.
+  //   ⚠ 마지막 100 은 「1회 제공량 표기가 없을 때 100g 기준으로 본다」는 **명시된 관례**이고,
+  //     그래서 source 를 'default_100' 으로 이름 붙여 라벨값('label')과 구분한다.
+  //     이것을 다른 상수로 바꾸지 말 것 — 근거 없는 값을 넣는 순간 치명B 가 재발한다.
+  const _labelServing = (typeof product.serving_size === 'number' && product.serving_size > 0)
+    ? product.serving_size : null;
+  let _serving;
+  let _servingSource;
+  if (raccPolicy && raccPolicy.racc > 0) {
+    if (_labelServing !== null && _labelServing >= 0.5 * raccPolicy.racc) {
+      _serving = _labelServing; _servingSource = 'label';
+    } else {
+      _serving = raccPolicy.racc; _servingSource = 'racc';
+    }
+  } else if (_labelServing !== null) {
+    _serving = _labelServing; _servingSource = 'label';
+  } else {
+    _serving = 100; _servingSource = 'default_100';
+  }
+  result.serving_basis = {
+    serving: _serving,
+    source: _servingSource,                       // 'label' | 'racc' | 'default_100'
+    label_serving: _labelServing,                 // 라벨에서 읽은 값(없으면 null — 0 이나 100 이 아니다)
+    racc: raccPolicy ? (raccPolicy.racc ?? null) : null,
+    racc_unit: raccPolicy ? (raccPolicy.unit ?? null) : null,
+    racc_matched_key: raccPolicy ? (raccPolicy.matchedKey ?? null) : null,
+    racc_match_level: raccPolicy ? (raccPolicy.matchLevel ?? null) : null,
+    racc_ambiguous_with: raccPolicy ? (raccPolicy.ambiguousWith ?? null) : null,
+  };
   const toPerServing = (amt) => (amt === null || amt === undefined) ? amt : (isPer100 ? (amt * _serving) / 100 : amt);
   const toPer100 = (amt) => (amt === null || amt === undefined) ? null : (isPer100 ? amt : calcPer100(amt, _serving));
 
@@ -826,6 +902,9 @@ module.exports = {
   calcPer100,
   deriveBasis,
   evaluateNutrition,
+  // ⚠ 세션50 D2 — sanityCheck 는 **엔진 전용**이다. 단위 테스트만 부른다.
+  //   라우터·서비스는 `evaluateNutrition(...).sanity_warnings` 를 받아 쓸 것(같은 배열 참조).
+  //   여기를 다시 부르면 한 응답에 sanity 가 두 번 실려 값이 갈리는 D2 가 재발한다.
   sanityCheck,
   formatResult,
   scaleNutrition,   // 세션42: per_total → 1회분 환산 (crowdsourceService 공용)

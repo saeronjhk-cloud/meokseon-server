@@ -20,12 +20,13 @@
  *   ⇒ 그래서 이 파일은 **트랜잭션 안에서 일부러 위반시키고 ROLLBACK** 한다.
  *     스키마가 「이름만 있는 껍데기」가 되는 것을 여기서 잡는다.
  *
- *   실측으로 확인된 구체적 사고 하나:
+ *   실측으로 확인됐던 구체적 사고 하나 (세션48 발견 → 세션49 수정):
  *     `pulse_consents.user_agent` 는 `VARCHAR(500)` 인데
- *     `src/routes/userRoutes.js` 가 `req.headers['user-agent']` 를 **자르지 않고** 넣는다.
+ *     `src/routes/userRoutes.js` 가 `req.headers['user-agent']` 를 **자르지 않고** 넣었다.
  *     501자 UA 를 보내면 `[22001] value too long` 이 나고,
- *     그 INSERT 가 회원가입과 **같은 트랜잭션**이라 `POST /api/users/me` 가 통째로 실패한다.
+ *     그 INSERT 가 회원가입과 **같은 트랜잭션**이라 `POST /api/users/me` 가 통째로 실패했다.
  *     → 「제약이 살아 있다」와 「코드가 그것을 방어한다」는 **다른 문제**다. 둘 다 여기서 본다.
+ *     지금은 §9 가 「방어가 실제로 동작한다」를 실행 결과로 못 박는다 — 되돌아가면 여기가 빨강이 된다.
  *
  * ── 무엇을 고정하나 ──────────────────────────────────────────────────────────
  *   §1 NOT NULL     : null 삽입이 실패해야 한다
@@ -37,7 +38,12 @@
  *   §7 ENUM         : 없는 라벨이 실패해야 한다 / 정의된 라벨은 전부 들어가야 한다
  *   §8 src/ 의 실제 INSERT/UPDATE 8종을 더미 값으로 **실행**한다
  *      (4차 검증 실측: 8종 전건 성공. 회귀로 고정한다 — 하나라도 깨지면 여기서 빨강이 된다.)
- *   §9 ★ 실제 서비스 함수·실제 라우트를 501자 UA 로 호출한다 → 22001 을 **실패 케이스로 고정**
+ *   §9 ★ 실제 서비스 함수·실제 라우트를 호출한다 (세션49: 「결함 확인」 → 「수정 확인」으로 전환)
+ *      · 501자 UA → 예외 없이 **500자로 잘려 저장**된다 (DB 에서 length() 를 실제로 센다)
+ *      · POST /api/users/me + 501자 UA → **2xx**, pulse_consents 행의 user_agent 길이 = 500
+ *      · 라우트는 UA 를 **가공하지 않고** 서비스에 넘긴다 (절단 지점은 서비스 한 곳 — 설계 고정)
+ *      · recordGrant(21자 version) → 여전히 22001 (서비스는 DB 제약을 그대로 받는 것이 정상)
+ *      · POST /api/users/me + 허용목록 밖 version → **HTTP 400** + users 행 미생성
  *
  * ── 알려진 결함 대장(KNOWN_DEFECTS) ─────────────────────────────────────────
  *   `tests/test_path_parity.js` 의 KNOWN_DIFF 와 **같은 규약**이다.
@@ -99,22 +105,19 @@ function section(title) {
  *   · 대장에 **있고 그대로 재현되면** → 「미해결 결함」으로 보고 (기본 실행에서는 EXIT 0)
  */
 const KNOWN_DEFECTS = {
-  PC1: {
-    where: 'src/routes/userRoutes.js:63 · 177 · 215 → pulseConsentService.recordGrant',
-    what: "req.headers['user-agent'] 를 자르지 않고 pulse_consents.user_agent VARCHAR(500) 에 넣는다",
-    why: '501자 이상 UA 를 보내는 클라이언트(구형 웹뷰·크롤러·일부 안드로이드 웹뷰)가 오면 '
-      + '[22001] value too long 이 나고, 그 INSERT 가 회원가입과 **같은 트랜잭션**이라 '
-      + 'POST /api/users/me 가 통째로 실패한다 — 즉 가입 자체가 안 된다.',
-    fix: "라우트에서 `(req.headers['user-agent'] || '').slice(0, 500) || null` 로 자르거나, "
-      + '서비스가 방어적으로 자를 것. 고친 뒤 이 항목을 지우고 §9 를 「500자로 잘려 저장된다」 단정으로 바꿀 것.',
-  },
-  PC2: {
-    where: 'src/routes/userRoutes.js:38 → recordGrant(client, userId, pulse_consent_version, …)',
-    what: 'req.body 의 pulse_consent_version 을 길이 검증 없이 consent_version VARCHAR(20) 에 넣는다',
-    why: '21자 이상 버전 문자열을 보내면 [22001] 로 가입 트랜잭션이 실패한다. '
-      + '외부 입력이 그대로 DB 제약에 부딪히는 구조라 클라이언트가 400 이 아니라 500 을 받는다.',
-    fix: '라우트에서 허용 버전 화이트리스트(또는 길이 검증)로 400 을 돌려줄 것.',
-  },
+  // ── 비어 있음. 새 결함을 등록할 때만 채운다. ───────────────────────────────
+  //
+  // [세션49에서 제거됨]
+  //   PC1  userRoutes 가 req.headers['user-agent'] 를 자르지 않고 VARCHAR(500) 에 넣던 결함
+  //        → 절단을 **pulseConsentService.truncateUserAgent 한 곳**으로 모았다.
+  //          (pulse_consents 에 INSERT 하는 코드가 recordGrant/recordRevoke 뿐 = 유일한 관문.
+  //           라우트는 호출 지점이 3곳이라 거기서 자르면 규칙이 흩어진다 — 세션48 §4-5.)
+  //          §9 는 이제 「22001 이 난다」가 아니라 **「500자로 잘려 저장된다」**를 단정한다.
+  //   PC2  req.body.pulse_consent_version 무검증 → 21자면 22001 로 가입이 500 이 되던 결함
+  //        → 라우트가 트랜잭션을 열기 전에 화이트리스트(ALLOWED_CONSENT_VERSIONS)로 검사해
+  //          **HTTP 400** 을 돌려준다. §9 는 400 + users 행 미생성을 단정한다.
+  //          ★ 서비스 함수를 21자로 직접 부르면 여전히 22001 이다 — 그것이 정상이다
+  //            (서비스는 DB 제약을 그대로 받는다. 검증 책임은 경계인 라우트에 있다).
 };
 function known(id, detail) {
   if (!KNOWN_DEFECTS[id]) throw new Error(`대장에 없는 결함 id: ${id}`);
@@ -481,11 +484,24 @@ async function main() {
   }
 
   // ══════════════════════════════════════════════════════════════════════
-  section('§9. ★ 실제 서비스·실제 라우트를 501자 UA 로 호출한다 (제약 ≠ 방어)');
+  section('§9. ★ 실제 서비스·실제 라우트가 제약을 방어하는가 (세션49: 결함 확인 → 수정 확인)');
   // ══════════════════════════════════════════════════════════════════════
   // ★ 여기서부터는 SQL 문자열이 아니라 **애플리케이션 코드**를 호출한다.
   //   「제약이 살아 있다」(§4)와 「코드가 그것을 방어한다」는 다른 문제이기 때문이다.
-  //   소스는 고치지 않는다 — 결함을 대장(KNOWN_DEFECTS)에 등록해 다음 세션이 모르고 지나가지 않게 한다.
+  //
+  // ⚠ 소스 문자열을 정규식으로 검사하지 않는다(세 세션 연속 뚫렸다).
+  //   전부 **실행 결과 객체**(DB 에서 SELECT 한 값 · HTTP 응답 · 서비스에 실제로 전달된 인자)를 단정한다.
+  //
+  // ★ 책임 분리 — 세션49 가 정한 설계. 이 배치 자체를 여기서 고정한다.
+  //   · user_agent(길이) — **pulseConsentService 한 곳**에서만 자른다.
+  //       pulse_consents 에 INSERT 하는 코드가 recordGrant/recordRevoke 뿐이라 그 파일이 유일한 관문이다.
+  //       라우트는 헤더를 **가공하지 않고** 넘긴다(호출 지점이 3곳이라 거기서 자르면 규칙이 흩어진다).
+  //         서비스: 501자를 받아도 성공하고 500자로 저장
+  //         라우트: 501자 UA 로도 가입 2xx (관문이 막아 주므로)
+  //   · consent_version(값) — **라우트 한 곳**에서만 검증한다.
+  //       자르면 의미가 바뀌므로(v1.0.0-experimental → v1.0.0-experim) 절대 자르지 않는다.
+  //         라우트: 허용목록 밖이면 HTTP 400 (500 아님) + users 행 미생성
+  //         서비스: 21자면 그대로 22001 (정상 — 서비스는 DB 제약을 그대로 받는다)
 
   // src/config/database.js 를 pglite 로 갈아끼운다 (파일은 건드리지 않는다).
   const dbPath = require.resolve(path.join(ROOT, 'src', 'config', 'database.js'));
@@ -508,58 +524,93 @@ async function main() {
 
   const pulseConsentService = require(path.join(ROOT, 'src', 'services', 'pulseConsentService.js'));
 
-  await t('[PC1] 서비스 함수 recordGrant 를 501자 UA 로 호출하면 22001 이 난다 (대장 등록)', async () => {
+  // ── 9-A. 서비스 축 — recordGrant / recordRevoke 를 직접 부른다 ─────────────
+  // 반환값이 없는 함수이므로 **DB 에서 실제로 SELECT 해서 length() 를 센다.**
+  const txClient = { query: (q, p) => db.query(q, p) };
+
+  /** recordGrant 를 tx 안에서 부르고, 방금 들어간 grant 행의 user_agent 길이/값을 돌려준다. */
+  async function grantAndInspect(userId, version, metadata) {
     await db.query('BEGIN');
     let err = null;
+    let row = null;
     try {
-      await pulseConsentService.recordGrant({ query: (q, p) => db.query(q, p) }, UID, 'v2',
-        { user_agent: 'M'.repeat(501) });
+      await pulseConsentService.recordGrant(txClient, userId, version, metadata);
+      row = (await db.query(
+        `SELECT consent_version, user_agent, length(user_agent) AS ua_len
+           FROM pulse_consents WHERE user_id = $1 AND event_type = 'grant'
+          ORDER BY consent_id DESC LIMIT 1`, [userId])).rows[0];
     } catch (e) { err = e; }
     try { await db.query('ROLLBACK'); } catch (e) { /* ignore */ }
+    return { err, row };
+  }
 
-    if (!err) {
-      throw new Error('[PC1 고쳐졌다] 501자 UA 가 이제 통과한다 — 라우트/서비스가 자르기 시작했거나 제약이 사라졌다.\n'
-        + '       고쳐진 것이라면 KNOWN_DEFECTS.PC1 을 지우고 「500자로 잘려 저장된다」 단정으로 바꿀 것.\n'
-        + '       제약이 사라진 것이라면 §4 가 먼저 빨강이어야 한다 — §4 가 초록인데 여기만 통과하면 그쪽을 의심할 것.');
-    }
-    assert.strictEqual(err.code, '22001',
-      `기대한 실패는 22001(value too long) 인데 [${err.code}] 다: ${err.message.split('\n')[0]}`);
-    known('PC1', `recordGrant(501자 UA) → [22001] ${err.message.split('\n')[0]}`);
+  await t('[PC1·서비스] recordGrant(501자 UA) — 예외 없이 **500자로 잘려 저장된다**', async () => {
+    const { err, row } = await grantAndInspect(UID, 'v2', { user_agent: 'M'.repeat(501) });
+    assert.ok(!err,
+      `501자 UA 가 여전히 실패한다 — pulseConsentService 의 방어적 절단이 사라졌다. `
+      + `[${err && err.code}] ${err && err.message.split('\n')[0]}`);
+    assert.strictEqual(Number(row.ua_len), 500,
+      `저장된 user_agent 길이가 500 이 아니라 ${row && row.ua_len} 이다 — `
+      + 'pulse_consents.user_agent 는 VARCHAR(500) 이고 정확히 그 길이로 잘려야 한다');
+    assert.strictEqual(row.user_agent, 'M'.repeat(500), '잘린 내용이 앞 500자가 아니다');
   });
 
-  await t('[PC1] 정상 길이(500자) UA 는 통과한다 (거짓 빨강 방지)', async () => {
+  await t('[PC1·서비스] 경계 — 500자는 그대로 500, 499자는 그대로 499 (과잉 절단·오프바이원 방지)', async () => {
+    const r500 = await grantAndInspect(UID, 'v2', { user_agent: 'M'.repeat(500) });
+    assert.ok(!r500.err, `500자 UA 마저 실패한다 — [${r500.err && r500.err.code}]`);
+    assert.strictEqual(Number(r500.row.ua_len), 500, `500자가 ${r500.row.ua_len} 자로 저장됐다`);
+
+    const r499 = await grantAndInspect(UID, 'v2', { user_agent: 'M'.repeat(499) });
+    assert.ok(!r499.err, `499자 UA 마저 실패한다 — [${r499.err && r499.err.code}]`);
+    assert.strictEqual(Number(r499.row.ua_len), 499,
+      `499자가 ${r499.row.ua_len} 자로 저장됐다 — 짧은 UA 까지 손대고 있다`);
+  });
+
+  await t('[PC1·서비스] recordRevoke(501자 UA) 도 같은 관문을 지난다 (grant 만 고치고 revoke 가 새면 안 된다)', async () => {
     await db.query('BEGIN');
     let err = null;
+    let row = null;
     try {
-      await pulseConsentService.recordGrant({ query: (q, p) => db.query(q, p) }, UID, 'v2',
-        { user_agent: 'M'.repeat(500) });
+      await pulseConsentService.recordRevoke(txClient, UID, 'v2', { user_agent: 'R'.repeat(501) });
+      row = (await db.query(
+        `SELECT length(user_agent) AS ua_len FROM pulse_consents
+          WHERE user_id = $1 AND event_type = 'revoke' ORDER BY consent_id DESC LIMIT 1`, [UID])).rows[0];
     } catch (e) { err = e; }
     try { await db.query('ROLLBACK'); } catch (e) { /* ignore */ }
-    assert.ok(!err, `500자 UA 마저 실패한다 — [${err && err.code}] ${err && err.message.split('\n')[0]}`);
+    assert.ok(!err, `recordRevoke 에는 절단 방어가 없다 — [${err && err.code}] ${err && err.message.split('\n')[0]}`);
+    assert.strictEqual(Number(row.ua_len), 500, `revoke 행의 user_agent 가 ${row && row.ua_len} 자다`);
   });
 
-  await t('[PC2] recordGrant 를 21자 버전으로 호출하면 22001 이 난다 (외부 입력 무검증 · 대장 등록)', async () => {
-    await db.query('BEGIN');
-    let err = null;
-    try {
-      await pulseConsentService.recordGrant({ query: (q, p) => db.query(q, p) }, UID, 'v'.repeat(21), {});
-    } catch (e) { err = e; }
-    try { await db.query('ROLLBACK'); } catch (e) { /* ignore */ }
-    if (!err) {
-      throw new Error('[PC2 고쳐졌다] 21자 consent_version 이 이제 통과한다 — KNOWN_DEFECTS.PC2 를 지우고 '
-        + '라우트가 400 을 돌려주는지 확인하는 단정으로 바꿀 것.');
-    }
-    assert.strictEqual(err.code, '22001', `기대 22001, 실제 [${err.code}]`);
-    known('PC2', `recordGrant(21자 consent_version) → [22001] ${err.message.split('\n')[0]}`);
+  await t('[PC2·서비스] recordGrant(21자 version) 은 **여전히 22001 이다** (서비스는 DB 제약을 그대로 받는다)', async () => {
+    const { err } = await grantAndInspect(UID, 'v'.repeat(21), {});
+    assert.ok(err,
+      '21자 consent_version 이 서비스 층에서 통과한다 — 서비스가 몰래 자르고 있다면 '
+      + '**틀린 버전 문자열이 조용히 저장**된다(데이터 오염). 검증 책임은 라우트에 있고 '
+      + '서비스는 DB 제약을 그대로 받아야 한다.');
+    assert.strictEqual(err.code, '22001', `기대 22001, 실제 [${err.code}] ${err.message.split('\n')[0]}`);
   });
 
-  // ── 라우트 수준 — 「가입 자체가 실패한다」를 응답으로 확인한다 ─────────────
-  // ★ §9 의 핵심. pulse_consents INSERT 가 회원가입과 **같은 트랜잭션** 안에 있어서
-  //   UA 하나 때문에 POST /api/users/me 가 2xx 를 못 준다는 것을 응답으로 못 박는다.
-  await t('[PC1] POST /api/users/me 를 501자 User-Agent 로 호출하면 가입이 통째로 실패한다', async () => {
+  await t('[PC2·서비스] 허용 버전 목록이 실측 근거와 일치한다 (v2 · isAllowedConsentVersion)', async () => {
+    assert.deepStrictEqual(Array.from(pulseConsentService.ALLOWED_CONSENT_VERSIONS), ['v2'],
+      '허용 버전 목록이 바뀌었다 — 새 약관 버전을 추가했다면 이 단정도 함께 갱신할 것');
+    assert.strictEqual(pulseConsentService.CURRENT_VERSION, 'v2');
+    assert.ok(pulseConsentService.isAllowedConsentVersion('v2'));
+    assert.ok(!pulseConsentService.isAllowedConsentVersion('v3'), 'v3 은 아직 정의된 약관이 아니다');
+    assert.ok(!pulseConsentService.isAllowedConsentVersion('v'.repeat(21)));
+    assert.ok(!pulseConsentService.isAllowedConsentVersion(''));
+    assert.ok(!pulseConsentService.isAllowedConsentVersion(undefined));
+  });
+
+  // ── 9-B. 라우트 축 — 실제 HTTP 요청/응답으로 못 박는다 ────────────────────
+  // ★ pulse_consents INSERT 가 회원가입과 **같은 트랜잭션** 안이라는 구조는 그대로다.
+  //   그래서 「UA 를 잘랐는가」가 곧 「가입이 되는가」다.
+  {
     const admin = require('firebase-admin');
+    let CURRENT_UID = 'ua-test-uid';
     Object.defineProperty(admin, 'auth', {
-      value: () => ({ verifyIdToken: async () => ({ uid: 'ua-test-uid', email: 'ua@t.c', name: 'UA' }) }),
+      value: () => ({
+        verifyIdToken: async () => ({ uid: CURRENT_UID, email: `${CURRENT_UID}@t.c`, name: 'UA' }),
+      }),
       writable: true,
       configurable: true,
     });
@@ -572,7 +623,8 @@ async function main() {
     await new Promise((r) => server.listen(0, r));
     const port = server.address().port;
 
-    const post = (body, ua) => new Promise((resolve) => {
+    const post = (uid, body, ua) => new Promise((resolve) => {
+      CURRENT_UID = uid;
       const payload = JSON.stringify(body);
       const req = http.request({
         host: '127.0.0.1', port, path: '/api/users/me', method: 'POST',
@@ -590,22 +642,123 @@ async function main() {
       req.end(payload);
     });
 
-    try {
-      const long = await post({ pulse_consent_version: 'v2' }, 'M'.repeat(501));
-      if (long.status >= 200 && long.status < 300) {
-        throw new Error('[PC1 고쳐졌다] 501자 UA 로도 가입이 성공한다 — 라우트가 자르기 시작했다. '
-          + 'KNOWN_DEFECTS.PC1 을 지우고 「잘려서 저장된다」 단정으로 바꿀 것.');
-      }
-      known('PC1', `POST /api/users/me (UA 501자) → HTTP ${long.status} — 가입 자체가 실패한다`);
+    /** firebase_uid 로 커밋된 users / pulse_consents 실상태를 읽는다. */
+    async function stateOf(uid) {
+      const u = (await db.query('SELECT user_id, pulse_consent_version FROM users WHERE firebase_uid = $1', [uid])).rows;
+      if (u.length === 0) return { user: null, consents: [] };
+      const c = (await db.query(
+        `SELECT consent_version, event_type, user_agent, length(user_agent) AS ua_len
+           FROM pulse_consents WHERE user_id = $1 ORDER BY consent_id`, [u[0].user_id])).rows;
+      return { user: u[0], consents: c };
+    }
 
-      // 대조군: 짧은 UA 면 가입이 된다 (즉 원인이 UA 길이임을 증명한다)
-      const short = await post({ pulse_consent_version: 'v2' }, 'Mozilla/5.0 (short)');
-      assert.ok(short.status >= 200 && short.status < 300,
-        `짧은 UA 로도 가입이 실패한다 — 원인이 UA 길이가 아니다. HTTP ${short.status}: ${short.body.slice(0, 200)}`);
+    // ★ 라우트가 서비스에 **무엇을 넘겼는지**를 실행 시점에 포착한다 (소스 문자열 검사가 아니다).
+    //   이 스파이가 고정하는 것은 「절단 지점이 서비스 한 곳이다」라는 설계다:
+    //   라우트는 UA 를 가공하지 않고 넘겨야 하고(길이 그대로), 그렇다고 **버려서도** 안 된다.
+    const realRecordGrant = pulseConsentService.recordGrant;
+    let handedOver = null;
+    pulseConsentService.recordGrant = function spyRecordGrant(client, userId, version, metadata) {
+      const ua = metadata && metadata.user_agent;
+      handedOver = { version, ua_len: ua === null || ua === undefined ? null : String(ua).length };
+      return realRecordGrant.call(this, client, userId, version, metadata);
+    };
+
+    try {
+      await t('[PC1·라우트] POST /api/users/me 를 501자 UA 로 호출하면 **가입에 성공한다** (2xx)', async () => {
+        handedOver = null;
+        const r = await post('pc1-long-ua', { pulse_consent_version: 'v2' }, 'M'.repeat(501));
+        assert.ok(r.status >= 200 && r.status < 300,
+          `501자 UA 때문에 가입이 실패한다 — HTTP ${r.status}: ${r.body.slice(0, 240)}`);
+
+        // ① 라우트는 UA 를 **가공하지 않고 그대로** 서비스에 넘겨야 한다 (절단 지점은 서비스 한 곳).
+        assert.ok(handedOver, '라우트가 recordGrant 를 부르지 않았다');
+        assert.strictEqual(handedOver.ua_len, 501,
+          `라우트가 서비스에 넘긴 user_agent 길이가 ${handedOver.ua_len} 이다 (원본 501자). `
+          + '기대는 501 — 길이 책임은 pulse_consents 의 유일한 관문인 pulseConsentService 가 진다. '
+          + 'null 이면 라우트가 UA 를 버린 것이고, 500 이면 라우트도 자르기 시작해 '
+          + '같은 규칙이 두 곳으로 갈라진 것이다(세션48 §4-5). 둘 다 되돌려야 한다.');
+
+        // ② 커밋된 실제 행을 DB 에서 읽는다
+        const st = await stateOf('pc1-long-ua');
+        assert.ok(st.user, 'users 행이 없다 — 가입이 커밋되지 않았다');
+        assert.strictEqual(st.consents.length, 1, `pulse_consents 행이 ${st.consents.length}건이다`);
+        assert.strictEqual(Number(st.consents[0].ua_len), 500,
+          `저장된 user_agent 길이가 ${st.consents[0].ua_len} 이다 — 500 이어야 한다`);
+        assert.strictEqual(st.consents[0].consent_version, 'v2');
+        assert.strictEqual(st.user.pulse_consent_version, 'v2');
+      });
+
+      await t('[PC1·라우트] 대조군 — 짧은 UA 는 **손대지 않고 그대로** 저장된다', async () => {
+        const UA = 'Mozilla/5.0 (short)';
+        handedOver = null;
+        const r = await post('pc1-short-ua', { pulse_consent_version: 'v2' }, UA);
+        assert.ok(r.status >= 200 && r.status < 300,
+          `짧은 UA 로도 가입이 실패한다 — HTTP ${r.status}: ${r.body.slice(0, 240)}`);
+        assert.strictEqual(handedOver && handedOver.ua_len, UA.length);
+        const st = await stateOf('pc1-short-ua');
+        assert.strictEqual(st.consents.length, 1);
+        assert.strictEqual(st.consents[0].user_agent, UA,
+          '짧은 UA 가 변형됐다 — 절단이 과하게 걸린 것도 결함이다');
+      });
+
+      await t('[PC2·라우트] 21자 pulse_consent_version → **HTTP 400** (500 아님) + users 행 미생성(롤백)', async () => {
+        const r = await post('pc2-too-long', { pulse_consent_version: 'v'.repeat(21) }, 'Mozilla/5.0');
+        assert.strictEqual(r.status, 400,
+          `기대 400, 실제 HTTP ${r.status} — 500 이면 외부 입력이 그대로 DB 제약에 부딪히고 있다. `
+          + `본문: ${r.body.slice(0, 240)}`);
+        const body = JSON.parse(r.body);
+        assert.strictEqual(body.success, false);
+        assert.strictEqual(body.error.code, 'INVALID_CONSENT_VERSION',
+          `에러 코드가 ${body.error && body.error.code} 다`);
+        // 응답 **모양**도 저장소 관례를 따라야 한다 — { success, error:{ code, message } }.
+        // (scanRoutes 의 INVALID_SCAN_TYPE 과 동일. error 에 임의 필드를 더하면
+        //  클라이언트 파서가 라우트마다 갈린다.)
+        assert.deepStrictEqual(Object.keys(body).sort(), ['error', 'success'],
+          `최상위 키가 ${Object.keys(body).sort().join(',')} 다`);
+        assert.deepStrictEqual(Object.keys(body.error).sort(), ['code', 'message'],
+          `error 의 키가 ${Object.keys(body.error).sort().join(',')} 다 — 관례는 code·message 뿐이다`);
+        assert.ok(typeof body.error.message === 'string' && body.error.message.length > 0);
+        const st = await stateOf('pc2-too-long');
+        assert.strictEqual(st.user, null,
+          '400 을 줬는데 users 행이 남아 있다 — 검증이 트랜잭션 뒤에 있거나 롤백이 안 된다');
+      });
+
+      await t('[PC2·라우트] ★ 길이만 맞고 목록에 없는 버전(v3)도 400 — 길이 검증이 아니라 **화이트리스트**여야 한다', async () => {
+        const r = await post('pc2-unknown-v3', { pulse_consent_version: 'v3' }, 'Mozilla/5.0');
+        assert.strictEqual(r.status, 400,
+          `'v3'(2자, VARCHAR(20) 안에 들어간다)이 HTTP ${r.status} 로 통과했다 — `
+          + '길이만 보고 있다. 정의되지 않은 약관 버전이 그대로 저장되면 데이터 오염이다. '
+          + `본문: ${r.body.slice(0, 240)}`);
+        assert.strictEqual(JSON.parse(r.body).error.code, 'INVALID_CONSENT_VERSION');
+        const st = await stateOf('pc2-unknown-v3');
+        assert.strictEqual(st.user, null, "'v3' 로 users 행이 생겼다");
+      });
+
+      await t('[PC2·라우트] 대조군 — 허용 버전 v2 는 2xx 로 통과하고 그대로 저장된다', async () => {
+        const r = await post('pc2-ok-v2', { pulse_consent_version: 'v2' }, 'Mozilla/5.0');
+        assert.ok(r.status >= 200 && r.status < 300,
+          `허용 버전인데 HTTP ${r.status} 다 — 화이트리스트가 과하게 좁다. ${r.body.slice(0, 240)}`);
+        const st = await stateOf('pc2-ok-v2');
+        assert.ok(st.user, 'users 행이 없다');
+        assert.strictEqual(st.user.pulse_consent_version, 'v2');
+        assert.strictEqual(st.consents.length, 1);
+        assert.strictEqual(st.consents[0].consent_version, 'v2');
+      });
+
+      await t('[PC2·라우트] 대조군 — pulse_consent_version 없이 가입하면 동의 없이 2xx (동의는 선택이다)', async () => {
+        const r = await post('pc2-no-consent', { display_name: '무동의' }, 'Mozilla/5.0');
+        assert.ok(r.status >= 200 && r.status < 300,
+          `동의 없는 가입이 HTTP ${r.status} 로 막혔다 — 검증이 과하다. ${r.body.slice(0, 240)}`);
+        const st = await stateOf('pc2-no-consent');
+        assert.ok(st.user, 'users 행이 없다');
+        assert.strictEqual(st.user.pulse_consent_version, null);
+        assert.strictEqual(st.consents.length, 0);
+      });
     } finally {
+      pulseConsentService.recordGrant = realRecordGrant;
       server.close();
     }
-  });
+  }
 
   await db.close();
 

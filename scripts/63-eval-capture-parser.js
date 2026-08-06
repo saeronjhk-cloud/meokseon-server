@@ -18,12 +18,47 @@ const path = require('path');
 const { parseLabel } = require('./lib/capture_label_parser');
 
 const VERBOSE = process.argv.includes('--verbose');
-const EVAL_PATH = path.join(__dirname, '..', '..', 'eval_set', 'capture_label_eval_v1.jsonl');
 
-if (!fs.existsSync(EVAL_PATH)) {
-  console.error(`[중단] 평가셋 없음: ${EVAL_PATH}`);
+/* ── 평가셋 위치 (세션51) ─────────────────────────────────────────────────────
+ * 정본 : backends/먹선/eval_set/capture_label_eval_v1.jsonl   ← 저장소 «밖» (IP 분리 원칙)
+ * 사본 : meokseon-server/eval_set/capture_label_eval_v1.jsonl ← 저장소 «안»
+ *
+ * 왜 사본이 필요한가: 이 스크립트는 CI(`.github/workflows/gate.yml` 의 마지막 스텝)에서도
+ * 돈다. CI 체크아웃에는 저장소 밖 경로가 존재하지 않아 **정본만 보면 반드시 실패한다.**
+ * 세션51에 GitHub Actions gate #2 가 실제로 이것 하나 때문에 빨간불이었다
+ * (다른 스위트는 전부 초록이었다. 재현: 커밋된 blob 만 풀어 낸 트리에서 전건 통과).
+ *
+ * ⚠ 사본은 갈라질 수 있다. 그래서 **둘 다 있으면 내용이 같은지 대조하고 다르면 멈춘다.**
+ *   `src/services/allergenName.js` ↔ `IP/allergens_19_korea.json` 이 쓰는 것과 같은 방식이다.
+ *   사본을 갱신할 때는 정본을 그대로 복사할 것. 손으로 고치지 말 것.
+ */
+const EVAL_CANONICAL = path.join(__dirname, '..', '..', 'eval_set', 'capture_label_eval_v1.jsonl');
+const EVAL_INREPO = path.join(__dirname, '..', 'eval_set', 'capture_label_eval_v1.jsonl');
+
+const hasCanon = fs.existsSync(EVAL_CANONICAL);
+const hasRepo = fs.existsSync(EVAL_INREPO);
+
+if (!hasCanon && !hasRepo) {
+  console.error('[중단] 평가셋 없음. 다음 두 곳 어디에도 없다:');
+  console.error(`   정본: ${EVAL_CANONICAL}`);
+  console.error(`   사본: ${EVAL_INREPO}`);
   process.exit(1);
 }
+
+if (hasCanon && hasRepo) {
+  const a = fs.readFileSync(EVAL_CANONICAL, 'utf8').replace(/\r\n/g, '\n').trimEnd();
+  const b = fs.readFileSync(EVAL_INREPO, 'utf8').replace(/\r\n/g, '\n').trimEnd();
+  if (a !== b) {
+    console.error('[중단] 평가셋 정본과 저장소 사본이 다르다 — CI 가 낡은 기준으로 초록을 낼 수 있다.');
+    console.error(`   정본: ${EVAL_CANONICAL}`);
+    console.error(`   사본: ${EVAL_INREPO}`);
+    console.error('   → 정본을 사본 위치로 그대로 복사한 뒤 커밋할 것.');
+    process.exit(1);
+  }
+}
+
+const EVAL_PATH = hasCanon ? EVAL_CANONICAL : EVAL_INREPO;
+console.log(`평가셋 출처: ${hasCanon ? '정본(저장소 밖)' : '저장소 사본(CI 경로)'}`);
 
 const cases = fs.readFileSync(EVAL_PATH, 'utf8')
   .split(/\r?\n/).filter((l) => l.trim()).map((l) => JSON.parse(l));

@@ -545,11 +545,46 @@ t('★ 치명1 — 긴 원재료 낱말이 짧은 알레르기 명칭을 먹지 
   //   `밀가루`(3) > `메밀`(2) → "메밀가루 함유" 에서 메밀이 **삭제**됐다.
   //   `콩기름`(3) > `땅콩`(2) → "땅콩기름 함유" 에서 땅콩이 **삭제**됐다.
   // 메밀·땅콩은 국내 아나필락시스 유발 상위다. 라벨에 인쇄된 표기를 지우는 것은 치명이다.
-  assert.deepStrictEqual(detectAllergens('메밀가루 함유'), ['메밀', '밀']);
-  assert.deepStrictEqual(detectAllergens('땅콩기름 함유'), ['대두', '땅콩']);
-  assert.deepStrictEqual(detectAllergens('볶은메밀가루 함유'), ['메밀', '밀']);
+  //
+  // ★★★ 세션53 P1 — **기대값에서 `대두` 를 뺐다.** 이유를 남긴다.
+  //   세션44 는 「땅콩이 살아남는가」를 보려고 이 칸을 만들었고, 그 목적은 지금도 그대로다.
+  //   그런데 «곁다리로 나온» `대두` 까지 기대값에 굳혀 놓았다.
+  //   `땅콩기름` 은 땅콩 유래다. **대두가 들어 있다는 근거가 없다.** `콩기름` 이라는
+  //   부분문자열이 걸린 것뿐이고, 이건 정책 판단이 아니라 부분문자열 사고다.
+  //   외부검증 회신(2026-08-06)도 「전역 부분문자열 별칭 대폭 축소」를 권고했다.
+  //
+  //   ⚠ 「내 결과에 맞춰 봉인된 테스트를 고쳤다」가 아님을 남긴다 —
+  //     이 기대값은 구현 «전» 에 GT 로 먼저 못 박고 커밋했다(f5e1d9a).
+  //     `IP/allergen_sentinel_gt_v1_2026-08-06.json` 의 `S-대두-I2` = expect false.
+  //     그때 이미 「소비 매칭을 제거하면 여기서 대두 FP 가 드러난다. P1 이 함께 풀어야 하는 짝」
+  //     이라고 적어 두었다. 사후에 라벨을 맞춘 것이 아니다.
+  //
+  //   ★★★ `메밀가루 → 밀` 도 뺐다 — **제이 결정 (2026-08-06): 「메밀은 밀이 아니야.」**
+  //     메밀은 buckwheat 이고 소맥이 아니다. 세션51 밀 GT 라벨도 N 이다(메밀 157회·메밀가루 67회).
+  //     회신 쟁점7-7 도 같은 결론. 세션44 는 소비 매칭을 걷어내는 데 집중하느라
+  //     곁다리로 나온 `밀` 을 기대값에 굳혔다.
+  assert.deepStrictEqual(detectAllergens('메밀가루 함유'), ['메밀']);
+  assert.deepStrictEqual(detectAllergens('땅콩기름 함유'), ['땅콩']);
+  assert.deepStrictEqual(detectAllergens('볶은메밀가루 함유'), ['메밀']);
   assert.deepStrictEqual(detectAllergens('계란, 메밀가루, 땅콩기름 함유'),
-    ['난류', '대두', '땅콩', '메밀', '밀']);
+    ['난류', '땅콩', '메밀']);
+
+  // ★ 진짜 밀은 그대로 나와야 한다 — 부정 규칙이 넓어져 밀을 통째로 놓치면 과소경고다.
+  assert.deepStrictEqual(detectAllergens('밀가루 함유'), ['밀']);
+  assert.deepStrictEqual(detectAllergens('통밀가루 함유'), ['밀']);      // GT 라벨 Y
+  assert.deepStrictEqual(detectAllergens('우리밀가루 함유'), ['밀']);     // GT 라벨 Y
+  // ★ 섞어 쓴 라벨 — 메밀도 밀도 «둘 다» 인쇄된 경우. 부정 규칙이 첫 출현만 보면 밀을 놓친다.
+  assert.deepStrictEqual(detectAllergens('메밀가루, 밀가루 함유'), ['메밀', '밀']);
+  // ★ 호밀은 법정 19종의 밀(소맥)이 아니다. GT 라벨 N.
+  //   ⚠ 되돌리려면 KEYWORD_LEFT_NEGATIVE['밀가루'] 에서 '호' 한 글자만 지운다.
+  assert.deepStrictEqual(detectAllergens('호밀가루 함유'), []);
+
+  // ★ 양성 대조군 — 대두를 «못 잡게» 된 것이 아님을 같이 단정한다.
+  //   부정 규칙을 넣을 때 이 짝이 없으면, 규칙이 너무 넓어져 진짜 대두를 놓쳐도 초록이 된다.
+  assert.deepStrictEqual(detectAllergens('콩기름 함유'), ['대두']);
+  assert.deepStrictEqual(detectAllergens('대두유, 콩기름 함유'), ['대두']);
+  // ★ 둘 다 있으면 둘 다 나와야 한다 — 부정 규칙이 «첫 출현»만 보고 접으면 여기서 대두를 놓친다.
+  assert.deepStrictEqual(detectAllergens('땅콩기름, 콩기름 함유'), ['대두', '땅콩']);
 });
 
 t('★ 중대4 — 1글자 명칭이 무관한 낱말에 걸리지 않는다 (실물 096 포함)', () => {

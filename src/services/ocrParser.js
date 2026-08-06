@@ -992,7 +992,83 @@ const ALLERGEN_KEYWORDS = {
   '오징어': ['오징어'],
   '조개류': ['굴', '홍합', '전복', '조개', '바지락'],
   '아황산류': ['아황산', '이산화황'],
+  // ★★★ 세션53 P1 — 법정 19종 중 «원재료 표에만» 없던 2종.
+  //   외부검증 회신(2026-08-06): 「법정 목록 두 항목이 한 경로에서 구조적으로 검출 불가능한 것은
+  //   기능 한계가 아니라 계약 위반에 가깝다」.
+  //   ⚠ 회신은 「판별기 C 에 고등어·잣이 없다」고 썼으나 세션53 실측으로 절반만 맞았다 —
+  //     C 는 kind 에 따라 표를 «골라» 쓴다. 명시 표기(contains)·혼입(mayContain) 은
+  //     ALLERGEN_NAMES(19종)를 쓰므로 처음부터 정상 검출됐다. 누락은 이 원재료 표에 한정이다.
+  //   ⚠ `잣` 은 1글자다. 아래 `_keywordHit` 이 1글자에 구분자 경계를 요구하므로
+  //     `잣나무향` 같은 오탐이 나지 않는다. **경계 규칙 없이 넣으면 안 된다.**
+  '고등어': ['고등어'],
+  '잣': ['잣'],
 };
+
+/**
+ * ★★★ 세션53 P1 — 좌측 부정 문맥. 「이 접두가 붙으면 그 키워드는 해당 알레르겐이 아니다」
+ *
+ * 왜 필요한가: 소비 매칭(`_matchSet` 의 최장-우선-제거)을 걷어내면 과소경고는 사라지지만,
+ * **그 소비가 «가리고 있던» 오탐이 드러난다.**
+ *   `땅콩기름` → `땅콩`(땅콩) 과 `콩기름`(대두) 이 «둘 다» 걸린다. 대두는 근거가 없다.
+ *   종전에는 `콩기름`(3자) 이 먼저 먹고 지워서 대두만 남고 **땅콩이 사라졌다** — 더 나쁜 실패였다.
+ * 즉 소비 제거와 이 표는 **한 쌍**이다. 하나만 넣으면 오탐이나 미탐 중 하나가 남는다.
+ *
+ * ⚠ 브랜드명을 여기 넣지 말 것. 외부검증 회신 권고 — 핵심 코드에는 «언어·성분 구조상
+ *   일반화 가능한 규칙»만 두고, 특정 상품명은 별도 데이터로 관리한다.
+ *
+ * ★ 근거는 세션51 밀 GT(`gt_mil.json` 751종 / 출현 24,102회)의 라벨이다. 짐작이 아니다.
+ *   그 GT 는 각 토큰에 라벨·출현수·근거·실물 예시를 붙여 놓았다. 여기 넣은 접두는 전부 거기서 왔다.
+ */
+const KEYWORD_LEFT_NEGATIVE = {
+  // 땅콩기름은 땅콩 유래다. 대두가 아니다.
+  //   ★ 이건 정책이 아니라 «부분문자열 사고»다 — 땅콩기름에 대두가 들어 있다는 근거가 없다.
+  //   ★ 소비 제거와 «한 쌍»이다. 소비가 없어지면 `땅콩`(정답)과 `콩기름`(오탐)이 둘 다 걸린다.
+  //     종전에는 `콩기름`(3자)이 먼저 먹고 지워서 대두만 남고 **땅콩이 사라졌다** — 더 나쁜 실패였다.
+  '콩기름': ['땅'],
+
+  // ★★★ 제이 결정 (2026-08-06): 「메밀은 밀이 아니야. 고쳐야 돼.」
+  //   `메밀가루` 는 메밀(buckwheat)이다. 소맥이 아니다. GT 라벨 N (메밀 157회 · 메밀가루 67회).
+  //   회신 쟁점7-7 도 「일부 제품이 밀을 섞는다는 경험칙으로 순메밀 제품까지 밀로 경고해서는
+  //   안 된다. 별도 `밀`·`소맥분`·`밀가루` 표시가 있을 때만 밀 추가」로 같은 결론이다.
+  //   ★ `_keywordHit` 은 «모든 출현»을 보므로 `메밀가루, 밀가루` 처럼 둘 다 인쇄된 라벨에서는
+  //     밀이 그대로 나온다. 실제로 섞은 제품을 놓치지 않는다.
+  //
+  //   ★ `호` 도 넣었다 — 호밀(rye).
+  //     ★★ 제이 결정 (2026-08-06): 「호밀이 글루텐을 포함하고 있더라도, 국내 법규가 우선이야.
+  //        국내에서는 호밀을 알러겐으로 표기하도록 하지 않고 있어.」
+  //     이 축의 판단 기준은 **식약처 「식품 등의 표시기준」의 법정 19종**이다. 호밀은 그 안에 없다.
+  //     글루텐 함유 여부는 다른 질문이고, 이 필드가 답하는 질문이 아니다.
+  //     ⚠ 그러므로 호밀을 여기서 빼는 것은 「정보를 잃는 것」이 아니라 **축을 지키는 것**이다.
+  //       회신 쟁점7-1(매핑 반대)·GT 라벨 N(「rye 호밀(19종 아님)」, 호밀 28회·호밀가루 10회)도 같은 결론.
+  //     ⚠ 글루텐 회피 사용자를 지원하려면 법정 밀에 섞지 말고 «별도 축»을 새로 만들 것
+  //       (회신 권고 `non_statutory_cereal`). 법정 축을 넓혀서 대신하면 두 질문이 섞여
+  //       「법정 표기 의무 대상」이라는 이 필드의 의미가 무너진다.
+  //
+  //   ⚠ `통`·`우리`·`유기농` 은 넣지 «않는다» — GT 라벨 Y 다(통밀 40회 · 우리밀 128회 · 유기농밀 1회).
+  //     진짜 밀이므로 경고가 나가야 한다.
+  '밀가루': ['메', '호'],
+};
+
+/**
+ * 키워드 1개가 텍스트에 «유효하게» 나타나는가.
+ *
+ *  · 1글자 키워드(`굴`·`잣`) → 구분자 경계를 요구한다. `얼굴`·`잣나무향` 을 막는다.
+ *  · 2글자 이상 → 단순 포함. 단 `KEYWORD_LEFT_NEGATIVE` 에 있으면 좌측 문맥을 본다.
+ *
+ * ★ 부정 접두가 걸려도 «다른 출현»이 있으면 참이다. 첫 출현만 보고 접으면
+ *   `메밀가루와 밀가루` 같은 라벨에서 밀을 놓친다 — 과소경고다.
+ */
+function _keywordHit(text, keyword) {
+  if (!keyword) return false;
+  if (keyword.length === 1) return _boundedNameRe(keyword).test(text);
+  const neg = KEYWORD_LEFT_NEGATIVE[keyword];
+  if (!neg) return text.includes(keyword);
+  for (let i = text.indexOf(keyword); i !== -1; i = text.indexOf(keyword, i + 1)) {
+    const prev = i > 0 ? text[i - 1] : '';
+    if (!neg.includes(prev)) return true;
+  }
+  return false;
+}
 
 /**
  * 텍스트에서 알레르기 유발물질을 탐지합니다.
@@ -1080,8 +1156,9 @@ function detectAllergens(text) {
     const detected = new Set();
     for (const [allergen, keywords] of Object.entries(ALLERGEN_KEYWORDS)) {
       for (const keyword of keywords) {
-        const hit = keyword.length === 1 ? _boundedNameRe(keyword).test(blob) : blob.includes(keyword);
-        if (hit) { detected.add(allergen); break; }
+        // ★ 세션53 P1 — 판별기 B 와 C 가 «같은» 매칭 함수를 쓴다.
+        //   종전엔 여기와 `_matchSet` 이 각자 규칙을 갖고 있어 같은 응답에서 값이 갈렸다(쟁점4).
+        if (_keywordHit(blob, keyword)) { detected.add(allergen); break; }
       }
     }
     for (const [allergen, re] of ALLERGEN_NAME_BOUNDED) {
@@ -1100,10 +1177,12 @@ function detectAllergens(text) {
   const detected = new Set();
   for (const [allergen, keywords] of Object.entries(ALLERGEN_KEYWORDS)) {
     for (const keyword of keywords) {
-      // \"대두레시틴\" 의 \"대두\" 같은 부분 문자열 매칭 방지를 위해
-      // 한국어는 단어 경계가 모호하므로 키워드 길이 ≥ 2 일 때만 부분 매칭 허용
-      if (keyword.length < 2) continue;
-      if (text.includes(keyword)) {
+      // ★★ 세션53 P1 — 종전엔 `keyword.length < 2` 를 «건너뛰었다».
+      //   그래서 1글자 원재료 키워드가 이 경로에서 통째로 죽어 있었다:
+      //     `원재료명: 굴 20%` → 조개류 미검출   ·   `원재료명: 잣 15%` → 잣 미검출
+      //   건너뛴 이유는 `얼굴` 같은 오탐 때문이었는데, 그건 **경계 규칙으로 막는 문제**이지
+      //   항목을 통째로 버릴 문제가 아니었다. `_keywordHit` 이 1글자에 구분자 경계를 요구한다.
+      if (_keywordHit(text, keyword)) {
         detected.add(allergen);
         break;
       }
@@ -1225,7 +1304,21 @@ function _splitSegments(text) {
 }
 
 function _matchSet(segment, table) {
-  // 긴 키워드 먼저 매칭·제거 → 짧은 이름의 부분문자열 오탐 방지(예: '메밀'을 먼저 잡아 '밀' 오탐 차단)
+  // ★★★ 세션53 P1 — **소비·제거를 걷어냈다.** 외부검증 회신(2026-08-06) P1.
+  //   종전 방식(최장 우선 매칭 후 문자열 삭제)은 «라벨에 인쇄된 알레르겐을 서버가 지웠다».
+  //     `메밀가루` → `밀가루`(3자) 가 먼저 먹고 지워 남은 건 `메` → **메밀이 사라졌다**
+  //     `땅콩기름` → `콩기름`(3자) 이 먼저 먹어 **땅콩이 사라졌다**
+  //   메밀·땅콩은 국내 아나필락시스 유발 상위다. 과소경고이므로 안전 결함이다.
+  //
+  //   ⚠ 세션44 가 이 결함을 «발견해 서술까지 해 놓고» `detectAllergens`(판별기 B) 만 고쳤다.
+  //     `_matchSet` 은 그대로 뒀고, **화면이 실제로 쓰는 `detectAllergensV2`(C) 가 여기를 통과한다.**
+  //     인수인계가 반복 경고한 「반쪽 수정」의 재현이다. 이번엔 두 경로를 같이 고친다.
+  //
+  //   ★ 소비가 하던 «오탐 차단» 역할은 두 장치가 대신한다:
+  //     ① 1글자 명칭(`밀`·`게`·`잣`·`굴`) → 구분자 경계 (`_boundedNameRe`)
+  //     ② 2글자 이상의 부분문자열 충돌 → 좌측 부정 문맥 (`KEYWORD_LEFT_NEGATIVE`)
+  //     소비는 «먼저 온 놈이 이긴다»는 순서 의존이라 어느 쪽이 지워질지 예측할 수 없었다.
+  //     두 장치는 순서에 의존하지 않는다.
   // ★★★ 세션44 2차 검증(중대C) — 이 최장-우선-소비만으로는 1글자 명칭을 못 막는다.
   //   `ALLERGEN_NAMES` 에는 `밀`·`게`·`잣`·`굴` 이 1글자로 들어 있고 `work.includes(kw)` 는 경계가 없다.
   //   1차 수정은 경계 규칙(`ALLERGEN_NAME_BOUNDED`)을 **`detectAllergens`(flat) 에만** 걸었고,
@@ -1237,18 +1330,11 @@ function _matchSet(segment, table) {
   //     `밀폐용기에 보관, 우유 함유` → ["밀","우유"]
   //   → **1글자 키워드는 구분자 경계를 요구한다.** 2글자 이상은 종전대로 소비·제거 방식을 쓴다
   //     (그쪽은 `밀가루`→`밀` 처럼 부분 포함이 정답인 경우가 많다).
-  const pairs = [];
-  for (const [allergen, kws] of Object.entries(table)) for (const kw of kws) pairs.push([allergen, kw]);
-  pairs.sort((a, b) => b[1].length - a[1].length);
-  let work = segment;
   const detected = new Set();
-  for (const [allergen, kw] of pairs) {
-    if (!kw) continue;
-    if (kw.length === 1) {
-      if (_boundedNameRe(kw).test(work)) { detected.add(allergen); work = work.split(kw).join(' '); }
-      continue;
+  for (const [allergen, kws] of Object.entries(table)) {
+    for (const kw of kws) {
+      if (_keywordHit(segment, kw)) { detected.add(allergen); break; }
     }
-    if (work.includes(kw)) { detected.add(allergen); work = work.split(kw).join(' '); }
   }
   return detected;
 }

@@ -1,79 +1,64 @@
 /**
- * 식품유형 → context category 매핑 + 카테고리별 맥락 안내 메시지
+ * context 조립 — 카테고리 라벨 + 맥락 안내 메시지
+ *
+ * ★★★ 세션51 D5 해소 (2026-08-06) — **여기는 더 이상 식품유형을 분류하지 않는다.**
+ *
+ * ── 무엇이 문제였나 ────────────────────────────────────────────────────────
+ * 종전 이 파일은 `food_type` 문자열을 자체 키워드 규칙으로 **13분류**했다.
+ * 그런데 신호등 엔진(`nutritionTrafficLight.detectFoodCategory`)도 같은 입력을 **6분류**한다.
+ * 같은 응답이 서로 다른 답을 실어 나갔다(세션50 D5 로 등록, 실측):
+ *     조미김·김자반  엔진 dried      / 여기 general
+ *     간장(2종)      엔진 beverage   / 여기 fermented
+ * → 사용자는 「건조식품 예외를 적용했습니다」와 「일반 가공식품」을 **한 화면에서** 보게 된다.
+ *
+ * 실모집단으로 재면 규모가 더 컸다: HACCP 덤프 14,682건 중 **2,235건(15.2%)** 불일치.
+ * 그리고 사용자에게 «보이는» 모순이 두 종류 있었다:
+ *   ① 「주류는 평가 대상이 아닙니다」 안내와 «색이 칠해진 신호등»이 함께 나감 — 15종
+ *      (청주·막걸리·증류주는 여기만 주류로 봤고, `기타 수산물가공품` 은 여기만 원료식품으로 봤다)
+ *   ② 「100mL 기준으로 평가됩니다」 안내와 실제 사용 기준이 어긋남 — ml 포장 88건 · g 포장 10건
+ *
+ * ── 왜 A안(엔진 어휘로 접기)인가 ──────────────────────────────────────────
+ * 세 안을 실측 비교했다(`IP/세션51_측정보고서_2026-08-03.md` §3-2).
+ *   A 엔진 6분류로 접는다        색 변화 0 · 안내 문구 14~17종 소멸 · 되돌리기 쉬움
+ *   B 엔진을 13분류로 확장한다   ⚠ `juice` 를 음료로 잡으면 당류 임계가 5g→2.5g 로 «색이 바뀐다».
+ *                               `raw_ingredient` 는 신호등이 통째로 사라진다. ENUM 확장은 사실상 편도
+ *   C 명시적 매핑표             엔진 6 → 표시 13 은 1:다라 복원 불가. 복원하려면 판정기가 다시 2벌 = D5 재발
+ *
+ * A안의 유일한 비용은 「안내 문구 14~17종이 사라진다」였는데,
+ * **2026-08-06 실측에서 클라이언트가 `context.*` 를 한 곳도 읽지 않는 것이 확인됐다**
+ * (`web/src/lib/meokseon.ts` 의 응답 타입에 `context?: unknown` 으로 선언만 돼 있고 소비 0곳).
+ * → 그 비용이 사용자에게 보이지 않는다. A안을 택한다.
+ *
+ * ── 지금 이 파일이 하는 일 ────────────────────────────────────────────────
+ * 판정은 **엔진 한 곳**에서만 한다. 여기서는 그 결과에 «라벨과 안내 문구»를 붙이기만 한다.
+ *   ⚠ `detectFoodCategory` 를 여기서 호출하는 방식은 **쓰지 않는다.** 읽기 경계에 판정 호출이
+ *     하나 더 생기면 「같은 의미를 여러 경로에서 재해석」이 그대로 재발한다(세션48 근본원인).
+ *
+ * ⚠ 남은 것: `sauce`·`soup`·`nuts`·`dairy`·`whole_grain` 안내 문구가 사라졌다.
+ *   이 문구들은 임계값을 바꾸지 않는 «면책성 안내»였다(「양념류는 1회 사용량이 적으므로…」).
+ *   필요해지면 엔진에 분류를 추가하는 게 아니라, **표시 전용 축을 별도 키로** 두어야 한다
+ *   (측정보고서 §3-2 의 D안). 지금은 소비자가 없으므로 만들지 않는다.
  *
  * 스펙: docs/API_SPEC_MFRAS.md §2.2 + 부록 A
- * 영양 신호등 v1.3 §4 (한국 식문화 보정) 기반
- *
- * food_type 값(C005 식품유형명)을 13개 카테고리 중 하나로 분류하고,
- * 해당 카테고리에 맞는 맥락 안내 메시지를 함께 반환한다.
  */
 
-// 13개 카테고리 정의
+/**
+ * 엔진(`nutritionTrafficLight.detectFoodCategory`)이 낼 수 있는 값은 정확히 이 6종이다.
+ * 소스에서 `return '…'` 을 전수 확인했다(2026-08-06):
+ *   alcohol · supplement · fermented · beverage · dried · general
+ * ⚠ `raw_ingredient` 는 엔진의 `excludedCategories` 목록에는 있지만 `detectFoodCategory` 가
+ *   **낼 수 없다**(죽은 원소). 그래서 여기에도 두지 않는다.
+ */
 const CATEGORIES = {
-  general:           { label: '일반 가공식품',  excluded: false },
-  beverage:          { label: '음료',           excluded: false },
-  fermented:         { label: '발효식품',       excluded: false },
-  dried:             { label: '건조·농축식품',  excluded: false },
-  nuts:              { label: '견과류',         excluded: false },
-  dairy:             { label: '유제품',         excluded: false },
-  juice:             { label: '과일주스',       excluded: false },
-  whole_grain:       { label: '통곡물',         excluded: false },
-  sauce:             { label: '소스·양념류',    excluded: false },
-  soup:              { label: '국·찌개',        excluded: false },
-  alcohol:           { label: '주류',           excluded: true,  excludeReason: 'alcohol' },
-  health_functional: { label: '건강기능식품',   excluded: true,  excludeReason: 'health_functional' },
-  raw_ingredient:    { label: '원료식품',       excluded: true,  excludeReason: 'raw_ingredient' },
+  general:    { label: '일반 가공식품' },
+  beverage:   { label: '음료' },
+  fermented:  { label: '발효식품' },
+  dried:      { label: '건조·농축식품' },
+  alcohol:    { label: '주류' },
+  supplement: { label: '건강기능식품' },
 };
 
-// 키워드 → 카테고리 매핑 (우선순위 순서대로 매칭)
-// food_type 안에 키워드가 포함되면 해당 카테고리로 분류
-const KEYWORD_RULES = [
-  // 평가 대상 외 (가장 먼저 매칭)
-  { keywords: ['주류', '맥주', '소주', '청주', '와인', '위스키', '막걸리', '탁주', '발효주', '리큐르', '증류주'],
-    category: 'alcohol' },
-  { keywords: ['건강기능식품', '영양보충용', '비타민제', '무기질제'],
-    category: 'health_functional' },
-  { keywords: ['원료', '농산물', '축산물', '수산물', '생식', '신선식품'],
-    category: 'raw_ingredient' },
-
-  // 발효식품 (한국 식문화)
-  { keywords: ['김치', '깍두기', '장류', '된장', '고추장', '간장', '청국장', '쌈장', '젓갈', '식초', '발효유', '요거트', '낫토', '치즈'],
-    category: 'fermented' },
-
-  // 음료
-  { keywords: ['음료', '탄산음료', '주스', '두유', '차', '커피', '워터', '음용수', '액상차', '식혜', '식이음료', '에너지음료', '이온음료'],
-    category: 'beverage' },
-
-  // 건조·농축
-  { keywords: ['건조', '건과', '말린', '분말', '가루', '동결건조', '농축', '진액', '엑기스', '김 ', '김(', '미역', '다시마', '육포', '북어', '건어물'],
-    category: 'dried' },
-
-  // 견과류
-  { keywords: ['견과', '땅콩', '아몬드', '호두', '캐슈너트', '피스타치오', '잣', '해바라기씨', '호박씨'],
-    category: 'nuts' },
-
-  // 유제품 (발효유 제외 — 발효유는 위 fermented 에서 잡힘)
-  { keywords: ['우유', '유제품', '아이스크림', '연유', '분유'],
-    category: 'dairy' },
-
-  // 과일주스 (음료 중 천연과즙 — 일반 음료보다 우선되어야 하지만 키워드가 모호하면 음료로 처리됨)
-  { keywords: ['과·채주스', '과채주스', '천연과즙', '100%주스'],
-    category: 'juice' },
-
-  // 통곡물
-  { keywords: ['통밀', '현미', '귀리', '오트밀', '잡곡', '통곡'],
-    category: 'whole_grain' },
-
-  // 소스·양념
-  { keywords: ['소스', '드레싱', '마요네즈', '케첩', '머스타드', '카레', '양념', '복합조미식품', '향신료'],
-    category: 'sauce' },
-
-  // 국·찌개
-  { keywords: ['국', '찌개', '탕', '죽', '스프', '수프'],
-    category: 'soup' },
-];
-
-// 카테고리별 맥락 안내 메시지 (스펙 부록 A)
+/** 카테고리별 맥락 안내 (스펙 부록 A). 엔진 어휘와 1:1. */
 const CONTEXT_MESSAGES = {
   beverage: { id: 'beverage_per_100ml', icon: '🥤', title: '음료 안내',
     body: '100mL 기준으로 평가됩니다.', severity: 'info' },
@@ -81,81 +66,49 @@ const CONTEXT_MESSAGES = {
     body: '발효식품은 나트륨이 높으나 유산균과 식이섬유가 풍부합니다.', severity: 'info' },
   dried: { id: 'dried_per_serving_only', icon: '🍂', title: '건조식품 안내',
     body: '건조식품으로 100g당 수치가 높게 표시됩니다. 1회 제공량 기준만 적용했습니다.', severity: 'info' },
-  nuts: { id: 'nuts_healthy_fat', icon: '🥜', title: '견과류 맥락',
-    body: '지방이 높지만 불포화지방산이 풍부한 건강한 지방입니다.', severity: 'info' },
-  dairy: { id: 'dairy_calcium', icon: '🥛', title: '유제품 맥락',
-    body: '포화지방이 있으나 칼슘과 단백질의 주요 공급원입니다.', severity: 'info' },
-  juice: { id: 'juice_natural_sugar', icon: '🍹', title: '과일주스 맥락',
-    body: '천연 과당이 포함되어 당류가 높게 표시됩니다. 첨가당과 구분하세요.', severity: 'info' },
-  whole_grain: { id: 'whole_grain_fiber', icon: '🌾', title: '통곡물 맥락',
-    body: '탄수화물이 높지만 식이섬유와 미네랄이 풍부합니다.', severity: 'info' },
-  sauce: { id: 'sauce_small_serving', icon: '🥫', title: '양념류 안내',
-    body: '양념류는 1회 사용량이 적으므로 실제 섭취 나트륨은 표시보다 낮을 수 있습니다.', severity: 'info' },
-  soup: { id: 'soup_broth_amount', icon: '🍜', title: '국물류 안내',
-    body: '표시 나트륨은 국물 전량 기준입니다. 국물을 적게 드시면 줄일 수 있습니다.', severity: 'info' },
   alcohol: { id: 'alcohol_excluded', icon: '🍺', title: '평가 대상 외',
     body: '주류는 영양 신호등 평가 대상이 아닙니다.', severity: 'info' },
-  health_functional: { id: 'health_functional_excluded', icon: '💊', title: '평가 대상 외',
+  supplement: { id: 'supplement_excluded', icon: '💊', title: '평가 대상 외',
     body: '건강기능식품은 별도 기준이 적용됩니다.', severity: 'info' },
-  raw_ingredient: { id: 'raw_excluded', icon: '🥩', title: '평가 대상 외',
-    body: '미가공 원료식품은 영양 신호등을 적용하지 않습니다.', severity: 'info' },
 };
 
 /**
- * food_type 문자열 → context 객체 (스펙 §2.2 형태)
+ * 신호등 결과 → context 객체 (스펙 §2.2 형태)
  *
- * ★★★ 세션50 D2 — **이 함수는 이제 「건조식품인가」·「평가 대상인가」를 판정하지 않는다.**
- *   종전에는 위 KEYWORD_RULES(13분류)로 `is_dried_exception` 을 **두 번째로** 판정했고,
- *   그 답이 엔진(`nutritionTrafficLight.detectFoodCategory`)과 갈렸다. 실측:
- *     조미김·김자반 → 엔진 dried=true / 여기 dried=false
- *     간장          → 엔진 beverage  / 여기 fermented
- *   그래서 **같은 바코드 응답**이 `traffic_light.is_dried_exception = true` 와
- *   `context.is_dried_exception = false` 를 동시에 실어 나갔다(OCR 의 sanity 이중 노출과 같은 형태).
- *   → 판정은 엔진 한 곳에서만 하고, 여기서는 그 결과를 **받아 쓴다.**
- *   ⚠ 대안(여기서 `detectFoodCategory` 를 호출)은 **쓰지 않는다.** 읽기 경계에 판정 호출이
- *     하나 더 생기면 「같은 의미를 여러 경로에서 재해석」이 그대로 재발한다(세션48 근본원인).
- *   ⚠ `category` · `category_label` · `messages` 는 계속 여기서 정한다. 엔진의 카테고리 어휘는
- *     6종(general/beverage/fermented/dried/alcohol/supplement)뿐이라 13분류 안내 문구를 만들 수 없다.
- *     남아 있는 두 어휘의 불일치는 대장에 **D5** 로 등록했다(tests/test_path_parity.js).
- *
- * @param {string|null} foodType - C005 식품유형명 (예: '스낵과자류', '김치류')
+ * @param {string|null} foodType - C005 식품유형명. ⚠ 이제 **분류에 쓰지 않는다.**
+ *   응답의 `detection_method` 를 정하는 데만 참고한다(원본 입력이 있었는지 여부).
  * @param {Object|null} [trafficLight] - `evaluateNutrition` 결과. 영양정보가 없어 판정을 못 했으면 null.
- * @returns {Object} context — { category, category_label, is_excluded, exclude_reason, is_dried_exception, is_beverage, detection_method, messages[] }
- *   ★ `is_excluded` · `exclude_reason` · `is_dried_exception` 은 **3-상태**다:
- *     `true`/`false` = 엔진이 판정했다 · **`null` = 판정 자체가 없다**(영양정보 없음).
- *     `false` 로 채우면 「건조식품이 아니다」·「평가 대상이다」라고 **없는 근거로 단정**하는 것이 된다.
+ * @returns {Object} context
+ *
+ * ★ 전 필드가 **3-상태**다: 값 = 엔진이 판정했다 · **`null` = 판정 자체가 없다.**
+ *   `false`/`'general'` 로 채우면 「건조식품이 아니다」·「일반 가공식품이다」라고
+ *   **없는 근거로 단정**하는 것이 된다. 신호등이 없으면 카테고리도 없다.
  */
 function getContext(foodType, trafficLight = null) {
-  const ft = (foodType || '').trim();
-  let category = 'general';
-  let detectionMethod = 'silent_fallback';
+  // ★ 카테고리는 엔진이 정한 것을 «그대로» 쓴다. 여기서 다시 분류하지 않는다.
+  const raw = trafficLight && trafficLight.food_category;
+  const category = (raw && CATEGORIES[raw]) ? raw : null;
 
-  if (ft) {
-    detectionMethod = 'c005_food_type';
-    for (const rule of KEYWORD_RULES) {
-      if (rule.keywords.some((kw) => ft.includes(kw))) {
-        category = rule.category;
-        break;
-      }
-    }
-  }
+  // ⚠ 엔진이 우리가 모르는 값을 낸 경우 — 조용히 general 로 접지 않는다.
+  //   어휘가 갈라진 것을 «모르는 채» 넘기는 것이 D5 를 만든 방식이었다.
+  const unknownCategory = !!raw && !CATEGORIES[raw];
 
-  const meta = CATEGORIES[category];
   const messages = [];
-  const msg = CONTEXT_MESSAGES[category];
-  if (msg) messages.push(msg);
+  if (category && CONTEXT_MESSAGES[category]) messages.push(CONTEXT_MESSAGES[category]);
 
   return {
     category,
-    category_label: meta.label,
-    // ── 아래 3키는 엔진 결과를 그대로 옮긴다. 여기서 판정하지 않는다(세션50 D2).
+    category_label: category ? CATEGORIES[category].label : null,
+    // ── 아래 키는 전부 엔진 결과를 그대로 옮긴다. 여기서 판정하지 않는다(세션50 D2 · 세션51 D5).
     is_excluded: trafficLight ? !!trafficLight.is_excluded : null,
     exclude_reason: trafficLight ? (trafficLight.exclude_reason || null) : null,
     is_dried_exception: trafficLight ? !!trafficLight.is_dried_exception : null,
-    // ⚠ is_beverage 는 아직 여기서 정한다. 엔진은 `food_category === 'beverage'` 로 같은 뜻을 내는데
-    //   두 답이 갈린다(간장: 엔진 beverage · 여기 fermented). 대장 **D5** 로 등록했다 — 세션50 미해결.
-    is_beverage: category === 'beverage' || category === 'juice',
-    detection_method: detectionMethod,
+    // ★ 세션51 — 종전에는 여기서 `category === 'beverage' || category === 'juice'` 로 «따로» 정했고
+    //   그래서 엔진과 갈렸다(간장: 엔진 beverage · 여기 fermented. ml 포장 88건 불일치).
+    is_beverage: category ? category === 'beverage' : null,
+    detection_method: trafficLight
+      ? (unknownCategory ? 'engine_unknown_category' : 'engine_food_category')
+      : (foodType ? 'no_evaluation' : 'no_evaluation_no_food_type'),
     messages,
   };
 }

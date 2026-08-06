@@ -336,17 +336,24 @@ FIXTURES.push(
  *         값이 두 번 계산될 수 없으므로 모순이 **구조적으로 불가능**해진다.
  *         `getContext`(두 번째 판정기)도 건조·제외 판정을 그만두고 엔진 값을 받아 쓴다.
  *
- *   D5  `context.category` ≠ `traffic_light.food_category` — **판정기 2벌의 어휘가 다르다.**
- *       `src/utils/foodCategory.js` 는 13분류(KEYWORD_RULES), 엔진 `detectFoodCategory` 는 6분류다.
- *       실측: 조미김·김자반 → context 'general' / 엔진 'dried',  간장 → context 'fermented' / 엔진 'beverage'.
- *       → 같은 바코드 응답이 「건조식품 예외 적용」(traffic_light)과 「일반 가공식품」(context.category_label,
- *         그리고 그것으로 고르는 안내 문구 messages[])을 **동시에** 싣는다.
- *       ★ 세션50 에 boolean 3키(is_dried_exception·is_excluded·exclude_reason)는 엔진 값으로 통일했으나,
- *         `category`·`category_label`·`messages`·`is_beverage` 는 남았다. 엔진 어휘에 sauce·soup·juice·
- *         nuts·whole_grain·dairy 가 없어서 **어휘 통합 자체가 별도 설계 결정**이기 때문이다.
- *       고칠 때: 두 어휘를 하나로 합치거나, 엔진 카테고리 → 13분류의 **단방향 매핑**을 정의할 것.
- *         ⚠ `getContext` 안에서 `detectFoodCategory` 를 부르는 방식은 금지 — 읽기 경계에 판정이
- *           또 생겨 세션48 외부검증의 근본원인 진단(「여러 경로에서 재해석」)이 그대로 재발한다.
+ *   D5  ✅ **세션51 해결.** (기록 보존)
+ *       결함: `src/utils/foodCategory.js` 가 `food_type` 을 자체 13분류(KEYWORD_RULES)했고,
+ *       엔진 `detectFoodCategory` 는 6분류였다. 같은 응답이 서로 다른 답을 실었다.
+ *         실측: 조미김·김자반 → context 'general' / 엔진 'dried'
+ *               간장(2종)    → context 'fermented' / 엔진 'beverage'
+ *         픽스처 5건 · 실모집단(HACCP 덤프 14,682) **2,235건(15.2%)**.
+ *       사용자에게 보이던 모순 2종:
+ *         ① 「주류는 평가 대상이 아닙니다」 안내 + 색이 칠해진 신호등 — 15종
+ *         ② 「100mL 기준으로 평가됩니다」 안내 ↔ 실제 사용 기준 — ml 포장 88건 · g 포장 10건
+ *       수정(A안): `getContext` 가 분류를 그만두고 `trafficLight.food_category` 를 그대로 쓴다.
+ *         카테고리 어휘를 엔진 6종(general·beverage·fermented·dried·alcohol·supplement)으로 접었다.
+ *         비용: sauce·soup·nuts·dairy·whole_grain 안내 문구 소멸(14~17종).
+ *         근거: **클라이언트가 `context.*` 를 한 곳도 읽지 않는다**(2026-08-06 `web/` 실측) —
+ *               사용자에게 보이지 않는 비용이다.
+ *         ⚠ B안(엔진을 13분류로 확장)은 기각했다 — `juice` 를 음료로 잡으면 당류 임계가
+ *           5g→2.5g 로 **색이 바뀌고**, `raw_ingredient` 는 신호등이 통째로 사라진다.
+ *         ⚠ `getContext` 안에서 `detectFoodCategory` 를 부르는 방식은 여전히 금지 — 읽기 경계에
+ *           판정이 또 생기면 세션48 근본원인 진단(「여러 경로에서 재해석」)이 그대로 재발한다.
  *
  *   D3  ✅ **세션49 해결.** (기록 보존)
  *       결함: 조회 경로가 pg NUMERIC 을 **문자열 그대로** 엔진에 넘겼다.
@@ -1302,7 +1309,11 @@ async function main() {
       assert.strictEqual(c2.is_excluded, false);
     });
 
-    await t('★★ D5 — context.category 와 traffic_light.food_category 가 아직 갈린다 (미해결 · 신규 등록)', () => {
+    // ── D5 해소 (세션51) — 대장에서 내리고 «지키는» 단정으로 바꿨다 ──────────────
+    //   종전: context 가 food_type 을 자체 13분류 → 엔진 6분류와 갈렸다.
+    //         조미김·김자반 general↔dried · 간장 fermented↔beverage (픽스처 5건, 실모집단 2,235건)
+    //   지금: utils/foodCategory.js 가 분류를 그만두고 엔진 값을 받아 쓴다(A안).
+    await t('★★★ D5 — context.category 가 traffic_light.food_category 와 «항상» 같다', () => {
       const diffs = [];
       for (const f of FIXTURES) {
         const b = raw[f.id].bar;
@@ -1311,14 +1322,41 @@ async function main() {
           diffs.push(`${f.id}(${f.food_type}): context=${b.context.category} ≠ engine=${b.traffic_light.food_category}`);
         }
       }
-      if (diffs.length === 0) {
-        throw new Error(
-          '[고쳐졌다] 두 판정기의 카테고리 어휘가 이제 일치한다.\n'
-          + '      → 이 테스트를 지우고 대장의 D5 항목도 함께 지울 것.');
+      assert.strictEqual(diffs.length, 0,
+        `\n    ${diffs.join('\n    ')}\n`
+        + '    → utils/foodCategory.js 가 다시 자체 분류를 시작했다. 엔진 값을 그대로 옮겨야 한다.');
+    });
+
+    await t('★★ D5 — is_beverage 도 엔진 카테고리에서 파생된다 (ml 포장 88건이 갈리던 축)', () => {
+      const bad = [];
+      for (const f of FIXTURES) {
+        const b = raw[f.id].bar;
+        if (!b.context || !b.traffic_light) continue;
+        const expectBev = b.traffic_light.food_category === 'beverage';
+        if (b.context.is_beverage !== expectBev) {
+          bad.push(`${f.id}: context.is_beverage=${b.context.is_beverage} ≠ (engine==='beverage')=${expectBev}`);
+        }
       }
-      known('barcode', 'context.category ↔ traffic_light.food_category',
-        `D5 · 판정기 2벌의 어휘 불일치 ${diffs.length}건 — ${diffs.join(' / ')} `
-        + '→ 「건조식품 예외 적용」과 「일반 가공식품」 안내가 같은 응답에 함께 나간다');
+      assert.strictEqual(bad.length, 0,
+        `\n    ${bad.join('\n    ')}\n`
+        + '    → 「100mL 기준으로 평가됩니다」 안내와 실제 사용 기준이 어긋난다.');
+    });
+
+    await t('★ D5 — 판정이 없으면 category 도 null 이다 (없는 근거로 「일반 가공식품」이라 하지 않는다)', () => {
+      const { getContext } = require('../src/utils/foodCategory');
+      const c = getContext('김자반', null);
+      assert.strictEqual(c.category, null, '신호등이 없는데 카테고리를 단정했다');
+      assert.strictEqual(c.category_label, null);
+      assert.strictEqual(c.is_beverage, null, 'null 이어야 한다 — false 는 「음료가 아니다」라는 단정이다');
+      assert.deepStrictEqual(c.messages, [], '근거 없는 맥락 안내를 붙이지 않는다');
+    });
+
+    await t('★ D5 — 엔진이 모르는 카테고리를 내면 조용히 general 로 접지 않는다', () => {
+      const { getContext } = require('../src/utils/foodCategory');
+      const c = getContext('무엇', { food_category: 'nuts', is_excluded: false, is_dried_exception: false });
+      assert.strictEqual(c.category, null, '어휘가 갈라진 것을 general 로 덮으면 D5 가 조용히 재발한다');
+      assert.strictEqual(c.detection_method, 'engine_unknown_category',
+        '모르는 값을 받았다는 사실이 응답에 남아야 한다');
     });
   }
 

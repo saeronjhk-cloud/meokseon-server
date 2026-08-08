@@ -23,6 +23,8 @@ const db = require('../config/database');
 const logger = require('../config/logger');
 // ★ 세션46 치명1 — 쓰기 경로에도 컬럼 가드가 필요하다. 판정 로직을 두 곳에 적지 않는다.
 const { hasEvidenceLevelColumn } = require('../models/productModel');
+// ★★★ 세션55 — 쓰기 경로 정규화. 아래 `canonicalizeAllergenName` 주석에 근거를 적었다.
+const { normalizeAllergenNames } = require('./allergenName');
 
 // ====================================================================
 // 1. 필드별 병합 알고리즘 (순수 함수 — 테스트 가능)
@@ -118,6 +120,41 @@ function majorityIngredients(listOfLists, options = {}) {
 const ALLERGEN_LEVEL_RANK = { may_contain: 1, inferred: 2, contains: 3 };
 const ALLERGEN_LEVEL_DEFAULT = 'contains';
 
+/**
+ * ★★★ 세션55 — 알레르겐 이름을 «DB 에 쓰기 전에» 19종 정본으로 바꾼다.
+ *
+ * 왜 필요했나 (2026-08-08 실측):
+ *   `product_allergens.allergen_name` 에 쓰는 경로에 정규화가 **한 곳도 없었다.**
+ *   `grep -a "normalizeAllergen" src/services/mergeService.js src/services/crowdsourceService.js` → 0건.
+ *   정규화는 **읽기 시점**(`productModel.getAllergens`)에만 있었다. 그래서:
+ *     ① 같은 알레르겐이 여러 표기로 저장됐다(2026-07-31 실측 5,649행 중 비정본 705행 = 12.5%).
+ *     ② UNIQUE 인덱스가 `(product_id, allergen_name)` 이라(`000_baseline.sql:360`)
+ *        `난류` 행과 `난류(가금류)` 행은 **다른 키**다. `ON CONFLICT` 가 안 걸려 중복 행이 쌓인다.
+ *     ③ `scripts/76-normalize-allergen-names.js` 로 청소해도 **다음 제보에 재오염**된다.
+ *        76 번은 청소일 뿐 원인 제거가 아니었다.
+ *
+ * ⚠ 정규화에 «붙지 않는» 이름은 **버리지 않고 원문 그대로 통과시킨다.**
+ *   버리면 모르는 알레르겐 정보가 사라진다 — 과소경고다. 이 저장소가 세션44 이후 일관되게
+ *   과잉경고보다 과소경고를 더 위험하게 다뤄 온 이유와 같다(`ocrRoutes.js:390` 도 같은 판단).
+ *   오염의 실제 원인은 `난류` 같은 **별칭**이고, 별칭은 정규화가 붙는다.
+ *
+ * ⚠ 이 함수는 등급(level)을 만들지 않는다. 등급은 `levelsFromV2` 소관이다.
+ */
+function canonicalizeAllergenName(raw) {
+  if (typeof raw !== 'string') return [];
+  const v = raw.trim();
+  if (!v) return [];
+  let hits = [];
+  try {
+    hits = normalizeAllergenNames(v) || [];
+  } catch (e) {
+    // 정규화기가 죽어도 병합 전체를 죽이지 않는다 — 원문으로 진행한다.
+    return [v];
+  }
+  const names = hits.map((h) => h && h.name).filter(Boolean);
+  return names.length ? [...new Set(names)] : [v];
+}
+
 function strongerLevel(a, b) {
   const ra = ALLERGEN_LEVEL_RANK[a] || 0;
   const rb = ALLERGEN_LEVEL_RANK[b] || 0;
@@ -170,20 +207,26 @@ function unionAllergens(listOfLists, listOfV2 = []) {
     // v2 에만 있고 flat 에 없는 이름도 채택한다.
     // ★ 세션44 가 flat 에서 혼입 항목을 제거했으므로, 이 합집합이 없으면
     //   혼입 정보가 DB 에 영원히 도달하지 못한다(§6-2 가 풀려던 문제 그 자체).
-    const names = new Set();
+    // ★★★ 세션55 — 여기서 «정본화» 한다. 이름 하나가 여러 정본으로 갈릴 수 있으므로 Map 이다.
+    const names = new Map();   // 정본 이름 → 등급
+    const put = (raw, level) => {
+      for (const c of canonicalizeAllergenName(raw)) {
+        names.set(c, strongerLevel(names.get(c), level));
+      }
+    };
     if (Array.isArray(list)) {
       for (const a of list) {
         if (typeof a !== 'string') continue;
         const v = a.trim();
-        if (v) names.add(v);
+        if (v) put(v, v2Levels.get(v) || ALLERGEN_LEVEL_DEFAULT);
       }
     }
-    for (const n of v2Levels.keys()) names.add(n);
+    for (const [n, lv] of v2Levels) put(n, lv || ALLERGEN_LEVEL_DEFAULT);
     if (names.size === 0) continue;
 
-    for (const v of names) {
+    for (const [v, lv] of names) {
       counts.set(v, (counts.get(v) || 0) + 1);
-      levels.set(v, strongerLevel(levels.get(v), v2Levels.get(v) || ALLERGEN_LEVEL_DEFAULT));
+      levels.set(v, strongerLevel(levels.get(v), lv));
     }
   }
   return [...counts.entries()].map(([name, count]) => ({
@@ -642,6 +685,8 @@ module.exports = {
   // 세션45: 알레르기 등급 (테스트가 서열 규칙을 직접 고정한다)
   levelsFromV2,
   strongerLevel,
+  // 세션55: 쓰기 경로 정본화 (회귀가 이 함수를 «직접» 부른다 — 로직을 재현하지 않게)
+  canonicalizeAllergenName,
 
   // 상수
   AUTO_VERIFY_DISTINCT_DEVICES,

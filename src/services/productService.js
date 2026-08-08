@@ -262,9 +262,18 @@ async function getProductWithTrafficLight(barcode) {
   //   실패할 수 있다. 그때 예외가 그대로 올라가면 **영양·신호등까지 통째로 500** 이 된다.
   //   알레르기를 못 읽은 것과 제품 정보를 못 주는 것은 심각도가 다르다.
   //   ★ 실패 시 `null` 이다. 빈 배열이 아니다 — 아래 buildAllergens 주석의 이유와 같다.
+  //
+  // ★★★ 세션54 A2 — 「정규화가 버린 행 수」를 함께 받는다.
+  //   `getAllergens` 는 19종에 못 붙는 이름을 응답 직전에 버린다(세션47). 버린 사실을 모르면
+  //   아래 `allergens_flat_complete` 가 「flat 이 전부다」를 그대로 단정한다.
+  //   ⚠ `buildAllergens` 의 반환 형태 `{flat, v2, collected}` 는 **바꾸지 않았다.**
+  //     회귀가 그 키 집합을 정확히 고정하고 있고(tests/test_allergen_name_normalize.js §6),
+  //     소실 수는 `buildAllergens` 가 받는 행에는 이미 남아 있지 않아서
+  //     그 함수 안에서는 셀 수 없다(정규화는 model 단계에서 끝난다).
   let allergens = null;
+  const allergenStats = { dropped: 0 };
   try {
-    allergens = buildAllergens(await productModel.getAllergens(product.product_id));
+    allergens = buildAllergens(await productModel.getAllergens(product.product_id, allergenStats));
   } catch (e) {
     logger.error('알레르기 조회 실패 — 응답에서 알레르기를 생략한다(500 대신)', {
       barcode, productId: product.product_id, error: e.message,
@@ -353,8 +362,32 @@ async function getProductWithTrafficLight(barcode) {
     //   앱 계약: `allergens_available === true && allergens.length === 0` 이라도
     //     `allergens_flat_complete === false` 면 **「알레르기 없음」이라고 말하면 안 된다.**
     //     그 경우 allergens_v2.mayContain 을 읽어 「혼입 가능」으로 표시할 것.
+    //
+    // ★★★ 세션54 A1 — 미수집일 때 `true` 가 아니라 **null** 을 낸다.
+    //   고치기 전 식은 `!(collected) || mayContain.length === 0` 이었다.
+    //   `collected === false`(0행·이름 전멸·정규화 전멸·조회 실패)일 때 왼쪽 항이 참이라
+    //   **「flat 이 전부다」를 무조건 true 로 단정**했다. 읽은 것이 하나도 없는데
+    //   「flat 밖에 남은 경고가 없다」고 주장하는 것이라 근거가 아예 없다.
+    //   클라이언트가 이 값을 믿고 「알레르기 없음」을 쓰면 과소경고다.
+    //   → 바로 위 `allergens` · `allergens_v2` 가 미수집일 때 null 을 내는 것과
+    //     **같은 방향**으로 맞춘다. 세 키가 한 방향을 가리켜야 클라이언트가 헷갈리지 않는다.
+    //   ★ 구버전 앱 호환 — `null` 은 `undefined` 와 똑같이 falsy 다.
+    //     세션45 이전 이 키가 없던 시절의 `if (data.allergens_flat_complete)` 패턴이
+    //     그대로 동작한다(둘 다 else 로 간다). `false` 로 내도 falsy 이긴 하지만,
+    //     `false` 는 「수집했고 flat 밖에 경고가 있다」는 **다른 사실**을 뜻하므로 쓰지 않는다.
+    //
+    // ★★★ 세션54 A2 — 수집된 경우의 판정에 **정규화 소실(dropped)** 을 함께 본다.
+    //   고치기 전은 `mayContain.length === 0` 만 봤다. 그런데 `productModel.getAllergens` 가
+    //   19종에 못 붙는 이름을 응답 직전에 **조용히 버린다**(세션47). 예: '밀' + '카카오매스' 가
+    //   저장된 제품은 '밀' 하나만 남고, 그 상태로 `flat_complete: true` 를 냈다.
+    //   = 「우리가 읽지 못하고 버린 게 있는데 flat 밖에는 아무것도 없다」는 단정이다.
+    //   근거 규모: HACCP 적재 5,649행 중 705행(12.5%)이 19종 정본이 아니다(2026-07-31 실측).
+    //   → 버린 것이 하나라도 있으면 `false`(= 「단정하지 말라」)를 낸다.
+    //   ★ `false` 는 「알레르겐 없음」이 아니라 「flat 이 전부인지 모른다」는 뜻이다.
+    //     클라이언트는 이 값이 false 면 「알레르기 없음」이라고 쓰면 안 된다.
     allergens_flat_complete: !(allergens && allergens.collected)
-      || allergens.v2.mayContain.length === 0,
+      ? null
+      : (allergens.v2.mayContain.length === 0 && allergenStats.dropped === 0),
     context,
     sources: buildSources(trafficLight),
     data_freshness: buildFreshness(product),

@@ -151,6 +151,51 @@ function sanitizeUserAllergens(items) {
   return { accepted, rejected };
 }
 
+/**
+ * ★★★ 세션54 — 대장 결함 **D4** 해소. OCR 응답의 알레르기 «4키» 를 한 곳에서 만든다.
+ *
+ * 무엇이 결함이었나 (`tests/test_path_parity.js` D4)
+ *   바코드 경로는 `allergens` · `allergens_v2` · `allergens_available` · `allergens_flat_complete`
+ *   4키를 냈는데 **OCR 경로는 앞 2키만** 냈다.
+ *   → 「혼입만 있는 제품」이 OCR 화면에서 `allergens: []` 로 보이고, 화면이 그것을
+ *     「알레르기 없음」과 구별할 방법이 없다. **과소경고**다.
+ *     (같은 사고가 바코드 경로에서 세션46 에 실물로 확인됐다 — 짜왕 8801043032155.)
+ *
+ * ★ 왜 헬퍼로 빼는가 — OCR 응답 조립 지점이 **세 곳**이다(`/analyze` · `/multi-photo` 2곳).
+ *   세 곳에 같은 식을 적으면 다음 수정에서 한 곳이 빠진다. 세션39 `/multi-photo` ·
+ *   세션44 치명B 가 정확히 그 사고였다. 그래서 «한 함수»를 세 곳이 부른다.
+ *
+ * ★ 값의 의미 — 바코드 경로(`productService`)와 **같은 질문에 답한다**:
+ *   · `allergens_available`    이 응답에 알레르기 «판정» 이 실려 있는가.
+ *   · `allergens_flat_complete` flat 배열이 «전부» 인가. 혼입이 있으면 flat 에 안 들어가므로 false.
+ *   앱 계약: `available === true && allergens.length === 0` 이라도
+ *     `flat_complete === false` 면 「알레르기 없음」이라고 말하면 안 된다.
+ *
+ * ⚠⚠ OCR 경로에만 있는 한계 — `available === true` 는 **「우리가 읽은 텍스트를 분석했다」**는
+ *   뜻이지 **「라벨 전체를 봤다」**는 뜻이 아니다. 사진이 알레르기 표시줄을 안 담았거나 OCR 이
+ *   그 줄을 놓쳤으면, 알레르겐이 있는데도 `available: true, allergens: []` 가 나온다.
+ *   바코드 경로의 「DB 에 행이 없다」와는 성격이 다른 불확실성이며, **이 키로는 표현되지 않는다.**
+ *   → 그래서 앱의 알레르기 불완전성 고지(`web/src/components/AllergenCard.tsx` `IncompleteNotice`)는
+ *     OCR 결과에 대해 이 4키가 생겼다는 이유로 내리면 안 된다. 두 문제는 별개다.
+ *
+ * @param {string[]|null} flat  `analysis.allergens` (원본 flat)
+ * @param {object|null} v2raw   `analysis.allergens_v2`
+ * @returns {{allergens: string[]|null, allergens_v2: object|null,
+ *            allergens_available: boolean, allergens_flat_complete: (boolean|null)}}
+ */
+function buildAllergenKeys(flat, v2raw) {
+  const v2 = reconcileAllergens(flat, v2raw);
+  const available = !!v2;
+  return {
+    allergens: flattenAllergensV2(v2, flat),
+    allergens_v2: v2,
+    allergens_available: available,
+    // ★ 미판정일 때 `false` 가 아니라 **null** 이다 — 바코드 경로(A1, 세션54)와 같은 규칙.
+    //   `false` 는 「flat 이 전부가 아니다」라는 «판정» 인데, 판정 자체가 없으면 그렇게 말할 수 없다.
+    allergens_flat_complete: available ? v2.mayContain.length === 0 : null,
+  };
+}
+
 function judgeNutrition({ productData, nutrition, labelText, explicitServingSize = null }) {
   const nutritionData = {
     calories: nutrition.calories ?? null,
@@ -423,17 +468,12 @@ router.post('/analyze', upload.single('image'), async (req, res) => {
         // ★★ 세션45 중대4 — flat 을 **3분리에서 되짚어** 만든다.
         //   analysis.allergens 를 그대로 내보내면 혼입 항목이 flat 에 섞여(v1 폴백 경로)
         //   구버전 앱이 「직접 함유」로 붉게 표시한다. 바코드 조회 경로와 의미도 어긋난다.
-        allergens: flattenAllergensV2(
-          reconcileAllergens(analysis.allergens, analysis.allergens_v2),
-          analysis.allergens,
-        ),
-        // ★ 세션44 — `allergens_v2`(직접함유/혼입가능/추정 3분리)는 알레르기 #114 부터
-        //   analyzeText 안에서 **계산되고 있었지만 응답에 실리지 않았다**.
-        //   세션43 의 `context_messages` 와 똑같은 형태의 결함이다(서버는 만들고 아무도 안 쓴다).
-        //   flat `allergens` 만 내보내면 「혼입가능」을 「직접 함유」와 구별할 수 없다.
+        // ★ 세션44 — `allergens_v2`(직접함유/혼입가능/추정 3분리)는 #114 부터 analyzeText 안에서
+        //   **계산되고 있었지만 응답에 실리지 않았다**(서버는 만들고 아무도 안 쓴다).
         // ★★★ reconcileAllergens — flat 에만 있는 항목을 3분리에 합쳐 넣는다(치명3 최종 방어).
         //   클라이언트는 v2 가 있으면 flat 을 안 보므로, 여기서 합치지 않으면 화면에서 사라진다.
-        allergens_v2: reconcileAllergens(analysis.allergens, analysis.allergens_v2),
+        // ★★★ 세션54 D4 — 네 키를 «한 함수»가 만든다. 세 조립 지점이 갈라지지 않게 하기 위함이다.
+        ...buildAllergenKeys(analysis.allergens, analysis.allergens_v2),
         product_meta: analysis.product_meta,
       },
       traffic_light: trafficLight,
@@ -606,10 +646,9 @@ router.post(
         nutrition: merged.nutrition,
         // ★ 세션45 중대4 — 저장 경로(`user_input.allergens`)도 같은 규칙을 쓴다.
         //   여기만 raw flat 이면 혼입 항목이 「사용자가 직접 함유라고 했다」는 기록으로 DB 에 남는다.
-        allergens: flattenAllergensV2(
-          reconcileAllergens(merged.allergens, merged.allergens_v2),
-          merged.allergens,
-        ),
+        // ★ 세션54 D4 — 응답과 «같은 함수»에서 뽑는다. 저장 경로만 따로 계산하면
+        //   DB 에 남는 기록과 사용자가 본 화면이 갈라진다.
+        allergens: buildAllergenKeys(merged.allergens, merged.allergens_v2).allergens,
       };
       saveResult = await saveOcrContribution({
         barcode: productInfo?.barcode || req.body.barcode || null,
@@ -657,15 +696,11 @@ router.post(
           additives: merged.additives,
           additive_count: merged.additive_count,
           nutrition: merged.nutrition,
-          // ★★ 세션45 중대4 — /analyze 와 **문자 단위로 같은 방식**으로 flat 을 만든다.
+          // ★★ 세션45 중대4 — /analyze 와 **문자 단위로 같은 방식**으로 만든다.
           //   여기만 `merged.allergens` 를 그대로 두면 두 엔드포인트가 또 갈라진다
           //   (세션39·세션44 치명B 가 정확히 그 사고였다).
-          allergens: flattenAllergensV2(
-            reconcileAllergens(merged.allergens, merged.allergens_v2),
-            merged.allergens,
-          ),
-          // ★ 세션44: /analyze 와 동일 계약 + flat 병합(치명3)
-          allergens_v2: reconcileAllergens(merged.allergens, merged.allergens_v2),
+          // ★★★ 세션54 D4 — 이제 «같은 함수»를 부른다. 「같은 방식으로 적는다」는 지켜지지 않는다.
+          ...buildAllergenKeys(merged.allergens, merged.allergens_v2),
         },
         traffic_light: trafficLight,
         // ⚠ deprecated (세션50 D2) — `traffic_light.sanity_warnings` 와 **같은 배열**이다. null = 검사 못 함.
@@ -728,3 +763,13 @@ module.exports = router;
 module.exports.judgeNutrition = judgeNutrition;
 // ★ 세션47 경미4: 같은 이유로 노출한다. 테스트가 복사본을 만들면 두 벌이 갈라진다.
 module.exports.coerceUserAllergens = coerceUserAllergens;
+// ★★ 세션54 D4: 알레르기 4키 조립을 노출한다.
+//   종전 회귀는 이 배선을 **소스 문자열 정규식**으로 봤다(`allergens_v2: reconcileAllergens(X..., X...)`).
+//   그 검사는 리터럴이 헬퍼로 바뀌는 순간 «동작이 옳아도» 깨진다 — 리팩터링을 막는 족쇄였다.
+//   실제로 세션54 에 그렇게 깨졌다. 함수를 노출해 **실동작**으로 검사한다.
+module.exports.buildAllergenKeys = buildAllergenKeys;
+// ★ 세션55: 같은 이유로 노출한다. 이름 축 회귀(`tests/test_allergen_axis.js` §3)가
+//   「사용자 입력 ∪ OCR 출력」에서 같은 알레르겐이 두 이름으로 들어가지 않는지를 검사하는데,
+//   노출하지 않으면 테스트가 이 함수의 **로직을 재현**하게 된다 —
+//   그러면 정작 이 함수가 바뀌었을 때 회귀가 못 잡는다(세션45 주석과 같은 사고).
+module.exports.sanitizeUserAllergens = sanitizeUserAllergens;

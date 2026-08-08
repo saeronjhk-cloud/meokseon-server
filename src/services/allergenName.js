@@ -38,6 +38,15 @@
  */
 'use strict';
 
+// ★★★ 세션54 — 경계 가드(게·밀·버터·굴)의 **정본은 여기가 아니라 `allergenGuards.js`** 다.
+//   판별기 B·C(`ocrParser.js`)가 같은 함수를 부른다. 그래서 `게맛살`·`밀납`·`땅콩버터` 의
+//   판정이 세 경로에서 반드시 같다(외부검증 회신 쟁점4).
+//   종전에는 가드가 이 파일 «안»에 있어 B·C 가 볼 수 없었고, 그것이 P4(원재료표에 `밀` 단독)를
+//   한 세션 동안 막아 세운 직접 원인이었다.
+//   ⚠ 가드 규칙을 고칠 일이 생기면 **여기에 사본을 만들지 말고** 그 파일을 고칠 것.
+//     같은 규칙이 두 곳에 생기고 하나만 고쳐지는 것이 이 저장소가 반복해서 겪은 사고다.
+const guards = require('./allergenGuards');
+
 /** 식약처 의무표시 알레르기 유발물질 19종 — 표기까지 정본 그대로. */
 const CANONICAL_19 = Object.freeze([
   '난류(가금류)', '우유', '메밀', '땅콩', '대두', '밀', '고등어', '게', '새우',
@@ -180,36 +189,16 @@ const TYPO_EXACT = new Map(Object.entries({
  *     `붉은대게살`·`냉동꽃게` 는 이 코드를 한 번도 실행하지 않는다 — 커버리지로 세지 말 것.
  *     이 가드를 실제로 타는 입력은 `게`·`홍게*`·`황게`·`참게`·`털게`·`냉동게` 계열이다.
  */
-const CRAB_SUF = '(?:맛살|살|장|알|딱지|딱|내장|육수|육|가루|분말|엑기스|엑기|엑스|향|추출물|추출|농축액|농축|다리|껍질|껍데기)';
-const CRAB_SPECIES = '[꽃대홍털참청황]';                  // 게 종류 수식어 (닫힌 목록)
-const CRAB_STATE = '(?:냉동|냉장|자숙|손질|활|생|건)';     // 게 상태 수식어 (닫힌 목록)
-const CRAB_TOKEN_RULES = [
-  /^게$/,                                                 // A 단독         게 · (게)
-  new RegExp('^게' + CRAB_SUF),                           // B 머리+게부위   게살 · 게딱지 · 게엑기스분말
-  new RegExp(CRAB_SPECIES + '게(?:$|' + CRAB_SUF + ')'),  // C 종수식어+게   홍게 · 황게 · 홍게엑기스분말
-  new RegExp(CRAB_STATE + '게(?:$|' + CRAB_SUF + ')'),    // D 상태수식어+게 냉동게 · 자숙게살
-  new RegExp('게' + CRAB_SUF + '$'),                      // E 복합어 꼬리   양념게장 · 냉동게살
-];
-
-/** 문자열 `s` 의 위치 `idx` 가 속한 **연속 한글 토큰**을 잘라 낸다. */
-function hangulTokenAt(s, idx) {
-  const H = /[가-힣]/;
-  let a = idx;
-  let b = idx + 1;
-  while (a > 0 && H.test(s[a - 1])) a--;
-  while (b < s.length && H.test(s[b])) b++;
-  return s.slice(a, b);
-}
-
-/**
- * 함수형 가드. true = 이 지점을 「게」로 인정하지 않는다 (NEGATIVE_GUARD 계약과 같은 방향).
- * ⚠ 이미 소거된 구간은 `BLANK`(NUL)로 덮여 있어 한글이 아니다 — `hangulTokenAt` 의
- *   토큰 경계가 되므로 별칭 소거 순서와 충돌하지 않는다(실측: 게 이외 18종 회귀 0건).
- */
-function crabTokenReject(scan, idx) {
-  const t = hangulTokenAt(scan, idx);
-  return !CRAB_TOKEN_RULES.some((re) => re.test(t));
-}
+// ★★★ 세션54 — 위 설계에 따른 «구현»은 `allergenGuards.js` 의 `crabAccept` 로 옮겼다.
+//   판별기 B·C 도 같은 함수를 쓴다. 규칙 본문·목록은 그 파일에 있다.
+//
+// ★★★ 제이 결정 (2026-08-07, 세션54) — 위 「정책 결정 (제이, 세션50)」 문단은 **폐기됐다.**
+//   세션50 은 `게맛살`·`게향` 을 둘 다 「게」로 판정하기로 하고 `맛살`·`향` 을 CRAB_SUF 에 넣었다.
+//   세션54 에 제이가 그 판단을 직접 뒤집었다: 「이전에 오판이었어. 게맛살에는 게가 들어가지 않아.」
+//   (`게향` 도 같이 내림 — 실측 50건이 전부 「합성착향료」 표기였다.)
+//   → `맛살`·`향` 은 `allergenGuards.js` 의 CRAB_SUF 에서 **제거**됐다.
+//   ⚠ 세션50 주석의 「오탐으로 오해해 지우지 말 것」은 그 시점의 근거이며,
+//     지금은 제이의 상위 결정으로 대체됐다. 되돌리려면 제이에게 다시 물을 것.
 
 /* ═══════════════════════════════════════════════════════════════════════════
  * 밀 경계 가드 — 세션53 (제이 결정 2026-08-06)
@@ -248,112 +237,16 @@ function crabTokenReject(scan, idx) {
  *     ⚠ 이 조건을 지우면 둘 중 하나가 반드시 되살아난다. 테스트가 둘 다 지키고 있다.
  * ═══════════════════════════════════════════════════════════════════════════ */
 
-/** 밀 수식어 — 이게 앞에 오면 진짜 밀이다. */
-const WHEAT_PRE = [
-  '통', '우리', '백', '참', '햇', '찰',          // 통밀·우리밀·백밀·참밀·햇밀·찰밀
-  '강력', '박력', '중력', '듀럼',                 // 제분 등급·품종
-  '발아', '볶은', '볶음', '찐', '탈지', '팽화', '알파', '정제', '전립', '무농약',  // 가공 상태
-  '호주산', '미국산', '국내산', '국산',           // 원산지 표기가 바로 앞에 붙는 라벨
-  '유기농',                                      // 유기농밀 (GT Y)
-  '그라함',                                      // 그라함밀 = graham flour (GT Y)
-];
-/** 밀 부위·가공형 — 이게 뒤에 오면 진짜 밀이다. */
-const WHEAT_SUF = [
-  '가루', '가류', '전분', '단백질', '단백', '글루텐', '그루텐',
-  '배아', '배유', '기울', '쌀', '브랜', '블랜', '식이섬유', '섬유소',
-  // ★★ 제이 결정 (2026-08-06): **밀순·밀싹은 알레르기 표시 대상이다.**
-  //   제이가 「밀순·밀싹은 곡립 전 단계라 글루텐이 없을 것 같은데 표시해야 하나」를 제기했고,
-  //   확인 후 **표시 대상으로 정리**하기로 확정했다. 아래를 근거로 남긴다:
-  //     · 밀 알레르기는 글루텐만이 아니라 알부민·글로불린 등 «밀 단백 전반»에 대한 반응이다.
-  //       글루텐이 없어도 알레르겐 단백이 남을 수 있으므로 「글루텐 없음 = 안전」은 성립하지 않는다.
-  //     · 시판 밀싹 제품은 곡립 혼입 가능성이 있다.
-  //     · 식약처는 「밀의 일종」(파로 등)을 밀로 표시하게 한다. 잎·순에 대한 «명시» 해석은
-  //       찾지 못했으나, 못 찾은 것을 예외의 근거로 쓰지 않는다.
-  //   ⚠ 이 결정을 뒤집으려면 아래 세 항목을 빼야 하고, 그러면 밀순분말·밀싹농축분말 등
-  //     GT 라벨 Y 8종이 «함께» 빠진다. 근거 없이 만지지 말 것.
-  '싹', '새싹', '순',
-  '분말', '분해', '분', '추출물', '추출', '농축액', '농축',
-  '발효', '유래', '플레이크', '후레이크', '떡', '시럽', '현미', '또띠아',
-  '함유', '포함', '식품', '식료품', '을', '를',
-  '튀밥',                    // 밀튀밥 (GT Y)
-  '효소',                    // 밀효소 (GT Y)
-  '조제전분', '제조전분',    // 밀조제전분·밀제조전분 (GT Y) — R 이 이걸로 시작해 '전분' 으로는 안 걸린다
-  '라구',                    // 밀라구 = 밀가루 등급명 (GT Y)
-  '백소맥', '황소맥',        // 밀백소맥뻥·밀황소맥뻥 (GT Y)
-];
-/** 비-밀 접두 — 이게 앞에 오면 곡물 밀이 아니다. ★항목마다 근거 필수. */
-const WHEAT_N_LEFT = [
-  '아', '이소아', '메틸아',  // 아밀로스·아밀라아제·이소아밀·메틸아밀 (amyl-)
-  '패', '훼',                // 패밀리·훼밀리 (family)
-  '당',                      // 당밀 (糖蜜 molasses)
-  // 호밀·통호밀 (rye). ★ 제이 결정 (2026-08-06): 「호밀이 글루텐을 포함하고 있더라도,
-  //   국내 법규가 우선이야. 국내에서는 호밀을 알러겐으로 표기하도록 하지 않고 있어.」
-  //   이 축은 식약처 「식품 등의 표시기준」 법정 19종을 판정한다. 글루텐 함유는 다른 질문이다.
-  '호', '통호',
-  '오트',                    // 오트밀 (oatmeal)
-  '콘',                      // 콘밀 (cornmeal)
-  '메', '모', '약모',        // 메밀(buckwheat)·모밀(표기 변형)·약모밀(어성초)
-  '비', '정', '친', '치',    // 비밀·정밀·친밀·치밀
-  '봉', '청',                // 봉밀(蜂蜜 꿀)·청밀 계열
-  '락토', '초유',            // 락토밀·초유밀 — 유(乳) 계열 성분명
-  // ★ 제이 결정 (2026-08-06): 「아기밀은 브랜드 이름으로 밀과 관련이 없어.」
-  //   실측 대상: `후디스아기밀순유기농`(GT N · 2회). 이 토큰은 우측 `순`(밀순=wheat sprout,
-  //   GT Y)에 걸려 밀로 인정되고 있었다. 좌측이 브랜드임을 알아야만 끊을 수 있다.
-  //   ⚠ 이 항목은 «브랜드»다 — 회신은 「브랜드명은 핵심 코드가 아니라 별도 데이터로,
-  //     추가 근거·최초 관측일·출처·재검토 상태를 달아서」 관리하라고 했다. 그 저장소가 아직 없다.
-  //     → `IP/OUTSTANDING_출시전_체크리스트.md` 에 「브랜드 예외 데이터 분리」로 올려 뒀다.
-  //     새 브랜드를 여기에 계속 쌓지 말 것. 하나 더 생기면 그때 데이터로 뺀다.
-  '아기',
-];
-/** 비-밀 접미 — 이게 뒤에 오면 곡물 밀이 아니다. ★항목마다 근거 필수. */
-const WHEAT_N_RIGHT = [
-  '크',                      // 밀크 (milk)
-  '크씨슬',                  // 밀크씨슬 (milk thistle) — ★2글자 이상이라 좌측 수식어를 이긴다
-  '납', '랍',                // 밀납·밀랍 (蜜蠟 beeswax) — 실측 4,829회, 최대 FP 원인이었다
-  '폐', '봉',                // 밀폐·밀봉
-  '도', '감', '당',          // 밀도·밀감(귤)·밀당
-  '리',                      // 밀리- (milli-, 밀리타리스 = 동충하초)
-  '웜',                      // 밀웜 (mealworm)
-  '링',                      // 밀링 (milling)
-  '키',                      // 밀키- (milky)
-  '자임', '락', '트',        // 밀자임(효소)·밀락·밀트(malt)
-];
+/* ★★★ 세션54 — 아래 목록 4개의 실체는 `allergenGuards.js` 로 이관됐다.
+ *   각 항목의 근거 주석도 그쪽에 그대로 옮겨 두었다. 여기서 다시 정의하지 말 것.
+ *   (이 자리에 사본을 만들면 테스트는 이 파일의 사본을 보고 런타임은 코어를 쓰는
+ *    «조용한 드리프트»가 생긴다 — 세션52 `AppEvent` 사고와 같은 구조다.) */
+const _WHEAT_LISTS_MOVED_TO = './allergenGuards';
 
-function _endsBest(s, list) { let b = null; for (const k of list) if (s.endsWith(k) && (!b || k.length > b.length)) b = k; return b; }
-function _startsBest(s, list) { let b = null; for (const k of list) if (s.startsWith(k) && (!b || k.length > b.length)) b = k; return b; }
-
-/** 토큰 `token` 의 `pos` 위치 `밀` 이 곡물 밀인가. true = 인정. */
-function wheatAccept(token, pos) {
-  const L = token.slice(0, pos);
-  const R = token.slice(pos + 1);
-  const nr = _startsBest(R, WHEAT_N_RIGHT);
-  const sf = _startsBest(R, WHEAT_SUF);
-  // ★ 구체적인(2글자 이상) 우측 부정 신호는 좌측 수식어를 이긴다. 위 주석의 「함정」 참조.
-  const nrDecisive = !!nr && nr.length >= 2 && (!sf || nr.length >= sf.length);
-  const pre = _endsBest(L, WHEAT_PRE);
-  const nl = _endsBest(L, WHEAT_N_LEFT);
-  if (pre && (!nl || pre.length >= nl.length) && !nrDecisive) return true;  // 밀 수식어 → 인정
-  if (nl) return false;                                                     // 비-밀 접두 → 거부(좌측 우선)
-  if (L === '' && R === '') return true;                                    // 단독 「밀」 → 인정
-  if (nr && (!sf || nr.length >= sf.length)) return false;                  // 비-밀 접미 → 거부
-  if (sf) return true;                                                      // 밀 부위 → 인정
-  return false;                                                             // ★ 모르면 거부
-}
-
-/**
- * 함수형 가드. true = 이 지점을 「밀」로 인정하지 않는다.
- * ⚠ 「모르면 거부」다. 알레르기 도메인의 기본값으로는 위험해 보이지만, 회신이 정리한 대로
- *   **알레르겐 증거가 확인된 뒤의 불확실성**과 **문자열에 `밀` 글자가 있을 뿐인 상태**는 다르다.
- *   후자에서 인정을 기본값으로 두면(현행) FP 530종·10,812회가 나오고,
- *   그 경고가 흔해지면 진짜 경고를 무시하게 된다(alarm fatigue).
- */
-function wheatTokenReject(scan, idx) {
-  const t = hangulTokenAt(scan, idx);
-  let a = idx;
-  const H = /[가-힣]/;
-  while (a > 0 && H.test(scan[a - 1])) a--;
-  return !wheatAccept(t, idx - a);
-}
+// ★★★ 세션54 — `wheatAccept` 와 목록 4개(WHEAT_PRE·WHEAT_SUF·WHEAT_N_LEFT·WHEAT_N_RIGHT)의
+//   실체는 `allergenGuards.js` 로 옮겼다. 이 파일은 아래 `module.exports` 에서 **다시 내보내기만** 한다
+//   (`tests/test_wheat_guard.js` 가 이 경로로 import 하므로 계약을 유지한다).
+//   판별기 B·C 도 이제 같은 `wheatAccept` 를 쓴다 — 그래서 P4(원재료표에 `밀` 단독)를 안전하게 넣을 수 있다.
 
 /**
  * 1글자(또는 오탐 위험) 별칭의 경계 가드.
@@ -368,11 +261,13 @@ function wheatTokenReject(scan, idx) {
  *   잃는다」는 **걱정만 맞고 대가를 재지 않은 판단이었다.** 가드 없는 현행은 GT 740종 중
  *   530종·10,812회를 밀로 오판했다. 지금 규칙은 `통밀크래커` 를 지키면서 그 530종을 없앤다.
  */
-const NEGATIVE_GUARD = {
-  '게': crabTokenReject,
-  '굴': /굴비/,
-  '밀': wheatTokenReject,
-};
+// ★★★ 세션54 — 등록부를 `allergenGuards.js` 에서 «그대로» 가져온다. 여기서 고르지 않는다.
+//   고르면(예: 게·밀만 쓰고 버터는 뺀다) A 와 B·C 가 다시 갈라진다. 그것이 쟁점4 의 원인이었다.
+//   ⚠ 값 형태가 세션53까지는 «함수 또는 정규식» 두 가지였다. 지금은 **전부 함수**다
+//     (`굴` 의 `/굴비/` 도 토큰 판정으로 옮겼다). 아래 호출부가 그 전제를 쓴다.
+const NEGATIVE_GUARD = Object.freeze(Object.fromEntries(
+  Object.keys(guards.TOKEN_GUARDS).map((kw) => [kw, (scan, idx) => guards.rejectAt(kw, scan, idx)]),
+));
 
 /**
  * 혼입(may_contain) 어휘.
@@ -429,28 +324,33 @@ function normalizeAllergenNames(raw) {
   const found = [];
   const seen = new Set();
   for (const { alias, canon } of ALIASES_SORTED) {
+    // ★★★ 세션54 — 탐색 시작점을 들고 다닌다. 종전에는 매번 `indexOf(alias)` 로 처음부터 찾았고,
+    //   그래서 «가드가 거부한 지점도 지워야만» 무한 루프를 피할 수 있었다.
+    //   그 지우기가 실제 결함을 만들었다 (GT 실측, 실데이터 8회):
+    //     `밀전분유래난소화성말토덱스트린` → 별칭 `분유`(2글자)가 「전«분유»래」에 걸린다.
+    //       · 가드가 그것을 거부하는 것까지는 맞다.
+    //       · 그런데 거부한 구간을 지워 버리면 토큰이 `밀전` 이 되고,
+    //         뒤이어 볼 `밀` 의 우측이 `전` 뿐이라 밀 부위(`전분`)로 안 걸린다 → **밀 소실**(과소경고).
+    //   → 거부는 «건너뛰기»여야 한다. 지우는 것은 «인정»했을 때만이다.
+    let from = 0;
     let idx;
-    while ((idx = scan.indexOf(alias)) !== -1) {
+    while ((idx = scan.indexOf(alias, from)) !== -1) {
       const guard = NEGATIVE_GUARD[alias];
-      if (guard) {
-        // 가드는 두 형태를 받는다. 어느 쪽이든 true 면 이 지점을 매칭하지 않는다.
-        //   · 함수   `(scan, idx)` — 매칭 지점이 속한 **한글 토큰 전체**를 보고 판정한다(게).
-        //   · 정규식 — 매칭 지점 **앞뒤 1글자 창**에 test 한다(굴).
-        // ⚠ 정정(세션50): 여기 있던 옛 주석 「가드는 매칭 지점 주변에 적용한다. 앞뒤 1글자를
-        //   함께 본다」는 **거짓이었다.** 옛 게 가드 `/게(?![살맛향추농가분엑])(?=[가-힣])/` 는
-        //   lookbehind 가 없어 앞 글자를 창에 **담기만 하고 판정에 쓰지 않았다.**
-        //   창에서 앞 1글자를 제거한 사본으로 합성 89건을 돌려 결과가 전건 동일함을 실측했다.
-        //   이 거짓 주석이 결함을 리뷰에서 통과시킨 직접 원인이다 — 주석엔 코드가 하는 일만 쓸 것.
-        const reject = (typeof guard === 'function')
-          ? guard(scan, idx)
-          : guard.test(scan.slice(Math.max(0, idx - 1), idx + alias.length + 1));
-        if (reject) {
-          // 이 지점은 건너뛰고 다음 등장 위치를 본다 (지우지 않으면 무한 루프가 된다)
-          scan = scan.slice(0, idx) + BLANK.repeat(alias.length) + scan.slice(idx + alias.length);
-          continue;
-        }
+      // 가드가 참이면 이 지점을 「그 알레르겐」으로 인정하지 않는다.
+      //   판정은 매칭 지점이 속한 **연속 한글 토큰 전체**로 한다(`allergenGuards.js`).
+      // ⚠ 정정(세션50): 여기 있던 옛 주석 「가드는 앞뒤 1글자를 함께 본다」는 **거짓이었다.**
+      //   옛 게 가드 `/게(?![살맛향추농가분엑])(?=[가-힣])/` 는 lookbehind 가 없어 앞 글자를
+      //   창에 **담기만 하고 판정에 쓰지 않았다.** 그 거짓 주석이 결함을 리뷰에서 통과시킨
+      //   직접 원인이다 — 주석엔 코드가 하는 일만 쓸 것.
+      // ★ 세션54: 값이 전부 함수라 형태 분기가 사라졌다.
+      if (guard && guard(scan, idx)) {
+        // ★ 거부 = 「이 지점은 그 알레르겐이 아니다」. **텍스트는 건드리지 않는다.**
+        //   다음 등장 위치부터 다시 본다(위 `from` 주석 참조).
+        from = idx + 1;
+        continue;
       }
       scan = scan.slice(0, idx) + BLANK.repeat(alias.length) + scan.slice(idx + alias.length);
+      from = idx + alias.length;
       if (!seen.has(canon)) { seen.add(canon); found.push({ name: canon, level }); }
     }
   }
@@ -494,12 +394,49 @@ function strongerLevel(a, b) {
  * @returns {Array<Object>}
  */
 function normalizeAllergenRows(rows) {
-  if (!Array.isArray(rows)) return [];
+  return normalizeAllergenRowsWithStats(rows).rows;
+}
+
+/**
+ * `normalizeAllergenRows` 와 **같은 정규화**를 하되, 소실 수를 함께 돌려준다.
+ *
+ * ★★★ 세션54 A2 — 왜 필요한가.
+ *   `normalizeAllergenRows` 는 19종에 하나도 못 붙는 행을 **흔적 없이 버린다.**
+ *   버린 뒤에도 응답이 `allergens_flat_complete: true`(= 「flat 이 전부다」)를 내면,
+ *   우리가 읽지 못하고 버린 경고가 있는데 「flat 밖에는 아무것도 없다」고 단정하는 것이다.
+ *   → 호출부가 그 수를 알 수 있어야 「단정하지 말라」(false)를 낼 수 있다.
+ *
+ * ★ `dropped` 가 세는 것 — 입력 배열의 원소 중 **정본 이름을 하나도 만들지 못한 것**의 수다.
+ *   구체적으로 두 가지가 여기에 들어간다:
+ *     ① `normalizeAllergenNames(r.allergen_name)` 가 빈 배열을 낸 행
+ *        (19종 별칭·오타표 어디에도 안 붙는 이름. 예: '카카오매스' · '정제소금')
+ *     ② 이름이 공백·null 이라 `preclean` 이 빈 문자열을 만든 행, 그리고 원소 자체가 falsy 인 것
+ *   ②를 함께 세는 근거(세션54 실측):
+ *     · 실행 중 `product_allergens` 에 쓰는 지점은 `mergeService` 한 곳뿐이고,
+ *       그 입력을 만드는 `unionAllergens` 가 `if (v) names.add(v)` 로 공백을 이미 버린다.
+ *     · `allergen_name` 은 `VARCHAR NOT NULL` 이라 NULL 이 들어갈 수 없다.
+ *     · HACCP 적재 경로의 `parseAllergy` 를 실제 덤프(scripts/output/haccp_dump.ndjson,
+ *       14,682줄 중 alg 보유 6,195건)에 그대로 돌려 이름 19,489건을 얻었는데
+ *       **공백 이름은 0건**이고 distinct 는 정확히 정본 19종이었다.
+ *     → 즉 ②는 실질적으로 발생하지 않는다. 세도 `false` 가 남발되지 않는다(비용 ≈ 0).
+ *       반대로 세지 않으면, 어쩌다 들어온 공백 행 하나를 「없었던 일」로 만들고
+ *       그 제품에 「flat 이 전부다」를 단정하게 된다(과소경고 방향).
+ *   ⚠ **중복 병합은 소실이 아니다.** '계란'+'난류' → `난류(가금류)` 1건은 두 행 모두
+ *     정본에 붙었으므로 `dropped` 는 0 이다. 「읽지 못한 것」만 센다.
+ *
+ * @param {Array<Object>} rows
+ * @returns {{rows: Array<Object>, dropped: number}}
+ *   `rows` 는 `normalizeAllergenRows` 가 돌려주던 것과 **완전히 같은 배열**이다.
+ */
+function normalizeAllergenRowsWithStats(rows) {
+  if (!Array.isArray(rows)) return { rows: [], dropped: 0 };
   const byName = new Map();
   const order = [];
+  let dropped = 0;
   for (const r of rows) {
-    if (!r) continue;
+    if (!r) { dropped += 1; continue; }
     const hits = normalizeAllergenNames(r.allergen_name);
+    if (hits.length === 0) dropped += 1;
     for (const hit of hits) {
       // hit.level 이 null 이면 기존 등급 유지. 혼입 어휘가 잡혔을 때만 격하한다.
       const lvl = hit.level || r.evidence_level || 'contains';
@@ -515,7 +452,7 @@ function normalizeAllergenRows(rows) {
       }
     }
   }
-  return order.map((n) => byName.get(n));
+  return { rows: order.map((n) => byName.get(n)), dropped };
 }
 
 module.exports = {
@@ -526,15 +463,29 @@ module.exports = {
   normalizeAllergenName,
   normalizeAllergenNames,
   normalizeAllergenRows,
+  // ★ 세션54 A2 — 소실 수까지 필요한 노출 경로(productModel.getAllergens)용.
+  //   `normalizeAllergenRows` 는 이 함수의 `.rows` 를 그대로 돌려주는 얇은 껍데기다.
+  //   기존 시그니처를 깨지 않으려고 함수를 나눴다 — 백필 스크립트가 배열을 그대로 쓴다.
+  normalizeAllergenRowsWithStats,
   isCanonicalAllergenName,
   strongerLevel,
   // ★ 세션53 — 밀 가드 목록을 노출한다. 테스트가 «각 항목이 실제로 한 번이라도 실행됐는지»
   //   를 세기 위해서다(외부검증 회신 쟁점1: 실행 표본 0이면 검증 완료가 아니라 UNEXERCISED).
   //   ⚠ 런타임 값으로 내보내는 이유 — 상수를 코드 안에만 두면 테스트가 대조할 방법이 없다.
   //     세션52 의 `AppEvent` 드리프트가 정확히 그 구조에서 났다.
-  WHEAT_PRE,
-  WHEAT_SUF,
-  WHEAT_N_LEFT,
-  WHEAT_N_RIGHT,
-  wheatAccept,
+  //   ★★ 세션54 — 실체는 `allergenGuards.js` 이고 여기서는 **다시 내보내기만** 한다.
+  //     사본이 아니라 «같은 객체»다. 그래서 테스트가 보는 목록과 런타임이 쓰는 목록이
+  //     갈라질 수 없다(위 AppEvent 드리프트의 재발 차단).
+  WHEAT_PRE: guards.WHEAT_PRE,
+  WHEAT_SUF: guards.WHEAT_SUF,
+  WHEAT_N_LEFT: guards.WHEAT_N_LEFT,
+  WHEAT_N_RIGHT: guards.WHEAT_N_RIGHT,
+  wheatAccept: guards.wheatAccept,
+  // ★ 세션54 신설 — 버터 2축 가드(제이 결정 2026-08-07). 근거는 `allergenGuards.js` 주석.
+  BUTTER_N_LEFT: guards.BUTTER_N_LEFT,
+  BUTTER_PRE: guards.BUTTER_PRE,
+  BUTTER_N_RIGHT: guards.BUTTER_N_RIGHT,
+  BUTTER_SUF: guards.BUTTER_SUF,
+  butterAccept: guards.butterAccept,
+  NEGATIVE_GUARD,
 };

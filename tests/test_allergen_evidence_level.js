@@ -534,11 +534,16 @@ async function main() {
   //   둘 다 이 프로젝트가 치명으로 규정한 「경고를 지우는 방향」이다.
   //   → `src/config/database` 를 pglite 로 갈아끼워 **정본 함수를 그대로 호출**한다.
 
+  // ★ 세션54 — §10 이 소스 문자열 검사를 버리고 **실호출 검사**로 바뀌면서 이 헬퍼가
+  //   블록 밖에서도 필요해졌다. 그래서 함수 선언을 바깥 변수 대입으로 바꿨다.
+  //   (내용은 그대로다 — 아래 정의 위치도 그대로 §6 블록 안이다.)
+  let withPgliteDb = null;
+
   if (PGlite) {
     const PGModule = require('@electric-sql/pglite');
 
     /** src/config/database 를 pglite 로 갈아끼우고 정본 모듈을 새로 로드한다. */
-    async function withPgliteDb(applyMigration020 = true) {
+    withPgliteDb = async function withPgliteDbImpl(applyMigration020 = true) {
       // ★ 세션47 — 인스턴스를 새로 띄우지 않고 재사용한다(acquireDb 가 스키마·데이터를 원복).
       const db = await acquireDb(PGModule.PGlite, applyMigration020);
       const origQuery = db.query.bind(db);   // 중대2 테스트가 query 를 갈아끼운다 → 원복용
@@ -596,7 +601,7 @@ async function main() {
           }
         },
       };
-    }
+    };
 
     // ★ mergeAndApply(productId) 는 **DB 에서 contributions 를 직접 읽는다.**
     //   그래서 배열을 인자로 넘길 수 없다 — 실제 행을 넣어야 정본 경로를 그대로 통과한다.
@@ -835,9 +840,20 @@ async function main() {
 
   await t('★★ 두 라우트가 flat 을 같은 함수로 만든다 (소스 검증 — 갈라지면 여기서 걸린다)', () => {
     const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'routes', 'ocrRoutes.js'), 'utf8');
-    const n = (src.match(/allergens:\s*flattenAllergensV2\(/g) || []).length;
-    // /analyze 응답 · /multi-photo 응답 · /multi-photo 저장(user_input) 3곳.
-    assert.strictEqual(n, 3, `flat 을 만드는 지점이 3곳이어야 한다 (현재 ${n}곳)`);
+    // ★★★ 세션54 D4 — 종전에는 `allergens: flattenAllergensV2(` 리터럴이 «3곳» 인지 셌다.
+    //   D4 수정으로 세 지점이 한 헬퍼(`buildAllergenKeys`)를 부르게 되면서,
+    //   **의도가 더 강하게 지켜졌는데도** 그 검사가 깨졌다. 리터럴이 아니라 의도를 검사한다.
+    //   ⚠ 이 파일에서 세션54 에 같은 이유로 고친 검사가 이것으로 두 번째다(§10 도 교체됐다).
+    //     「소스 문자열로 배선을 보는 검사」는 이 저장소에서 반복적으로 족쇄가 됐다 —
+    //     새로 쓸 때는 실호출을 우선할 것.
+    // /analyze 응답 · /multi-photo 응답 · /multi-photo 저장(user_input) 3곳 + 정의 1.
+    const n = (src.match(/buildAllergenKeys\(/g) || []).length;
+    assert.strictEqual(n, 4, `flat 을 만드는 지점이 정의1+사용3 이어야 한다 (현재 ${n}곳)`);
+    // ★ 그 헬퍼가 실제로 flat 규칙(혼입 제외)을 적용하는지 실호출로 본다 — 개수만 맞추면 통과하는 것 방지.
+    const { buildAllergenKeys } = require('../src/routes/ocrRoutes');
+    const out = buildAllergenKeys([], { contains: ['밀'], mayContain: ['대두'], inferred: [], evidence: [] });
+    assert.deepStrictEqual(out.allergens, ['밀'],
+      'flat 규칙이 깨졌다 — 혼입(대두)이 섞였거나 직접함유(밀)가 빠졌다');
     assert.ok(!/allergens:\s*analysis\.allergens,/.test(src), '/analyze 가 raw flat 을 그대로 낸다');
     assert.ok(!/allergens:\s*merged\.allergens,/.test(src), 'raw flat 을 그대로 내는 지점이 남아 있다');
   });
@@ -961,13 +977,52 @@ async function main() {
     //   실측: 전사 68건 중 8건(12%)이 이 클래스다. 세션46 배포로 **도달 가능해졌다.**
     // flat 에 혼입을 넣는 것은 세션44·45 가 옳게 거부했으므로(구버전이 붉게 표시한다)
     //   대신 **「flat 이 전부인가」를 명시 신호로** 낸다.
-    const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'services', 'productService.js'), 'utf8');
-    // ⚠ 주석에도 이 단어가 나온다. **응답 객체의 키**를 봐야 한다(줄머리 + 콜론).
-    //   뮤테이션 M-A 에서 그냥 `/allergens_flat_complete/` 는 주석 때문에 통과했다 — 거짓 초록.
-    assert.ok(/^\s*allergens_flat_complete:/m.test(src),
-      'flat 이 빈 채로 available=true 가 나가는데 그것을 알릴 **응답 키**가 없다 — 과소경고');
-    assert.ok(/^\s*allergens_flat_complete:[\s\S]{0,200}mayContain\.length === 0/m.test(src),
-      'allergens_flat_complete 가 mayContain 을 보지 않는다 — 신호가 실제 근거와 무관해진다');
+    // ★★★ 세션54 — 여기 있던 **소스 문자열 정규식 두 줄을 실호출 검사로 교체했다.**
+    //   지웠던 것:
+    //     /^\s*allergens_flat_complete:/m
+    //     /^\s*allergens_flat_complete:[\s\S]{0,200}mayContain\.length === 0/m
+    //   왜 지웠나 —
+    //     ① 무엇이 나오는지를 보지 않는다. 이 파일 맨 위(§0)와 test_allergen_contract.js 가
+    //        기록한 대로, `true || …mayContain.length === 0` 같은 뮤테이션이 이 정규식을 통과했다.
+    //     ② 구현 개선을 막는 족쇄였다. 키와 `mayContain.length === 0` 사이가 200자를 넘거나
+    //        판정을 헬퍼로 빼면 **동작이 옳아도** 빨개진다. 세션54 A2 가 그 판정에
+    //        `&& dropped === 0` 을 더할 때 실제로 걸릴 뻔했다.
+    //   무엇으로 바꿨나 — pglite 에 행을 심고 `getProductWithTrafficLight` 를 **실제로 불러**
+    //     같은 키가 상황에 따라 false 와 true 를 **둘 다** 내는지 본다.
+    //     ★ 두 방향을 함께 보는 것이 핵심이다. 한 방향만 보면 상수 반환 뮤테이션
+    //       (항상 true / 항상 false)이 절반은 통과한다.
+    //   ⚠ 「건너뜀」은 「통과」가 아니다. pglite 가 없으면 실패시킨다.
+    assert.ok(withPgliteDb,
+      'pglite 가 없어 응답 계약을 실행 검증할 수 없다 (npm i -D @electric-sql/pglite)');
+    const h = await withPgliteDb();
+    try {
+      const ins = (name, level) => h.db.query(
+        `INSERT INTO product_allergens (product_id, allergen_name, status, detected_via, evidence_level)
+         VALUES (1, $1, 'confirmed', 'haccp_api', $2)`, [name, level]);
+      await h.db.query(
+        `UPDATE products SET barcode = 'EVL0001', food_type = '과자' WHERE product_id = 1`);
+
+      // ① 혼입만 있는 제품 — flat 은 비지만 「알레르기 없음」이 아니다.
+      await ins('대두', 'may_contain');
+      const onlyMayRes = await h.svc.getProductWithTrafficLight('EVL0001');
+      assert.strictEqual(onlyMayRes.allergens_available, true,
+        '혼입 정보를 가진 제품이 「정보 없음」으로 나간다 — 경고가 통째로 사라진다');
+      assert.deepStrictEqual(onlyMayRes.allergens, [],
+        'flat 에 혼입이 섞였다 — 등급을 모르는 구버전 앱이 「직접 함유」로 붉게 표시한다');
+      assert.deepStrictEqual(onlyMayRes.allergens_v2.mayContain, ['대두']);
+      assert.strictEqual(onlyMayRes.allergens_flat_complete, false,
+        'flat 이 빈 채로 available=true 인데 flat_complete 가 false 가 아니다 — '
+        + '응답이 mayContain 을 보지 않는다. 클라이언트가 「알레르기 없음」이라고 쓴다(짜왕 사고)');
+
+      // ② 직접 함유만 있는 제품 — 같은 키가 true 도 낼 수 있어야 한다.
+      await h.db.query(`DELETE FROM product_allergens WHERE product_id = 1`);
+      await ins('밀', 'contains');
+      const containsRes = await h.svc.getProductWithTrafficLight('EVL0001');
+      assert.deepStrictEqual(containsRes.allergens, ['밀']);
+      assert.deepStrictEqual(containsRes.allergens_v2.mayContain, []);
+      assert.strictEqual(containsRes.allergens_flat_complete, true,
+        '혼입이 하나도 없는데 flat_complete 가 true 가 아니다 — 신호가 항상 false 라 무의미해진다');
+    } finally { h.restore(); }   // ★ 인스턴스는 공유 — 닫지 않는다
 
     // 동작 계약 — 세 상태가 서로 구분된다.
     const onlyMay = buildAllergens([{ allergen_name: '대두', evidence_level: 'may_contain' }]);

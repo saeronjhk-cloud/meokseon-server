@@ -5,7 +5,7 @@
 
 const db = require('../config/database');
 const { normalizeSearchQuery, isSearchable } = require('../utils/searchNormalize');
-const { normalizeAllergenRows } = require('../services/allergenName');
+const { normalizeAllergenRowsWithStats } = require('../services/allergenName');
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ★★★ 세션49 D3 — 읽기 경계에서 NUMERIC 을 숫자로 좁힌다.
@@ -378,15 +378,31 @@ function buildAllergenQuery(hasLevel) {
 //     (`grep -rn getAllergens src/` → productService.js:267 1곳)이므로 여기서 걸러도 노출 결과는 같다.
 //     ⚠ 다만 `collected` 판정이 `rows.length > 0` 이라 **여기서 거르면 collected 도 함께 내려간다.**
 //        판정 근거는 인수인계 §회귀보고에 적었다. 이 위치를 옮길 때 반드시 함께 볼 것.
-function normalizeRows(rows) {
-  return normalizeAllergenRows(rows);
+//
+// ★★★ 세션54 A2 — 「버린 행이 몇 개인가」를 호출부에 전달한다.
+//   `normalizeAllergenRows` 는 19종에 못 붙는 이름을 조용히 버린다. 버린 사실을 응답이
+//   모르면 `allergens_flat_complete: true`(= flat 이 전부다)를 그대로 내보내게 된다.
+//   ⚠ `getAllergens` 의 **반환값은 지금까지와 똑같이 배열**이다(2번째 인자는 선택).
+//     회귀 테스트·백필이 이 배열 형태를 그대로 쓴다. 그래서 반환 타입을 바꾸지 않고
+//     선택적 수집 객체(`stats`)로 곁가지 정보만 흘려보낸다.
+function normalizeRows(rows, stats) {
+  const r = normalizeAllergenRowsWithStats(rows);
+  if (stats) stats.dropped = r.dropped;
+  return r.rows;
 }
 
-async function getAllergens(productId) {
+/**
+ * @param {number|string} productId
+ * @param {{dropped?: number}} [stats] 넘기면 `stats.dropped` 에 **정규화로 사라진 원본 행 수**를
+ *   써 넣는다. 넘기지 않으면 아무 일도 하지 않는다(기존 호출부 그대로 동작).
+ *   ★ 조회가 throw 하면 이 함수도 throw 하므로 `stats` 는 손대지 않은 채 남는다.
+ * @returns {Promise<Array<Object>>} 정규화·병합된 행 배열 (형태 불변)
+ */
+async function getAllergens(productId, stats) {
   const hasLevel = await hasEvidenceLevelColumn();
   try {
     const result = await db.query(buildAllergenQuery(hasLevel), [productId]);
-    return normalizeRows(result.rows);
+    return normalizeRows(result.rows, stats);
   } catch (e) {
     // ★ 세션46 중대2-(c) — 캐시가 true 인데 컬럼이 사라진 경우(020 롤백).
     //   단방향 캐시라 방어가 없었고, 그대로 던지면 응답 전체가 500 이 된다(치명1 재발).
@@ -394,7 +410,7 @@ async function getAllergens(productId) {
     if (hasLevel && e && e.code === UNDEFINED_COLUMN) {
       _hasEvidenceLevel = null;
       const result = await db.query(buildAllergenQuery(false), [productId]);
-      return normalizeRows(result.rows);
+      return normalizeRows(result.rows, stats);
     }
     throw e;
   }

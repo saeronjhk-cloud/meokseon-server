@@ -40,7 +40,13 @@
         "contract_pass": 65,
         "contract_fail": 0,
         "known_gap_unresolved": 1,
-        "resolved": ["S-메밀-I1", "S-땅콩-I1", "S-대두-I2", "S-고등어-I1", "S-잣-I1"],
+        "resolved": [
+          "S-메밀-I1",
+          "S-땅콩-I1",
+          "S-대두-I2",
+          "S-고등어-I1",
+          "S-잣-I1"
+        ],
         "still_open": "S-밀-I2 — ★P1 범위 아님. P4(밀 가드) 대상으로 이관",
         "bonus_found": "S-조개류-I2 — 2단계 폴백이 1글자를 건너뛰어 '굴' 이 원재료 경로에서 죽어 있었다. 회신에 없던 FN 이고 같은 수정으로 해소됐다.",
         "server_regression": "test_allergen_declared 66/66 · test_path_parity 59/59 · test_ocr_parser 43/43 · test_parse_allergy 40/40 · test_parser_parity 27/27 · test_allergen_contract 22/22 · 그 밖 전량 EXIT 0"
@@ -56,110 +62,804 @@
         "P-게-게맛살": "B=false C=false",
         "P-우유-유당": "B=false C=false"
       }
+    },
+    "decisions_2026-08-07_session54": {
+      "note": "★ 이 승격의 근거는 «구현 결과» 가 아니라 제이의 도메인 결정이다. 결정이 먼저 있었고 구현이 뒤따랐다. 되돌리려면 제이에게 다시 물을 것.",
+      "promoted": [
+        "P-게-게맛살",
+        "P-대두-레시틴",
+        "P-밀-오트밀",
+        "P-밀-호밀",
+        "P-쇠고기-젤라틴",
+        "P-우유-땅콩버터"
+      ],
+      "still_pending": [
+        "P-메밀-모밀 (모밀을 메밀 별칭으로 추가할지)",
+        "P-난류-날치알 (어란을 법정 난류로 볼지 — 현행 미검출이 회신 권고와 일치)",
+        "P-우유-유당 (contains 가 아니라 우유 유래 «추정» 으로 분리할지)"
+      ]
     }
   },
-
   "cases": [
-    { "id": "S-난류-D1", "allergen": "난류", "path": "declared", "text": "알레르기 유발물질: 난류, 우유", "expect": true, "status": "contract", "why": "법정 명시 표기 그대로" },
-    { "id": "S-난류-I1", "allergen": "난류", "path": "ingredients", "text": "원재료명: 밀가루, 계란, 설탕", "expect": true, "status": "contract", "why": "계란은 난류의 확정 원재료 표기" },
-    { "id": "S-난류-I2", "allergen": "난류", "path": "ingredients", "text": "원재료명: 정제수, 알로에겔, 구연산", "expect": false, "status": "contract", "why": "'알로에' 의 '알' 이 걸리면 안 된다" },
-
-    { "id": "S-우유-D1", "allergen": "우유", "path": "declared", "text": "알레르기 유발물질: 우유", "expect": true, "status": "contract", "why": "명시" },
-    { "id": "S-우유-I1", "allergen": "우유", "path": "ingredients", "text": "원재료명: 탈지분유, 정제소금", "expect": true, "status": "contract", "why": "탈지분유는 우유 유래 확정" },
-    { "id": "S-우유-I2", "allergen": "우유", "path": "ingredients", "text": "원재료명: 대두유, 정제수, 향료", "expect": false, "status": "contract", "why": "우유 근거 없음" },
-
-    { "id": "S-메밀-D1", "allergen": "메밀", "path": "declared", "text": "알레르기 유발물질: 메밀", "expect": true, "status": "contract", "why": "명시" },
-    { "id": "S-메밀-I1", "allergen": "메밀", "path": "ingredients", "text": "원재료명: 메밀가루 80%, 정제소금", "expect": true, "status": "contract", "why": "★ 2026-08-06 P1 해소(known_gap → contract). 소비 매칭 제거로 메밀이 살아났다. 종전엔 '밀가루'(3자)가 먼저 먹고 지워 메밀이 사라졌다." },
-    { "id": "S-메밀-I2", "allergen": "메밀", "path": "ingredients", "text": "원재료명: 밀가루, 정제소금", "expect": false, "status": "contract", "why": "'밀가루' 만으로 메밀을 만들면 안 된다 (metamorphic 짝: S-메밀-I1 에서 '메' 만 뺀 것)" },
-
-    { "id": "S-땅콩-D1", "allergen": "땅콩", "path": "declared", "text": "알레르기 유발물질: 땅콩", "expect": true, "status": "contract", "why": "명시" },
-    { "id": "S-땅콩-I1", "allergen": "땅콩", "path": "ingredients", "text": "원재료명: 땅콩기름, 설탕", "expect": true, "status": "contract", "why": "★ 2026-08-06 P1 해소(known_gap → contract). 종전엔 '콩기름'(3자)이 먼저 먹고 지워 땅콩이 사라졌다." },
-    { "id": "S-땅콩-I2", "allergen": "땅콩", "path": "ingredients", "text": "원재료명: 대두유, 콩기름, 설탕", "expect": false, "status": "contract", "why": "콩기름만으로 땅콩을 만들면 안 된다" },
-
-    { "id": "S-대두-D1", "allergen": "대두", "path": "declared", "text": "알레르기 유발물질: 대두, 밀", "expect": true, "status": "contract", "why": "명시" },
-    { "id": "S-대두-I1", "allergen": "대두", "path": "ingredients", "text": "원재료명: 대두분말, 정제수", "expect": true, "status": "contract", "why": "대두 직접 표기" },
-    { "id": "S-대두-I2", "allergen": "대두", "path": "ingredients", "text": "원재료명: 땅콩기름, 설탕", "expect": false, "status": "contract", "why": "★ 2026-08-06 P1 해소(known_gap → contract). KEYWORD_LEFT_NEGATIVE['콩기름']=['땅'] 로 차단. ⚠ 이 칸은 구현 «전» 에 expect:false 로 못 박아 커밋했다(f5e1d9a) — 세션44 회귀의 기대값에서 '대두' 를 뺀 근거가 이것이다. 사후에 라벨을 맞춘 것이 아니다." },
-    { "id": "S-대두-I3", "allergen": "대두", "path": "ingredients", "text": "원재료명: 콩기름, 설탕", "expect": true, "status": "contract", "why": "★ 부정 규칙의 양성 대조군. 이 칸이 없으면 규칙이 너무 넓어져 진짜 대두를 놓쳐도 초록이 된다." },
-    { "id": "S-대두-I4", "allergen": "대두", "path": "ingredients", "text": "원재료명: 땅콩기름, 콩기름, 설탕", "expect": true, "status": "contract", "why": "★ 부정 규칙이 «첫 출현»만 보고 접으면 여기서 대두를 놓친다(과소경고). _keywordHit 이 모든 출현을 보는 이유." },
-
-    { "id": "S-밀-D1", "allergen": "밀", "path": "declared", "text": "알레르기 유발물질: 대두, 밀", "expect": true, "status": "contract", "why": "법정 표기의 단독 명칭. 세션44 가 고친 지점" },
-    { "id": "S-밀-D2", "allergen": "밀", "path": "declared", "text": "합성향료(초콜릿향, 밀크향) 우유 함유", "expect": false, "status": "contract", "why": "'밀크향' 의 '밀'. 세션44 2차 검증 실물 캡처 096" },
-    { "id": "S-밀-D3", "allergen": "밀", "path": "declared", "text": "칼슘을 풍부하게 함유", "expect": false, "status": "contract", "why": "경계 없는 1글자 매칭 방지 대조군" },
-    { "id": "S-밀-I1", "allergen": "밀", "path": "ingredients", "text": "원재료명: 밀가루(밀:미국산), 설탕", "expect": true, "status": "contract", "why": "밀가루" },
-    { "id": "S-밀-I2", "allergen": "밀", "path": "ingredients", "text": "원재료명: 밀 90%, 정제소금", "expect": true, "status": "known_gap", "why": "★ 원재료표에 '밀' 단독이 없어 미검출. OCR 원재료 경로 밀 FN 465/551 의 직접 원인. ⚠ 2026-08-06 범위 정정 — 이건 P1 이 «아니라» P4(밀 가드) 대상이다. 원재료표에 '밀' 을 그냥 넣으면 밀납(4,829회)·밀크씨슬·당밀·약모밀이 전부 걸려 FP 가 폭발한다. 회신도 '결합안은 shadow 측정 후 적용' 으로 P4 에 뒀다. 여기를 P1 에서 무리하게 닫으면 세션51 이 경고한 바로 그 사고가 난다." },
-    { "id": "S-밀-I3", "allergen": "밀", "path": "ingredients", "text": "원재료명: 밀납(정제), 글리세린", "expect": false, "status": "contract", "why": "밀납=蜜蠟 beeswax. 실측 4,829회. C3 후보가 여기서 무너졌다" },
-    { "id": "S-밀-I4", "allergen": "밀", "path": "ingredients", "text": "원재료명: 밀크씨슬추출물, 부형제", "expect": false, "status": "contract", "why": "건강기능식품 기능성원료. 회신 쟁점7-10" },
-    { "id": "S-밀-I5", "allergen": "밀", "path": "ingredients", "text": "원재료명: 당밀, 정제수", "expect": false, "status": "contract", "why": "당밀=molasses" },
-    { "id": "S-밀-I6", "allergen": "밀", "path": "ingredients", "text": "원재료명: 약모밀추출물", "expect": false, "status": "contract", "why": "약모밀=어성초. 실측 204회" },
-
-    { "id": "S-고등어-D1", "allergen": "고등어", "path": "declared", "text": "알레르기 유발물질: 고등어", "expect": true, "status": "contract", "why": "★ 회신은 '판별기 C 에 고등어가 없다'고 했으나 명시 경로는 ALLERGEN_NAMES 를 쓰므로 정상 검출된다. 이 칸이 그 사실을 고정한다." },
-    { "id": "S-고등어-I1", "allergen": "고등어", "path": "ingredients", "text": "원재료명: 고등어 60%, 무, 정제소금", "expect": true, "status": "contract", "why": "★ 2026-08-06 P1 해소(known_gap → contract). ALLERGEN_KEYWORDS 에 '고등어' 추가. 17종 → 19종." },
-    { "id": "S-고등어-I2", "allergen": "고등어", "path": "ingredients", "text": "원재료명: 연어, 정제소금", "expect": false, "status": "contract", "why": "다른 어류를 고등어로 만들면 안 된다" },
-
-    { "id": "S-게-D1", "allergen": "게", "path": "declared", "text": "알레르기 유발물질: 게, 새우", "expect": true, "status": "contract", "why": "명시" },
-    { "id": "S-게-D2", "allergen": "게", "path": "declared", "text": "제품을 안전하게 보관하시고 개봉 후 냉장 함유", "expect": false, "status": "contract", "why": "'안전하게' 의 '게'. 세션44 2차 검증" },
-    { "id": "S-게-I1", "allergen": "게", "path": "ingredients", "text": "원재료명: 꽃게 20%, 정제수", "expect": true, "status": "contract", "why": "꽃게" },
-
-    { "id": "S-새우-D1", "allergen": "새우", "path": "declared", "text": "알레르기 유발물질: 새우", "expect": true, "status": "contract", "why": "명시" },
-    { "id": "S-새우-I1", "allergen": "새우", "path": "ingredients", "text": "원재료명: 건새우, 정제소금", "expect": true, "status": "contract", "why": "건새우" },
-    { "id": "S-새우-I2", "allergen": "새우", "path": "ingredients", "text": "원재료명: 새송이버섯, 정제소금", "expect": false, "status": "contract", "why": "'새' 로 시작하는 무관 원재료 대조군" },
-
-    { "id": "S-돼지고기-D1", "allergen": "돼지고기", "path": "declared", "text": "알레르기 유발물질: 돼지고기", "expect": true, "status": "contract", "why": "명시" },
-    { "id": "S-돼지고기-I1", "allergen": "돼지고기", "path": "ingredients", "text": "원재료명: 베이컨(돼지고기), 후추", "expect": true, "status": "contract", "why": "베이컨" },
-    { "id": "S-돼지고기-I2", "allergen": "돼지고기", "path": "ingredients", "text": "원재료명: 닭가슴살, 후추", "expect": false, "status": "contract", "why": "다른 축종 대조군" },
-
-    { "id": "S-복숭아-D1", "allergen": "복숭아", "path": "declared", "text": "알레르기 유발물질: 복숭아", "expect": true, "status": "contract", "why": "명시" },
-    { "id": "S-복숭아-I1", "allergen": "복숭아", "path": "ingredients", "text": "원재료명: 황도 30%, 설탕", "expect": true, "status": "contract", "why": "황도=복숭아 품종" },
-    { "id": "S-복숭아-I2", "allergen": "복숭아", "path": "ingredients", "text": "원재료명: 자두농축액, 설탕", "expect": false, "status": "contract", "why": "핵과류 대조군" },
-
-    { "id": "S-토마토-D1", "allergen": "토마토", "path": "declared", "text": "알레르기 유발물질: 토마토", "expect": true, "status": "contract", "why": "명시" },
-    { "id": "S-토마토-I1", "allergen": "토마토", "path": "ingredients", "text": "원재료명: 토마토페이스트, 설탕", "expect": true, "status": "contract", "why": "토마토" },
-    { "id": "S-토마토-I2", "allergen": "토마토", "path": "ingredients", "text": "원재료명: 파프리카추출색소, 설탕", "expect": false, "status": "contract", "why": "가지과 대조군" },
-
-    { "id": "S-아황산류-D1", "allergen": "아황산류", "path": "declared", "text": "알레르기 유발물질: 아황산류", "expect": true, "status": "contract", "why": "명시" },
-    { "id": "S-아황산류-I1", "allergen": "아황산류", "path": "ingredients", "text": "원재료명: 건포도, 이산화황", "expect": true, "status": "contract", "why": "이산화황" },
-    { "id": "S-아황산류-I2", "allergen": "아황산류", "path": "ingredients", "text": "원재료명: 황기추출물, 정제수", "expect": false, "status": "contract", "why": "'황'(황기=Astragalus) 이 아황산으로 걸리면 안 된다" },
-
-    { "id": "S-호두-D1", "allergen": "호두", "path": "declared", "text": "알레르기 유발물질: 호두", "expect": true, "status": "contract", "why": "명시" },
-    { "id": "S-호두-I1", "allergen": "호두", "path": "ingredients", "text": "원재료명: 호두분태 10%, 설탕", "expect": true, "status": "contract", "why": "호두" },
-    { "id": "S-호두-I2", "allergen": "호두", "path": "ingredients", "text": "원재료명: 호박씨, 설탕", "expect": false, "status": "contract", "why": "'호' 로 시작하는 무관 원재료" },
-
-    { "id": "S-닭고기-D1", "allergen": "닭고기", "path": "declared", "text": "알레르기 유발물질: 닭고기", "expect": true, "status": "contract", "why": "명시" },
-    { "id": "S-닭고기-I1", "allergen": "닭고기", "path": "ingredients", "text": "원재료명: 닭가슴살 90%, 정제소금", "expect": true, "status": "contract", "why": "닭가슴살" },
-    { "id": "S-닭고기-I2", "allergen": "닭고기", "path": "ingredients", "text": "원재료명: 오리고기, 정제소금", "expect": false, "status": "contract", "why": "다른 가금 대조군" },
-
-    { "id": "S-쇠고기-D1", "allergen": "쇠고기", "path": "declared", "text": "알레르기 유발물질: 쇠고기", "expect": true, "status": "contract", "why": "명시" },
-    { "id": "S-쇠고기-I1", "allergen": "쇠고기", "path": "ingredients", "text": "원재료명: 쇠고기엑기스, 정제소금", "expect": true, "status": "contract", "why": "쇠고기 직접 표기" },
-    { "id": "S-쇠고기-I2", "allergen": "쇠고기", "path": "ingredients", "text": "원재료명: 돼지고기, 정제소금", "expect": false, "status": "contract", "why": "다른 축종 대조군" },
-
-    { "id": "S-오징어-D1", "allergen": "오징어", "path": "declared", "text": "알레르기 유발물질: 오징어", "expect": true, "status": "contract", "why": "명시" },
-    { "id": "S-오징어-I1", "allergen": "오징어", "path": "ingredients", "text": "원재료명: 오징어 40%, 정제소금", "expect": true, "status": "contract", "why": "오징어" },
-    { "id": "S-오징어-I2", "allergen": "오징어", "path": "ingredients", "text": "원재료명: 문어, 정제소금", "expect": false, "status": "contract", "why": "두족류 대조군" },
-
-    { "id": "S-조개류-D1", "allergen": "조개류", "path": "declared", "text": "알레르기 유발물질: 조개류(굴)", "expect": true, "status": "contract", "why": "명시" },
-    { "id": "S-조개류-D2", "allergen": "조개류", "path": "declared", "text": "얼굴 보습 성분 함유", "expect": false, "status": "contract", "why": "'얼굴' 의 '굴'. 세션44 2차 검증 실측" },
-    { "id": "S-조개류-I1", "allergen": "조개류", "path": "ingredients", "text": "원재료명: 바지락 20%, 정제수", "expect": true, "status": "contract", "why": "바지락" },
-
-    { "id": "S-잣-D1", "allergen": "잣", "path": "declared", "text": "알레르기 유발물질: 잣", "expect": true, "status": "contract", "why": "★ 명시 경로는 ALLERGEN_NAMES 를 쓰므로 정상 검출. 회신의 '잣이 없다' 는 원재료 경로 한정이다." },
-    { "id": "S-잣-I1", "allergen": "잣", "path": "ingredients", "text": "원재료명: 잣 15%, 쌀", "expect": true, "status": "contract", "why": "★ 2026-08-06 P1 해소(known_gap → contract). ALLERGEN_KEYWORDS 에 '잣' 추가 + 2단계 폴백이 1글자를 건너뛰던 것을 경계 규칙으로 대체. 같은 수정으로 '굴'(조개류)도 원재료 경로에서 살아났다." },
-    { "id": "S-조개류-I2", "allergen": "조개류", "path": "ingredients", "text": "원재료명: 굴 20%, 정제수", "expect": true, "status": "contract", "why": "★ 2026-08-06 신규. 종전엔 2단계 폴백이 keyword.length<2 를 통째로 건너뛰어 '굴' 이 죽어 있었다. 회신에 없던 FN 이고, P1 수정으로 함께 해소됐다." },
-    { "id": "S-조개류-I3", "allergen": "조개류", "path": "ingredients", "text": "원재료명: 얼굴용 크림베이스", "expect": false, "status": "contract", "why": "1글자 '굴' 을 살릴 때 반드시 함께 지켜야 하는 대조군. 세션44 2차 검증 실측 사례." },
-    { "id": "S-잣-I2", "allergen": "잣", "path": "ingredients", "text": "원재료명: 잣나무향 합성착향료", "expect": false, "status": "contract", "why": "1글자 '잣' 을 원재료표에 추가할 때 반드시 함께 지켜야 하는 대조군. 경계 규칙 없이 넣으면 여기서 FP 가 난다." },
-    { "id": "S-잣-I3", "allergen": "잣", "path": "ingredients", "text": "원재료명: 가잣이 아닌 일반 원료", "expect": false, "status": "contract", "why": "앞 경계 대조군" },
-
-    { "id": "P-우유-땅콩버터", "allergen": "우유", "path": "ingredients", "text": "원재료명: 땅콩버터 30%, 설탕", "expect": null, "status": "policy_pending", "why": "회신 쟁점7-9 — '버터' 단독 부분문자열 별칭 폐지·경계화 권고. 현행은 우유 FP. 제이 결정 전이라 기대값을 확정하지 않는다." },
-    { "id": "P-쇠고기-젤라틴", "allergen": "쇠고기", "path": "ingredients", "text": "원재료명: 젤라틴, 설탕", "expect": null, "status": "policy_pending", "why": "회신 쟁점7-5 — 출처 없는 젤라틴을 쇠고기로 단정하지 말 것. 현행은 쇠고기." },
-    { "id": "P-대두-레시틴", "allergen": "대두", "path": "ingredients", "text": "원재료명: 레시틴, 정제수", "expect": null, "status": "policy_pending", "why": "회신 쟁점7-4 — 일반 레시틴은 origin_unspecified. 현행은 대두." },
-    { "id": "P-대두-대두레시틴", "allergen": "대두", "path": "ingredients", "text": "원재료명: 대두레시틴, 정제수", "expect": true, "status": "contract", "why": "출처가 명시된 경우는 회신도 대두 추론을 인정한다" },
-    { "id": "P-밀-호밀", "allergen": "밀", "path": "ingredients", "text": "원재료명: 호밀가루 70%", "expect": null, "status": "policy_pending", "why": "회신 쟁점7-1 — 호밀을 법정 밀로 매핑하지 말 것 권고. 현행 동작 기록용." },
-    { "id": "P-밀-오트밀", "allergen": "밀", "path": "ingredients", "text": "원재료명: 오트밀 100%", "expect": null, "status": "policy_pending", "why": "회신 쟁점7-2" },
-    { "id": "P-메밀-모밀", "allergen": "메밀", "path": "ingredients", "text": "원재료명: 모밀가루 80%", "expect": null, "status": "policy_pending", "why": "회신 쟁점7-3 — 모밀을 메밀 별칭으로 추가 권고. 현행 동작 기록용." },
-    { "id": "P-난류-날치알", "allergen": "난류", "path": "ingredients", "text": "원재료명: 날치알 10%, 정제수", "expect": null, "status": "policy_pending", "why": "회신 쟁점7-8 — 어란을 법정 난류(가금류)로 매핑하지 말 것." },
-    { "id": "P-게-게맛살", "allergen": "게", "path": "ingredients", "text": "원재료명: 게맛살(연육, 게향)", "expect": null, "status": "policy_pending", "why": "회신 쟁점7-13 — 게맛살·게향만으로 게 직접 함유 확정 재검토." },
-    { "id": "P-우유-유당", "allergen": "우유", "path": "ingredients", "text": "원재료명: 유당, 부형제", "expect": null, "status": "policy_pending", "why": "회신 쟁점7-6 — contains 가 아니라 우유 유래 추정으로 분리 권고." },
-    { "id": "P-밀-메밀가루", "allergen": "밀", "path": "ingredients", "text": "원재료명: 메밀가루 80%, 정제소금", "expect": false, "status": "contract", "why": "★ 제이 결정 (2026-08-06): 「메밀은 밀이 아니야. 고쳐야 돼.」 policy_pending → contract 승격. 메밀은 buckwheat, 소맥이 아니다. GT 라벨 N(메밀 157회·메밀가루 67회). 회신 쟁점7-7 도 같은 결론. KEYWORD_LEFT_NEGATIVE['밀가루']=['메','호'] 로 차단." },
-    { "id": "S-밀-I7", "allergen": "밀", "path": "ingredients", "text": "원재료명: 메밀가루 60%, 밀가루 20%", "expect": true, "status": "contract", "why": "★ 부정 규칙이 «첫 출현»만 보고 접으면 여기서 밀을 놓친다(과소경고). 메밀에 밀을 섞은 실제 제품이 이 형태다. _keywordHit 이 모든 출현을 보는 이유." },
-    { "id": "S-밀-I8", "allergen": "밀", "path": "ingredients", "text": "원재료명: 통밀가루 100%", "expect": true, "status": "contract", "why": "★ 양성 대조군. 부정 규칙이 넓어져 진짜 밀을 놓쳐도 초록이 되는 것을 막는다. GT 라벨 Y." },
-    { "id": "P-밀-호밀가루2", "allergen": "밀", "path": "ingredients", "text": "원재료명: 호밀가루 70%", "expect": false, "status": "contract", "why": "★ 2026-08-06 — 호밀(rye)은 법정 19종의 밀(소맥)이 아니다. GT 라벨 N 「left:호 — rye 호밀(19종 아님)」. 회신 쟁점7-1 도 매핑 반대. ⚠ 제이가 명시로 지시한 목록에는 없었다 — 되돌리려면 KEYWORD_LEFT_NEGATIVE['밀가루'] 에서 '호' 한 글자만 지운다. ⚠ 글루텐 회피 목적 사용자에게는 호밀도 위험하다. 별도 축(non_statutory_cereal)이 없어 지금은 정보가 사라진다." }
+    {
+      "id": "S-난류-D1",
+      "allergen": "난류(가금류)",
+      "path": "declared",
+      "text": "알레르기 유발물질: 난류, 우유",
+      "expect": true,
+      "status": "contract",
+      "why": "법정 명시 표기 그대로"
+    },
+    {
+      "id": "S-난류-I1",
+      "allergen": "난류(가금류)",
+      "path": "ingredients",
+      "text": "원재료명: 밀가루, 계란, 설탕",
+      "expect": true,
+      "status": "contract",
+      "why": "계란은 난류의 확정 원재료 표기"
+    },
+    {
+      "id": "S-난류-I2",
+      "allergen": "난류(가금류)",
+      "path": "ingredients",
+      "text": "원재료명: 정제수, 알로에겔, 구연산",
+      "expect": false,
+      "status": "contract",
+      "why": "'알로에' 의 '알' 이 걸리면 안 된다"
+    },
+    {
+      "id": "S-우유-D1",
+      "allergen": "우유",
+      "path": "declared",
+      "text": "알레르기 유발물질: 우유",
+      "expect": true,
+      "status": "contract",
+      "why": "명시"
+    },
+    {
+      "id": "S-우유-I1",
+      "allergen": "우유",
+      "path": "ingredients",
+      "text": "원재료명: 탈지분유, 정제소금",
+      "expect": true,
+      "status": "contract",
+      "why": "탈지분유는 우유 유래 확정"
+    },
+    {
+      "id": "S-우유-I2",
+      "allergen": "우유",
+      "path": "ingredients",
+      "text": "원재료명: 대두유, 정제수, 향료",
+      "expect": false,
+      "status": "contract",
+      "why": "우유 근거 없음"
+    },
+    {
+      "id": "S-메밀-D1",
+      "allergen": "메밀",
+      "path": "declared",
+      "text": "알레르기 유발물질: 메밀",
+      "expect": true,
+      "status": "contract",
+      "why": "명시"
+    },
+    {
+      "id": "S-메밀-I1",
+      "allergen": "메밀",
+      "path": "ingredients",
+      "text": "원재료명: 메밀가루 80%, 정제소금",
+      "expect": true,
+      "status": "contract",
+      "why": "★ 2026-08-06 P1 해소(known_gap → contract). 소비 매칭 제거로 메밀이 살아났다. 종전엔 '밀가루'(3자)가 먼저 먹고 지워 메밀이 사라졌다."
+    },
+    {
+      "id": "S-메밀-I2",
+      "allergen": "메밀",
+      "path": "ingredients",
+      "text": "원재료명: 밀가루, 정제소금",
+      "expect": false,
+      "status": "contract",
+      "why": "'밀가루' 만으로 메밀을 만들면 안 된다 (metamorphic 짝: S-메밀-I1 에서 '메' 만 뺀 것)"
+    },
+    {
+      "id": "S-땅콩-D1",
+      "allergen": "땅콩",
+      "path": "declared",
+      "text": "알레르기 유발물질: 땅콩",
+      "expect": true,
+      "status": "contract",
+      "why": "명시"
+    },
+    {
+      "id": "S-땅콩-I1",
+      "allergen": "땅콩",
+      "path": "ingredients",
+      "text": "원재료명: 땅콩기름, 설탕",
+      "expect": true,
+      "status": "contract",
+      "why": "★ 2026-08-06 P1 해소(known_gap → contract). 종전엔 '콩기름'(3자)이 먼저 먹고 지워 땅콩이 사라졌다."
+    },
+    {
+      "id": "S-땅콩-I2",
+      "allergen": "땅콩",
+      "path": "ingredients",
+      "text": "원재료명: 대두유, 콩기름, 설탕",
+      "expect": false,
+      "status": "contract",
+      "why": "콩기름만으로 땅콩을 만들면 안 된다"
+    },
+    {
+      "id": "S-대두-D1",
+      "allergen": "대두",
+      "path": "declared",
+      "text": "알레르기 유발물질: 대두, 밀",
+      "expect": true,
+      "status": "contract",
+      "why": "명시"
+    },
+    {
+      "id": "S-대두-I1",
+      "allergen": "대두",
+      "path": "ingredients",
+      "text": "원재료명: 대두분말, 정제수",
+      "expect": true,
+      "status": "contract",
+      "why": "대두 직접 표기"
+    },
+    {
+      "id": "S-대두-I2",
+      "allergen": "대두",
+      "path": "ingredients",
+      "text": "원재료명: 땅콩기름, 설탕",
+      "expect": false,
+      "status": "contract",
+      "why": "★ 2026-08-06 P1 해소(known_gap → contract). KEYWORD_LEFT_NEGATIVE['콩기름']=['땅'] 로 차단. ⚠ 이 칸은 구현 «전» 에 expect:false 로 못 박아 커밋했다(f5e1d9a) — 세션44 회귀의 기대값에서 '대두' 를 뺀 근거가 이것이다. 사후에 라벨을 맞춘 것이 아니다."
+    },
+    {
+      "id": "S-대두-I3",
+      "allergen": "대두",
+      "path": "ingredients",
+      "text": "원재료명: 콩기름, 설탕",
+      "expect": true,
+      "status": "contract",
+      "why": "★ 부정 규칙의 양성 대조군. 이 칸이 없으면 규칙이 너무 넓어져 진짜 대두를 놓쳐도 초록이 된다."
+    },
+    {
+      "id": "S-대두-I4",
+      "allergen": "대두",
+      "path": "ingredients",
+      "text": "원재료명: 땅콩기름, 콩기름, 설탕",
+      "expect": true,
+      "status": "contract",
+      "why": "★ 부정 규칙이 «첫 출현»만 보고 접으면 여기서 대두를 놓친다(과소경고). _keywordHit 이 모든 출현을 보는 이유."
+    },
+    {
+      "id": "S-밀-D1",
+      "allergen": "밀",
+      "path": "declared",
+      "text": "알레르기 유발물질: 대두, 밀",
+      "expect": true,
+      "status": "contract",
+      "why": "법정 표기의 단독 명칭. 세션44 가 고친 지점"
+    },
+    {
+      "id": "S-밀-D2",
+      "allergen": "밀",
+      "path": "declared",
+      "text": "합성향료(초콜릿향, 밀크향) 우유 함유",
+      "expect": false,
+      "status": "contract",
+      "why": "'밀크향' 의 '밀'. 세션44 2차 검증 실물 캡처 096"
+    },
+    {
+      "id": "S-밀-D3",
+      "allergen": "밀",
+      "path": "declared",
+      "text": "칼슘을 풍부하게 함유",
+      "expect": false,
+      "status": "contract",
+      "why": "경계 없는 1글자 매칭 방지 대조군"
+    },
+    {
+      "id": "S-밀-I1",
+      "allergen": "밀",
+      "path": "ingredients",
+      "text": "원재료명: 밀가루(밀:미국산), 설탕",
+      "expect": true,
+      "status": "contract",
+      "why": "밀가루"
+    },
+    {
+      "id": "S-밀-I2",
+      "allergen": "밀",
+      "path": "ingredients",
+      "text": "원재료명: 밀 90%, 정제소금",
+      "expect": true,
+      "status": "known_gap",
+      "why": "★ 원재료표에 '밀' 단독이 없어 미검출. OCR 원재료 경로 밀 FN 465/551 의 직접 원인. ⚠ 2026-08-06 범위 정정 — 이건 P1 이 «아니라» P4(밀 가드) 대상이다. 원재료표에 '밀' 을 그냥 넣으면 밀납(4,829회)·밀크씨슬·당밀·약모밀이 전부 걸려 FP 가 폭발한다. 회신도 '결합안은 shadow 측정 후 적용' 으로 P4 에 뒀다. 여기를 P1 에서 무리하게 닫으면 세션51 이 경고한 바로 그 사고가 난다."
+    },
+    {
+      "id": "S-밀-I3",
+      "allergen": "밀",
+      "path": "ingredients",
+      "text": "원재료명: 밀납(정제), 글리세린",
+      "expect": false,
+      "status": "contract",
+      "why": "밀납=蜜蠟 beeswax. 실측 4,829회. C3 후보가 여기서 무너졌다"
+    },
+    {
+      "id": "S-밀-I4",
+      "allergen": "밀",
+      "path": "ingredients",
+      "text": "원재료명: 밀크씨슬추출물, 부형제",
+      "expect": false,
+      "status": "contract",
+      "why": "건강기능식품 기능성원료. 회신 쟁점7-10"
+    },
+    {
+      "id": "S-밀-I5",
+      "allergen": "밀",
+      "path": "ingredients",
+      "text": "원재료명: 당밀, 정제수",
+      "expect": false,
+      "status": "contract",
+      "why": "당밀=molasses"
+    },
+    {
+      "id": "S-밀-I6",
+      "allergen": "밀",
+      "path": "ingredients",
+      "text": "원재료명: 약모밀추출물",
+      "expect": false,
+      "status": "contract",
+      "why": "약모밀=어성초. 실측 204회"
+    },
+    {
+      "id": "S-고등어-D1",
+      "allergen": "고등어",
+      "path": "declared",
+      "text": "알레르기 유발물질: 고등어",
+      "expect": true,
+      "status": "contract",
+      "why": "★ 회신은 '판별기 C 에 고등어가 없다'고 했으나 명시 경로는 ALLERGEN_NAMES 를 쓰므로 정상 검출된다. 이 칸이 그 사실을 고정한다."
+    },
+    {
+      "id": "S-고등어-I1",
+      "allergen": "고등어",
+      "path": "ingredients",
+      "text": "원재료명: 고등어 60%, 무, 정제소금",
+      "expect": true,
+      "status": "contract",
+      "why": "★ 2026-08-06 P1 해소(known_gap → contract). ALLERGEN_KEYWORDS 에 '고등어' 추가. 17종 → 19종."
+    },
+    {
+      "id": "S-고등어-I2",
+      "allergen": "고등어",
+      "path": "ingredients",
+      "text": "원재료명: 연어, 정제소금",
+      "expect": false,
+      "status": "contract",
+      "why": "다른 어류를 고등어로 만들면 안 된다"
+    },
+    {
+      "id": "S-게-D1",
+      "allergen": "게",
+      "path": "declared",
+      "text": "알레르기 유발물질: 게, 새우",
+      "expect": true,
+      "status": "contract",
+      "why": "명시"
+    },
+    {
+      "id": "S-게-D2",
+      "allergen": "게",
+      "path": "declared",
+      "text": "제품을 안전하게 보관하시고 개봉 후 냉장 함유",
+      "expect": false,
+      "status": "contract",
+      "why": "'안전하게' 의 '게'. 세션44 2차 검증"
+    },
+    {
+      "id": "S-게-I1",
+      "allergen": "게",
+      "path": "ingredients",
+      "text": "원재료명: 꽃게 20%, 정제수",
+      "expect": true,
+      "status": "contract",
+      "why": "꽃게"
+    },
+    {
+      "id": "S-새우-D1",
+      "allergen": "새우",
+      "path": "declared",
+      "text": "알레르기 유발물질: 새우",
+      "expect": true,
+      "status": "contract",
+      "why": "명시"
+    },
+    {
+      "id": "S-새우-I1",
+      "allergen": "새우",
+      "path": "ingredients",
+      "text": "원재료명: 건새우, 정제소금",
+      "expect": true,
+      "status": "contract",
+      "why": "건새우"
+    },
+    {
+      "id": "S-새우-I2",
+      "allergen": "새우",
+      "path": "ingredients",
+      "text": "원재료명: 새송이버섯, 정제소금",
+      "expect": false,
+      "status": "contract",
+      "why": "'새' 로 시작하는 무관 원재료 대조군"
+    },
+    {
+      "id": "S-돼지고기-D1",
+      "allergen": "돼지고기",
+      "path": "declared",
+      "text": "알레르기 유발물질: 돼지고기",
+      "expect": true,
+      "status": "contract",
+      "why": "명시"
+    },
+    {
+      "id": "S-돼지고기-I1",
+      "allergen": "돼지고기",
+      "path": "ingredients",
+      "text": "원재료명: 베이컨(돼지고기), 후추",
+      "expect": true,
+      "status": "contract",
+      "why": "베이컨"
+    },
+    {
+      "id": "S-돼지고기-I2",
+      "allergen": "돼지고기",
+      "path": "ingredients",
+      "text": "원재료명: 닭가슴살, 후추",
+      "expect": false,
+      "status": "contract",
+      "why": "다른 축종 대조군"
+    },
+    {
+      "id": "S-복숭아-D1",
+      "allergen": "복숭아",
+      "path": "declared",
+      "text": "알레르기 유발물질: 복숭아",
+      "expect": true,
+      "status": "contract",
+      "why": "명시"
+    },
+    {
+      "id": "S-복숭아-I1",
+      "allergen": "복숭아",
+      "path": "ingredients",
+      "text": "원재료명: 황도 30%, 설탕",
+      "expect": true,
+      "status": "contract",
+      "why": "황도=복숭아 품종"
+    },
+    {
+      "id": "S-복숭아-I2",
+      "allergen": "복숭아",
+      "path": "ingredients",
+      "text": "원재료명: 자두농축액, 설탕",
+      "expect": false,
+      "status": "contract",
+      "why": "핵과류 대조군"
+    },
+    {
+      "id": "S-토마토-D1",
+      "allergen": "토마토",
+      "path": "declared",
+      "text": "알레르기 유발물질: 토마토",
+      "expect": true,
+      "status": "contract",
+      "why": "명시"
+    },
+    {
+      "id": "S-토마토-I1",
+      "allergen": "토마토",
+      "path": "ingredients",
+      "text": "원재료명: 토마토페이스트, 설탕",
+      "expect": true,
+      "status": "contract",
+      "why": "토마토"
+    },
+    {
+      "id": "S-토마토-I2",
+      "allergen": "토마토",
+      "path": "ingredients",
+      "text": "원재료명: 파프리카추출색소, 설탕",
+      "expect": false,
+      "status": "contract",
+      "why": "가지과 대조군"
+    },
+    {
+      "id": "S-아황산류-D1",
+      "allergen": "아황산류",
+      "path": "declared",
+      "text": "알레르기 유발물질: 아황산류",
+      "expect": true,
+      "status": "contract",
+      "why": "명시"
+    },
+    {
+      "id": "S-아황산류-I1",
+      "allergen": "아황산류",
+      "path": "ingredients",
+      "text": "원재료명: 건포도, 이산화황",
+      "expect": true,
+      "status": "contract",
+      "why": "이산화황"
+    },
+    {
+      "id": "S-아황산류-I2",
+      "allergen": "아황산류",
+      "path": "ingredients",
+      "text": "원재료명: 황기추출물, 정제수",
+      "expect": false,
+      "status": "contract",
+      "why": "'황'(황기=Astragalus) 이 아황산으로 걸리면 안 된다"
+    },
+    {
+      "id": "S-호두-D1",
+      "allergen": "호두",
+      "path": "declared",
+      "text": "알레르기 유발물질: 호두",
+      "expect": true,
+      "status": "contract",
+      "why": "명시"
+    },
+    {
+      "id": "S-호두-I1",
+      "allergen": "호두",
+      "path": "ingredients",
+      "text": "원재료명: 호두분태 10%, 설탕",
+      "expect": true,
+      "status": "contract",
+      "why": "호두"
+    },
+    {
+      "id": "S-호두-I2",
+      "allergen": "호두",
+      "path": "ingredients",
+      "text": "원재료명: 호박씨, 설탕",
+      "expect": false,
+      "status": "contract",
+      "why": "'호' 로 시작하는 무관 원재료"
+    },
+    {
+      "id": "S-닭고기-D1",
+      "allergen": "닭고기",
+      "path": "declared",
+      "text": "알레르기 유발물질: 닭고기",
+      "expect": true,
+      "status": "contract",
+      "why": "명시"
+    },
+    {
+      "id": "S-닭고기-I1",
+      "allergen": "닭고기",
+      "path": "ingredients",
+      "text": "원재료명: 닭가슴살 90%, 정제소금",
+      "expect": true,
+      "status": "contract",
+      "why": "닭가슴살"
+    },
+    {
+      "id": "S-닭고기-I2",
+      "allergen": "닭고기",
+      "path": "ingredients",
+      "text": "원재료명: 오리고기, 정제소금",
+      "expect": false,
+      "status": "contract",
+      "why": "다른 가금 대조군"
+    },
+    {
+      "id": "S-쇠고기-D1",
+      "allergen": "쇠고기",
+      "path": "declared",
+      "text": "알레르기 유발물질: 쇠고기",
+      "expect": true,
+      "status": "contract",
+      "why": "명시"
+    },
+    {
+      "id": "S-쇠고기-I1",
+      "allergen": "쇠고기",
+      "path": "ingredients",
+      "text": "원재료명: 쇠고기엑기스, 정제소금",
+      "expect": true,
+      "status": "contract",
+      "why": "쇠고기 직접 표기"
+    },
+    {
+      "id": "S-쇠고기-I2",
+      "allergen": "쇠고기",
+      "path": "ingredients",
+      "text": "원재료명: 돼지고기, 정제소금",
+      "expect": false,
+      "status": "contract",
+      "why": "다른 축종 대조군"
+    },
+    {
+      "id": "S-오징어-D1",
+      "allergen": "오징어",
+      "path": "declared",
+      "text": "알레르기 유발물질: 오징어",
+      "expect": true,
+      "status": "contract",
+      "why": "명시"
+    },
+    {
+      "id": "S-오징어-I1",
+      "allergen": "오징어",
+      "path": "ingredients",
+      "text": "원재료명: 오징어 40%, 정제소금",
+      "expect": true,
+      "status": "contract",
+      "why": "오징어"
+    },
+    {
+      "id": "S-오징어-I2",
+      "allergen": "오징어",
+      "path": "ingredients",
+      "text": "원재료명: 문어, 정제소금",
+      "expect": false,
+      "status": "contract",
+      "why": "두족류 대조군"
+    },
+    {
+      "id": "S-조개류-D1",
+      "allergen": "조개류",
+      "path": "declared",
+      "text": "알레르기 유발물질: 조개류(굴)",
+      "expect": true,
+      "status": "contract",
+      "why": "명시"
+    },
+    {
+      "id": "S-조개류-D2",
+      "allergen": "조개류",
+      "path": "declared",
+      "text": "얼굴 보습 성분 함유",
+      "expect": false,
+      "status": "contract",
+      "why": "'얼굴' 의 '굴'. 세션44 2차 검증 실측"
+    },
+    {
+      "id": "S-조개류-I1",
+      "allergen": "조개류",
+      "path": "ingredients",
+      "text": "원재료명: 바지락 20%, 정제수",
+      "expect": true,
+      "status": "contract",
+      "why": "바지락"
+    },
+    {
+      "id": "S-잣-D1",
+      "allergen": "잣",
+      "path": "declared",
+      "text": "알레르기 유발물질: 잣",
+      "expect": true,
+      "status": "contract",
+      "why": "★ 명시 경로는 ALLERGEN_NAMES 를 쓰므로 정상 검출. 회신의 '잣이 없다' 는 원재료 경로 한정이다."
+    },
+    {
+      "id": "S-잣-I1",
+      "allergen": "잣",
+      "path": "ingredients",
+      "text": "원재료명: 잣 15%, 쌀",
+      "expect": true,
+      "status": "contract",
+      "why": "★ 2026-08-06 P1 해소(known_gap → contract). ALLERGEN_KEYWORDS 에 '잣' 추가 + 2단계 폴백이 1글자를 건너뛰던 것을 경계 규칙으로 대체. 같은 수정으로 '굴'(조개류)도 원재료 경로에서 살아났다."
+    },
+    {
+      "id": "S-조개류-I2",
+      "allergen": "조개류",
+      "path": "ingredients",
+      "text": "원재료명: 굴 20%, 정제수",
+      "expect": true,
+      "status": "contract",
+      "why": "★ 2026-08-06 신규. 종전엔 2단계 폴백이 keyword.length<2 를 통째로 건너뛰어 '굴' 이 죽어 있었다. 회신에 없던 FN 이고, P1 수정으로 함께 해소됐다."
+    },
+    {
+      "id": "S-조개류-I3",
+      "allergen": "조개류",
+      "path": "ingredients",
+      "text": "원재료명: 얼굴용 크림베이스",
+      "expect": false,
+      "status": "contract",
+      "why": "1글자 '굴' 을 살릴 때 반드시 함께 지켜야 하는 대조군. 세션44 2차 검증 실측 사례."
+    },
+    {
+      "id": "S-잣-I2",
+      "allergen": "잣",
+      "path": "ingredients",
+      "text": "원재료명: 잣나무향 합성착향료",
+      "expect": false,
+      "status": "contract",
+      "why": "1글자 '잣' 을 원재료표에 추가할 때 반드시 함께 지켜야 하는 대조군. 경계 규칙 없이 넣으면 여기서 FP 가 난다."
+    },
+    {
+      "id": "S-잣-I3",
+      "allergen": "잣",
+      "path": "ingredients",
+      "text": "원재료명: 가잣이 아닌 일반 원료",
+      "expect": false,
+      "status": "contract",
+      "why": "앞 경계 대조군"
+    },
+    {
+      "id": "P-우유-땅콩버터",
+      "allergen": "우유",
+      "path": "ingredients",
+      "text": "원재료명: 땅콩버터 30%, 설탕",
+      "expect": false,
+      "status": "contract",
+      "why": "회신 쟁점7-9 — '버터' 단독 부분문자열 별칭 폐지·경계화 권고. 현행은 우유 FP. 제이 결정 전이라 기대값을 확정하지 않는다.  ★세션54 승격: policy_pending → contract(expect=false). 근거 D54-1.",
+      "decided": {
+        "id": "D54-1",
+        "date": "2026-08-07",
+        "session": 54,
+        "by": "제이",
+        "why": "제이(2026-08-07): 버터는 밀 가드와 같은 2축 구조로 간다. 땅콩·코코아·카카오·시어 등 견과/종실/과육 버터는 유제품이 아니다. → allergenGuards.js butterAccept"
+      }
+    },
+    {
+      "id": "P-쇠고기-젤라틴",
+      "allergen": "쇠고기",
+      "path": "ingredients",
+      "text": "원재료명: 젤라틴, 설탕",
+      "expect": false,
+      "status": "contract",
+      "why": "회신 쟁점7-5 — 출처 없는 젤라틴을 쇠고기로 단정하지 말 것. 현행은 쇠고기.  ★세션54 승격: policy_pending → contract(expect=false). 근거 D54-2.",
+      "decided": {
+        "id": "D54-2",
+        "date": "2026-08-07",
+        "session": 54,
+        "by": "제이",
+        "why": "제이(2026-08-07): 수식어 없는 젤라틴은 어떤 축종도 붙이지 않는다. 원료는 돈피·우피·어류이며 법정 19종은 쇠고기와 돼지고기가 별개 항목이라, 무조건 쇠고기로 붙이면 두 방향으로 동시에 틀린다. 축종 명시형(우육/소/비프 · 돈피/돈/포크)만 각 항목에 붙인다."
+      }
+    },
+    {
+      "id": "P-대두-레시틴",
+      "allergen": "대두",
+      "path": "ingredients",
+      "text": "원재료명: 레시틴, 정제수",
+      "expect": false,
+      "status": "contract",
+      "why": "회신 쟁점7-4 — 일반 레시틴은 origin_unspecified. 현행은 대두.  ★세션54 승격: policy_pending → contract(expect=false). 근거 D54-3.",
+      "decided": {
+        "id": "D54-3",
+        "date": "2026-08-07",
+        "session": 54,
+        "by": "제이",
+        "why": "제이(2026-08-07): 대두 레시틴이면 제조사가 알러지 표기에 대두를 표기하게 되어 있다. 표기가 있으면 대두 레시틴이고, 없으면 대두 기원이 아니라고 판단한다. → 맨 레시틴은 대두 미판정. 대두레시틴/난황레시틴 등 명시형만 잡는다."
+      }
+    },
+    {
+      "id": "P-대두-대두레시틴",
+      "allergen": "대두",
+      "path": "ingredients",
+      "text": "원재료명: 대두레시틴, 정제수",
+      "expect": true,
+      "status": "contract",
+      "why": "출처가 명시된 경우는 회신도 대두 추론을 인정한다"
+    },
+    {
+      "id": "P-밀-호밀",
+      "allergen": "밀",
+      "path": "ingredients",
+      "text": "원재료명: 호밀가루 70%",
+      "expect": false,
+      "status": "contract",
+      "why": "회신 쟁점7-1 — 호밀을 법정 밀로 매핑하지 말 것 권고. 현행 동작 기록용.  ★세션54 승격: policy_pending → contract(expect=false). 근거 D53-3.",
+      "decided": {
+        "id": "D53-3",
+        "date": "2026-08-07",
+        "session": 54,
+        "by": "제이",
+        "why": "제이(2026-08-06): 「호밀이 글루텐을 포함하고 있더라도 국내 법규가 우선이야. 국내에서는 호밀을 알러겐으로 표기하도록 하지 않고 있어.」 세션53 에 코드는 이미 반영됐고 세션54 에 라벨만 갱신한다."
+      }
+    },
+    {
+      "id": "P-밀-오트밀",
+      "allergen": "밀",
+      "path": "ingredients",
+      "text": "원재료명: 오트밀 100%",
+      "expect": false,
+      "status": "contract",
+      "why": "회신 쟁점7-2  ★세션54 승격: policy_pending → contract(expect=false). 근거 D53-3-derived.",
+      "decided": {
+        "id": "D53-3-derived",
+        "date": "2026-08-07",
+        "session": 54,
+        "by": "제이",
+        "why": "위 호밀 결정과 «같은 원칙»의 귀결 — 이 축은 식약처 법정 19종을 판정한다. 오트밀(귀리)은 19종이 아니다. 정책 선택이 아니라 사실 확인이라 함께 승격했다. ⚠ 제이 명시 확인은 아직 받지 않았다 — 세션55 에 확인할 것."
+      }
+    },
+    {
+      "id": "P-메밀-모밀",
+      "allergen": "메밀",
+      "path": "ingredients",
+      "text": "원재료명: 모밀가루 80%",
+      "expect": null,
+      "status": "policy_pending",
+      "why": "회신 쟁점7-3 — 모밀을 메밀 별칭으로 추가 권고. 현행 동작 기록용."
+    },
+    {
+      "id": "P-난류-날치알",
+      "allergen": "난류(가금류)",
+      "path": "ingredients",
+      "text": "원재료명: 날치알 10%, 정제수",
+      "expect": null,
+      "status": "policy_pending",
+      "why": "회신 쟁점7-8 — 어란을 법정 난류(가금류)로 매핑하지 말 것."
+    },
+    {
+      "id": "P-게-게맛살",
+      "allergen": "게",
+      "path": "ingredients",
+      "text": "원재료명: 게맛살(연육, 게향)",
+      "expect": false,
+      "status": "contract",
+      "why": "회신 쟁점7-13 — 게맛살·게향만으로 게 직접 함유 확정 재검토.  ★세션54 승격: policy_pending → contract(expect=false). 근거 D54-4.",
+      "decided": {
+        "id": "D54-4",
+        "date": "2026-08-07",
+        "session": 54,
+        "by": "제이",
+        "why": "제이(2026-08-07): 「이전에 오판이었어. 게맛살에는 게가 들어가지 않아.」 게향도 같이 내림(실측 50건 전부 합성착향료). ★세션50 결정의 폐기다."
+      }
+    },
+    {
+      "id": "P-우유-유당",
+      "allergen": "우유",
+      "path": "ingredients",
+      "text": "원재료명: 유당, 부형제",
+      "expect": null,
+      "status": "policy_pending",
+      "why": "회신 쟁점7-6 — contains 가 아니라 우유 유래 추정으로 분리 권고."
+    },
+    {
+      "id": "P-밀-메밀가루",
+      "allergen": "밀",
+      "path": "ingredients",
+      "text": "원재료명: 메밀가루 80%, 정제소금",
+      "expect": false,
+      "status": "contract",
+      "why": "★ 제이 결정 (2026-08-06): 「메밀은 밀이 아니야. 고쳐야 돼.」 policy_pending → contract 승격. 메밀은 buckwheat, 소맥이 아니다. GT 라벨 N(메밀 157회·메밀가루 67회). 회신 쟁점7-7 도 같은 결론. KEYWORD_LEFT_NEGATIVE['밀가루']=['메','호'] 로 차단."
+    },
+    {
+      "id": "S-밀-I7",
+      "allergen": "밀",
+      "path": "ingredients",
+      "text": "원재료명: 메밀가루 60%, 밀가루 20%",
+      "expect": true,
+      "status": "contract",
+      "why": "★ 부정 규칙이 «첫 출현»만 보고 접으면 여기서 밀을 놓친다(과소경고). 메밀에 밀을 섞은 실제 제품이 이 형태다. _keywordHit 이 모든 출현을 보는 이유."
+    },
+    {
+      "id": "S-밀-I8",
+      "allergen": "밀",
+      "path": "ingredients",
+      "text": "원재료명: 통밀가루 100%",
+      "expect": true,
+      "status": "contract",
+      "why": "★ 양성 대조군. 부정 규칙이 넓어져 진짜 밀을 놓쳐도 초록이 되는 것을 막는다. GT 라벨 Y."
+    },
+    {
+      "id": "P-밀-호밀가루2",
+      "allergen": "밀",
+      "path": "ingredients",
+      "text": "원재료명: 호밀가루 70%",
+      "expect": false,
+      "status": "contract",
+      "why": "★ 2026-08-06 — 호밀(rye)은 법정 19종의 밀(소맥)이 아니다. GT 라벨 N 「left:호 — rye 호밀(19종 아님)」. 회신 쟁점7-1 도 매핑 반대. ⚠ 제이가 명시로 지시한 목록에는 없었다 — 되돌리려면 KEYWORD_LEFT_NEGATIVE['밀가루'] 에서 '호' 한 글자만 지운다. ⚠ 글루텐 회피 목적 사용자에게는 호밀도 위험하다. 별도 축(non_statutory_cereal)이 없어 지금은 정보가 사라진다."
+    }
   ]
 }

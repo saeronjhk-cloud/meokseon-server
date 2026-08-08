@@ -982,27 +982,39 @@ async function main() {
   // ══════════════════════════════════════════════════════════════════════
   section('§5. 알레르기 — 응답 키 집합만 (상세 계약은 test_allergen_contract.js)');
 
-  await t('★★ 두 경로의 알레르기 키 집합이 다르다 (D4 · 알려진 결함)', async () => {
+  // ★★★ 세션54 — D4 해소. 종전에는 이 검사가 「다르다」를 `known()` 으로 «기록»만 했다.
+  //   이제 **같아야 한다**를 단정한다. 되돌아가면 여기가 빨개진다.
+  const ALLERGEN_KEYS = ['allergens', 'allergens_v2', 'allergens_available', 'allergens_flat_complete'];
+
+  await t('★★ 두 경로의 알레르기 키 집합이 같다 (구 D4 · 세션54 해소)', async () => {
     const bc = await productService.getProductWithTrafficLight('PARITY0001');
     LABEL_TEXT = '오뚜기 참기름\n원재료명: 참깨(수입산)\n영양성분';
     const ocr = await callAnalyze({ image: 'x'.repeat(400), product_info: { product_name: '오뚜기 참기름' } });
 
-    const barKeys = ['allergens', 'allergens_v2', 'allergens_available', 'allergens_flat_complete']
-      .filter((k) => k in bc);
-    const ocrKeys = ['allergens', 'allergens_v2', 'allergens_available', 'allergens_flat_complete']
-      .filter((k) => k in ocr.data.analysis);
+    const barKeys = ALLERGEN_KEYS.filter((k) => k in bc);
+    const ocrKeys = ALLERGEN_KEYS.filter((k) => k in ocr.data.analysis);
 
-    assert.deepStrictEqual(barKeys,
-      ['allergens', 'allergens_v2', 'allergens_available', 'allergens_flat_complete'],
+    assert.deepStrictEqual(barKeys, ALLERGEN_KEYS,
       '바코드 경로의 알레르기 4키가 줄었다 — 「정보 없음」과 「없음」의 구분이 사라진다');
+    assert.deepStrictEqual(ocrKeys, ALLERGEN_KEYS,
+      'OCR 경로의 알레르기 4키가 줄었다 — 「혼입만 있는 제품」이 「알레르기 없음」으로 읽힌다(과소경고)');
+  });
 
-    if (ocrKeys.length === 4) {
-      throw new Error(
-        '[고쳐졌다] OCR 경로도 알레르기 4키를 낸다. 이 테스트와 D4 를 지우고 계약 테스트로 옮길 것.');
-    }
-    known('ocr', '알레르기 키 집합',
-      `D4 · 바코드=[${barKeys.join(', ')}] OCR=[${ocrKeys.join(', ')}] `
-      + '→ OCR 화면은 「혼입만 있는 제품」을 「알레르기 없음」과 구분할 수 없다');
+  await t('★★ OCR 경로도 「혼입만 있는 제품」을 flat_complete=false 로 구분한다 (구 D4 의 «목적»)', async () => {
+    // ⚠ 키가 «있는지» 만 보면 값이 항상 true 인 구현도 통과한다. 그 구현은 D4 를 안 고친 것이다.
+    //   그래서 키 집합과 별도로, 이 키가 실제로 두 상태를 «가르는지» 를 본다.
+    LABEL_TEXT = '초코과자\n원재료명: 설탕, 정제소금\n'
+      + '이 제품은 대두를 사용한 제품과 같은 제조시설에서 제조하고 있습니다.';
+    const may = (await callAnalyze({ image: 'x'.repeat(400), product_info: {} })).data.analysis;
+    assert.deepStrictEqual(may.allergens, [], '혼입은 flat 에 넣지 않는다(구버전 앱이 붉게 표시한다)');
+    assert.ok(may.allergens_v2.mayContain.includes('대두'), '혼입을 못 읽었다 — 이 케이스가 성립하지 않는다');
+    assert.strictEqual(may.allergens_flat_complete, false,
+      '★ flat 이 비었는데 flat_complete=true 다 — 화면이 「알레르기 없음」이라고 쓴다(짜왕 사고의 OCR 판)');
+
+    LABEL_TEXT = '초코과자\n원재료명: 밀가루, 설탕';
+    const plain = (await callAnalyze({ image: 'x'.repeat(400), product_info: {} })).data.analysis;
+    assert.strictEqual(plain.allergens_flat_complete, true,
+      '혼입이 없는데 flat_complete 가 false 다 — 항상 false 를 내면 신호가 무의미해진다');
   });
 
   await t('★ OCR 경로 flat 에 혼입이 섞이지 않는다 (구버전 앱이 붉게 표시한다)', async () => {

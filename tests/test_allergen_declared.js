@@ -206,7 +206,7 @@ t('법정 19종 전부가 한 줄에 선언돼도 19종이 나온다', () => {
   const all = '알레르기 유발물질: 알류, 우유, 메밀, 땅콩, 대두, 밀, 고등어, 게, 새우, 돼지고기, '
     + '복숭아, 토마토, 아황산류, 호두, 닭고기, 쇠고기, 오징어, 조개류, 잣 함유';
   const got = detectAllergens(all);
-  for (const a of ['난류', '우유', '메밀', '땅콩', '대두', '밀', '고등어', '게', '새우',
+  for (const a of ['난류(가금류)', '우유', '메밀', '땅콩', '대두', '밀', '고등어', '게', '새우',
     '돼지고기', '복숭아', '토마토', '아황산류', '호두', '닭고기', '쇠고기', '오징어', '조개류', '잣']) {
     assert.ok(got.includes(a), `${a} 누락 — got=${JSON.stringify(got)}`);
   }
@@ -276,7 +276,7 @@ t('032 떡국떡 — 함유는 밀, 대두·우유는 혼입', () => {
 t('060 — 함유는 밀, 대두·계란·메밀은 혼입', () => {
   const r = detectAllergensV2(L060);
   assert.deepStrictEqual(r.contains, ['밀']);
-  assert.deepStrictEqual(r.mayContain, ['난류', '대두', '메밀']);
+  assert.deepStrictEqual(r.mayContain, ['난류(가금류)', '대두', '메밀']);
 });
 
 t('006 대천김 — 함유 선언이 없다. 함유는 빈 배열이어야 한다', () => {
@@ -315,21 +315,34 @@ t('★ ocrRoutes 의 두 엔드포인트 응답에 allergens_v2 가 실린다 (�
   const hits = src.match(/allergens_v2/g) || [];
   assert.ok(hits.length >= 5,
     `ocrRoutes.js 의 allergens_v2 언급이 ${hits.length}건 — /analyze·/multi-photo 응답 양쪽 배선이 필요하다`);
-  // ★ 세션46 — 세션45가 flat 을 `flattenAllergensV2(...)` 로 바꾸면서 옛 정규식
-  //   (`allergens: analysis.allergens,` 뒤에 allergens_v2)이 영영 매칭되지 않게 됐다.
-  //   숫자만 맞추면 또 「형태만 보는 검사」가 된다 → **응답에 실리는 v2 의 인자 짝**을 본다.
-  //   `allergens_v2: reconcileAllergens(X.allergens, X.allergens_v2)` 에서 두 X 가 같아야 한다.
-  //   어긋나면 A 의 이름에 B 의 등급이 붙는다 — 예외 없이 조용히 틀리는 종류다.
-  const v2Wiring = [...src.matchAll(/allergens_v2:\s*reconcileAllergens\(\s*(\w+)\.allergens,\s*(\w+)\.allergens_v2\s*\)/g)];
-  assert.strictEqual(v2Wiring.length, 2,
-    `응답에 v2 를 싣는 지점이 ${v2Wiring.length}곳 — 2곳(/analyze·/multi-photo)이어야 한다`);
-  for (const m of v2Wiring) {
-    assert.strictEqual(m[1], m[2],
-      `reconcileAllergens 인자 짝이 어긋났다: ${m[1]}.allergens vs ${m[2]}.allergens_v2`);
-  }
-  // 두 지점이 서로 다른 분석 객체여야 한다(/analyze=analysis · /multi-photo=merged).
-  assert.deepStrictEqual([...new Set(v2Wiring.map((m) => m[1]))].sort(), ['analysis', 'merged'],
-    '두 엔드포인트가 같은 객체를 쓴다 — 한쪽 배선이 복사된 것이다');
+  // ★★★ 세션54 — 여기 있던 소스 정규식 검사를 **실동작 검사로 교체**했다.
+  //   옛 검사: `allergens_v2: reconcileAllergens(X.allergens, X.allergens_v2)` 리터럴을 2곳 셌다.
+  //   그 검사는 D4 수정이 세 조립 지점을 «한 헬퍼»로 합치는 순간, 동작이 옳아졌는데도 깨졌다.
+  //   즉 리팩터링을 막는 족쇄였다. 원래 지키려던 의도(「v2 가 응답에 실린다」·「인자 짝이 맞는다」)를
+  //   함수를 직접 불러 확인한다. `ocrRoutes` 가 `buildAllergenKeys` 를 노출한다.
+  const { buildAllergenKeys } = require('../src/routes/ocrRoutes');
+  const v2in = { contains: ['밀'], mayContain: ['대두'], inferred: [], evidence: [] };
+  const out = buildAllergenKeys(['밀', '우유'], v2in);
+
+  assert.ok(out.allergens_v2 && Array.isArray(out.allergens_v2.contains),
+    '응답 조립이 allergens_v2 를 만들지 않는다 (세션43 context_messages 재발)');
+  // ★ 인자 짝이 어긋나면(= flat 과 v2 가 다른 객체에서 오면) flat 전용 항목이 v2 에 안 실린다.
+  //   `우유` 는 flat 에만 있다 — reconcile 이 그것을 v2 에 얹어야 한다(치명3).
+  assert.ok(
+    [...out.allergens_v2.contains, ...out.allergens_v2.inferred, ...out.allergens_v2.mayContain].includes('우유'),
+    'flat 에만 있던 항목이 v2 에서 사라졌다 — 클라이언트는 v2 가 있으면 flat 을 안 본다(치명3)');
+  // ★ 혼입은 flat 에 섞이지 않는다(구버전 앱이 붉게 표시한다).
+  assert.ok(!out.allergens.includes('대두'), '혼입이 flat 에 섞였다 — 구버전 앱이 「직접 함유」로 표시한다');
+  // ★ 4키가 모두 있고, flat_complete 가 혼입 유무를 «가른다».
+  assert.deepStrictEqual(Object.keys(out).sort(),
+    ['allergens', 'allergens_available', 'allergens_flat_complete', 'allergens_v2'],
+    'D4 — OCR 응답의 알레르기 4키가 줄었다');
+  assert.strictEqual(out.allergens_flat_complete, false, '혼입이 있는데 flat_complete=true 다');
+  const noMay = buildAllergenKeys(['밀'], { contains: ['밀'], mayContain: [], inferred: [], evidence: [] });
+  assert.strictEqual(noMay.allergens_flat_complete, true, '혼입이 없는데 flat_complete=false 다 — 신호가 무의미해진다');
+  // ★ 판정 자체가 없으면 null (「flat 이 전부가 아니다」라는 판정과 구별된다)
+  assert.strictEqual(buildAllergenKeys(null, null).allergens_flat_complete, null,
+    '판정이 없는데 boolean 을 낸다 — 「정보 없음」과 「없음」이 섞인다');
 });
 
 t('★★ 세션48 — 사용자 입력은 라벨 판독을 덮어쓰지 않고 합집합으로 더한다 (과소경고 방지)', () => {
@@ -379,7 +392,7 @@ t('직접 함유 / 혼입 가능 / 원재료 추정 세 구획이 모두 나온�
   const c = loadClient();
   c.renderResult(envelope({
     allergens: ['밀'],
-    allergens_v2: { contains: ['밀'], mayContain: ['대두', '우유'], inferred: ['난류'], evidence: [] },
+    allergens_v2: { contains: ['밀'], mayContain: ['대두', '우유'], inferred: ['난류(가금류)'], evidence: [] },
   }));
   const html = c.el('allergenList').innerHTML;
   assert.ok(html.includes('직접 함유'), '「직접 함유」 라벨이 없다');
@@ -487,6 +500,10 @@ t('detectAllergensV2 도 적대적 입력 5종에서 SLOW_MS(120) 안에 끝난�
 });
 
 t('★ 합본 표에 법정 19종이 빠짐없이 있다 (표를 줄이면 여기서 걸린다)', () => {
+  // ⚠ 세션55 — 여기의 `난류` 는 **일부러 그대로 뒀다.** 이 목록은 기대값이 아니라
+  //   `detectAllergens('알레르기 유발물질: ${a} 함유')` 의 **입력**, 즉 «라벨에 인쇄되는 문구»다.
+  //   실제 포장지에는 `난류`·`알류` 로 인쇄되지 출력 정본명(`난류(가금류)`)으로 인쇄되지 않는다.
+  //   여기를 정본명으로 바꾸면 「인쇄 문구를 잡는가」라는 이 테스트의 질문 자체가 사라진다.
   const LEGAL_19 = ['난류', '우유', '메밀', '땅콩', '대두', '밀', '고등어', '게', '새우', '돼지고기',
     '복숭아', '토마토', '아황산류', '호두', '닭고기', '쇠고기', '오징어', '조개류', '잣'];
   for (const a of LEGAL_19) {
@@ -567,7 +584,7 @@ t('★ 치명1 — 긴 원재료 낱말이 짧은 알레르기 명칭을 먹지 
   assert.deepStrictEqual(detectAllergens('땅콩기름 함유'), ['땅콩']);
   assert.deepStrictEqual(detectAllergens('볶은메밀가루 함유'), ['메밀']);
   assert.deepStrictEqual(detectAllergens('계란, 메밀가루, 땅콩기름 함유'),
-    ['난류', '땅콩', '메밀']);
+    ['난류(가금류)', '땅콩', '메밀']);
 
   // ★ 진짜 밀은 그대로 나와야 한다 — 부정 규칙이 넓어져 밀을 통째로 놓치면 과소경고다.
   assert.deepStrictEqual(detectAllergens('밀가루 함유'), ['밀']);
@@ -630,7 +647,7 @@ t('★ 치명3 — reconcileAllergens 가 flat 항목을 하나도 잃지 않는
   // 클라이언트는 v2 가 있으면 flat 을 쓰지 않는다. 둘이 어긋나면 화면에서 사라진다.
   // 실측 재현: 사진에서 11종을 얻은 뒤 사용자가 원재료 텍스트만 보내면 v2 가 `inferred:['밀']` 이
   //   되어 10종이 화면에서 소실됐다.
-  const flat = ['게', '난류', '닭고기', '대두', '밀', '새우', '쇠고기', '오징어', '우유', '조개류', '토마토'];
+  const flat = ['게', '난류(가금류)', '닭고기', '대두', '밀', '새우', '쇠고기', '오징어', '우유', '조개류', '토마토'];
   const r = ocrParser.reconcileAllergens(flat, { contains: [], mayContain: [], inferred: ['밀'], evidence: [] });
   const shown = new Set([...r.contains, ...r.mayContain, ...r.inferred]);
   for (const a of flat) assert.ok(shown.has(a), `${a} 가 3분리에서 빠졌다 — 화면에서 사라진다`);
@@ -660,22 +677,27 @@ t('★ 치명3 — ocrRoutes 두 엔드포인트가 reconcileAllergens 를 거�
   const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'routes', 'ocrRoutes.js'), 'utf8');
   assert.ok(/require\(['"]\.\.\/services\/ocrParser['"]\)/.test(src)
     && src.includes('reconcileAllergens'), 'ocrRoutes 가 reconcileAllergens 를 import 하지 않는다');
-  // ★ 세션46 — 세션45 중대4 수정으로 호출이 2곳에서 5곳으로 늘었다.
-  //   /analyze 응답 flat + 응답 v2 · /multi-photo 저장 flat + 응답 flat + 응답 v2.
-  //   ★★ 개수만 5로 바꾸면 이 검사는 아무것도 지키지 못한다.
-  //      원래 의도는 「raw flat 이 reconcile 을 건너뛰고 나가지 않는다」였다. 그 의도를 검사한다.
-  const calls = [...src.matchAll(/reconcileAllergens\(\s*(\w+)\.allergens,\s*(\w+)\.allergens_v2\s*\)/g)];
-  assert.strictEqual(calls.length, 5,
-    `reconcileAllergens 호출이 ${calls.length}곳 — 5곳(/analyze 2 · /multi-photo 3)이어야 한다`);
-  for (const m of calls) {
-    assert.strictEqual(m[1], m[2],
-      `reconcileAllergens 인자 짝이 어긋났다: ${m[1]}.allergens vs ${m[2]}.allergens_v2`);
-  }
-  // ★ 어떤 지점도 reconcile 을 거치지 않은 raw flat 을 응답·저장에 그대로 쓰지 않는다.
+  // ★★★ 세션54 D4 — 세 조립 지점(/analyze 응답 · /multi-photo 응답 · /multi-photo 저장)이
+  //   이제 «한 함수»(`buildAllergenKeys`)를 부른다. 종전 검사는 호출 «개수 5»를 셌는데,
+  //   그 방식은 (a) 지점이 합쳐지면 동작이 옳아도 깨지고 (b) 개수만 맞추는 수정으로 무력화된다.
+  //   → 원래 의도(「raw flat 이 reconcile 을 건너뛰고 나가지 않는다」)를 두 층으로 검사한다.
+  //
+  //   ① 실동작 — 헬퍼가 실제로 reconcile 을 거친다.
+  const { buildAllergenKeys } = require('../src/routes/ocrRoutes');
+  const r = buildAllergenKeys(['새우'], { contains: [], mayContain: [], inferred: [], evidence: [] });
+  assert.ok([...r.allergens_v2.contains, ...r.allergens_v2.inferred, ...r.allergens_v2.mayContain].includes('새우'),
+    'raw flat 이 reconcile 을 건너뛰었다 — flat 에만 있는 알레르겐이 화면에서 사라진다(치명3)');
+  assert.ok(r.allergens.includes('새우'), 'flat 에서도 사라졌다');
+
+  //   ② 구조 — 어떤 지점도 reconcile 을 거치지 않은 raw flat 을 응답·저장에 그대로 쓰지 않는다.
   assert.ok(!/allergens:\s*analysis\.allergens\s*,/.test(src),
     '/analyze 가 raw flat 을 그대로 낸다 — 혼입이 「직접 함유」로 나간다');
   assert.ok(!/allergens:\s*merged\.allergens\s*,/.test(src),
     '/multi-photo 가 raw flat 을 그대로 낸다 — 혼입이 「직접 함유」로 나간다');
+  //   ③ 세 지점이 «모두» 헬퍼를 지난다. 하나라도 빠지면 세션39·세션44 치명B 의 재현이다.
+  const helperCalls = (src.match(/buildAllergenKeys\(/g) || []).length;
+  assert.ok(helperCalls >= 4,   // 정의 1 + 사용 3
+    `buildAllergenKeys 사용 지점이 부족하다(${helperCalls}) — 조립 지점 하나가 헬퍼를 안 쓴다`);
 });
 
 t('경미9 — 조사 없는 「밀 포함」 선언도 잡힌다 (030 오탐 재발 없이)', () => {
@@ -740,7 +762,7 @@ t('★ 치명B — /multi-photo 두 사진 합집합. 표기가 영양표 쪽에
   const flat = [...new Set([...(L.allergens || []), ...(N.allergens || [])])].sort();
   const v2 = ocrParser.mergeAllergensV2(L.allergens_v2, N.allergens_v2);
   const fin = ocrParser.reconcileAllergens(flat, v2);
-  assert.deepStrictEqual(fin.contains, ['게', '난류', '밀', '새우', '쇠고기', '우유']);
+  assert.deepStrictEqual(fin.contains, ['게', '난류(가금류)', '밀', '새우', '쇠고기', '우유']);
   assert.deepStrictEqual(fin.mayContain, ['땅콩', '메밀']);
   const shown = new Set([...fin.contains, ...fin.mayContain, ...fin.inferred]);
   assert.strictEqual(shown.size, 8, `화면 노출 ${shown.size}종 — 8종이어야 한다`);

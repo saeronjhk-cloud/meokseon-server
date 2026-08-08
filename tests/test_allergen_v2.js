@@ -34,7 +34,7 @@ const CASES = [
     { contains: [], mayContain: [], inferred: [] }],
   ['C10 명시 함유 + 별도 혼입 문장(우선순위·분리)',
     '난류, 우유 함유. 이 제품은 땅콩을 사용한 제품과 같은 제조라인에서 생산됩니다.',
-    { contains: ['난류', '우유'], mayContain: ['땅콩'], inferred: [] }],
+    { contains: ['난류(가금류)', '우유'], mayContain: ['땅콩'], inferred: [] }],
 ];
 
 function eq(a, b) { return JSON.stringify(a) === JSON.stringify(b); }

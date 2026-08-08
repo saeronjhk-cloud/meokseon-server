@@ -117,6 +117,14 @@ const CLASSES = [
     rows: [{ name: '밀', level: 'contains' }],
     special: 'throw',
   },
+  {
+    id: 'C12_valid_plus_blank', label: '유효 이름 1개 + 공백 이름 1개', barcode: 'ALG0012',
+    // ★ 세션54 A2 에서 **새로 추가한 클래스.** 종전 계약에는 이 조합이 없었다.
+    //   C06(공백만)은 A1 으로 collected=false → 4키가 전부 null 이라 가려지고,
+    //   C09(유효 + 정규화불가)는 「이름은 읽었지만 19종에 안 붙는」 경우다.
+    //   「이름 칸이 아예 비어 있는 행이 유효 행과 섞여 있을 때」는 어느 쪽도 덮지 못했다.
+    rows: [{ name: '밀', level: 'contains' }, { name: '   ', level: 'contains' }],
+  },
 ];
 
 // ══════════════════════════════════════════════════════════════════════════
@@ -136,14 +144,24 @@ const CLASSES = [
  *   A2  정규화 소실(dropped)이 flat_complete 에 반영되지 않는다.
  *       `normalizeAllergenRows` 가 19종에 못 붙는 이름을 **조용히 버리는데**,
  *       버린 뒤에도 응답은 `flat_complete: true` = 「flat 이 전부다」라고 말한다.
- *       C09(밀 + 카카오매스)가 그 상태다. 실측 근거: HACCP 적재 5,649행 중 705행(12.5%)이 비정본 이름.
- *       → 지금 계약에는 `dropped` 를 셀 자리가 없다. 미래 계약이 그것을 만든다.
+ *       C09(밀 + 카카오매스)가 그 상태였다. 실측 근거: HACCP 적재 5,649행 중 705행(12.5%)이 비정본 이름.
+ *       ✅ 세션54 에 해결됐다. 배선은 3단이다 —
+ *          `allergenName.normalizeAllergenRowsWithStats` 가 소실 수를 세고,
+ *          `productModel.getAllergens(productId, stats)` 가 선택적 `stats` 로 흘리고,
+ *          `productService` 응답 조립이 `mayContain.length === 0 && dropped === 0` 으로 판정한다.
+ *       §6 의 C09·C12 단정이 이것을 고정한다. 되돌아가면 그 두 줄이 먼저 빨개진다.
  */
 const KNOWN_VIOLATIONS = {
-  'C01_none::F2': { defect: 'A1', why: '0행(미수집)인데 flat_complete=true — 「flat 이 전부」라고 말할 근거가 없다' },
-  'C06_blank::F2': { defect: 'A1', why: '이름이 전부 필터로 떨어졌는데(=읽지 못했다) flat_complete=true' },
-  'C07_unnormalizable::F2': { defect: 'A1', why: '정규화가 전부 실패했는데(=읽지 못했다) flat_complete=true' },
-  'C11_query_throws::F2': { defect: 'A1', why: '조회가 실패했는데 flat_complete=true — 실패를 「완전함」으로 보고한다' },
+  // ── A1 (F2 · 4건) — ✅ 세션54 에 고쳐져 **대장에서 제거**했다.
+  //      제거한 줄: C01_none::F2 · C06_blank::F2 · C07_unnormalizable::F2 · C11_query_throws::F2
+  //      productService.js 의 응답 조립이
+  //        `!(collected) || mayContain.length === 0`  →  `!(collected) ? null : mayContain.length === 0`
+  //      로 바뀌었다. 미수집(0행·이름 전멸·정규화 전멸·조회 실패)일 때 이제 `null` 이 나가므로
+  //      `available === false && complete === true`(F2) 가 성립하지 않는다.
+  //      ★ 남겨 두면 §2 가 「고쳐졌다」로 실패시킨다 — 그것이 이 대장의 설계다.
+  // ── A2 (정규화 소실 dropped 미반영) — ✅ 세션54 에 고쳐졌다.
+  //      A2 는 원래 F1~F7 어디에도 걸리지 않아 이 대장에 줄이 없었다(F3 는 mayContain 만 본다).
+  //      그래서 §6 의 C09·C12 단정이 A2 의 회귀 검사다. 대장이 아니라 거기를 볼 것.
 };
 
 // ══════════════════════════════════════════════════════════════════════════
@@ -506,6 +524,30 @@ async function main() {
     assert.deepStrictEqual(r.allergens, ['밀']);
   });
 
+  await t('★★ C12 — 유효 이름 옆에 공백 이름이 섞여 있으면 flat_complete=false 다 (세션54 신규)', () => {
+    // ── 이 클래스의 기대값을 이렇게 정한 근거 (세션54) ──────────────────────
+    //   ① 계약의 정의상 그렇다. `dropped` 는 「19종 어디에도 못 붙어 사라진 원본 행의 수」다.
+    //      이름 칸이 공백인 행은 붙을 이름 자체가 없어 사라진다 — 읽지 못하고 버린 행이다.
+    //   ② 이 저장소의 제1원칙(과소경고 > 과잉경고 위험, 애매하면 살리는 쪽)에 맞다.
+    //      `false` 는 「알레르겐이 더 있다」가 아니라 「flat 이 전부라고 단정하지 말라」는 신호다.
+    //   ③ 「false 남발로 신호가 무뎌진다」는 반대 논거는 **실측으로 기각됐다.**
+    //      · `allergen_name` 은 VARCHAR NOT NULL — NULL 이 들어갈 수 없다.
+    //      · 실행 중 `product_allergens` 에 쓰는 곳은 mergeService 한 곳이고,
+    //        그 입력을 만드는 `unionAllergens` 가 `if (v) names.add(v)` 로 공백을 버린다.
+    //      · HACCP 적재 경로의 `parseAllergy` 를 실제 덤프(scripts/output/haccp_dump.ndjson,
+    //        14,682줄 / alg 보유 6,195건)에 그대로 돌려 이름 19,489건을 얻었는데
+    //        **공백 0건**, distinct 는 정확히 정본 19종이었다.
+    //      → 공백 행은 사실상 발생하지 않는다. 세는 비용이 0 에 가깝다.
+    //   ⚠ 운영 DB 직접 집계는 못 했다 — 샌드박스에서 DNS 가 막혀 있다(EAI_AGAIN).
+    const r = results.C12_valid_plus_blank;
+    assert.strictEqual(r.allergens_available, true,
+      '유효 이름 「밀」을 읽었는데 「정보 없음」으로 나간다 — 경고가 통째로 사라진다');
+    assert.deepStrictEqual(r.allergens, ['밀'], '공백 행 하나 때문에 유효 이름까지 버려졌다');
+    assert.deepStrictEqual(r.allergens_v2.mayContain, []);
+    assert.strictEqual(r.allergens_flat_complete, false,
+      '읽지 못하고 버린 행이 있는데 「flat 이 전부다」라고 단정한다');
+  });
+
   await t('★★ C10 — evidence_level 컬럼이 없어도 죽지 않고, 등급은 contains 로 올려 잡는다', () => {
     const r = results.C10_no_level_column;
     assert.strictEqual(r.allergens_available, true, '컬럼 부재로 알레르기가 통째로 사라졌다');
@@ -586,6 +628,9 @@ async function main() {
       }
       assert.strictEqual(results.C09_partial_drop.allergens_flat_complete, false,
         'C09: 정규화 소실(dropped>0)이 있는데 flat_complete=true 다 — dropped 를 세지 않는다(A2)');
+      // 세션54 신규 — 공백 이름 행도 「읽지 못하고 버린 행」이다(근거는 §4 의 C12 검사 주석).
+      assert.strictEqual(results.C12_valid_plus_blank.allergens_flat_complete, false,
+        'C12: 공백 이름 행이 버려졌는데 flat_complete=true 다 — 버린 행을 세지 않는다(A2)');
     } else {
       pendings.push('A1 미구현 — flat_complete 가 미수집일 때 true 다 (권고: null)');
       pendings.push('A2 미구현 — 정규화 소실(dropped)이 flat_complete 에 반영되지 않는다 '

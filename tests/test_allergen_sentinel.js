@@ -71,10 +71,12 @@ const coverageFailures = [];
     if (c.expect === true) e.pos++;
     if (c.expect === false) e.neg++;
   }
-  // CANONICAL_19 는 '난류(가금류)' 를 쓰고 파서 표는 '난류' 를 쓴다 — 이름 축이 갈려 있다.
-  // 여기서는 파서가 실제로 내는 이름을 기준으로 본다. 이 불일치 자체는 쟁점4 통합 대상이다.
-  const parserNames = CANONICAL_19.map((n) => (n === '난류(가금류)' ? '난류' : n));
-  for (const a of parserNames) {
+  // ★ 세션55 — 축 매핑을 제거했다. 파서 표(`ALLERGEN_KEYWORDS`·`ALLERGEN_NAMES`)의 키를
+  //   `난류(가금류)` 로 올려 A 와 통일했으므로, 여기서 이름을 되돌릴 이유가 없어졌다.
+  //   종전 코드: `CANONICAL_19.map(n => n === '난류(가금류)' ? '난류' : n)`
+  //   ⚠ 죽은 예외를 남기지 않는다(세션54 §10 — 해소된 예외는 즉시 제거).
+  //     축이 다시 갈리면 `tests/test_allergen_axis.js` 가 먼저 빨간불이 된다.
+  for (const a of CANONICAL_19) {
     const e = byAllergen.get(a);
     if (!e) { coverageFailures.push(`${a}: 케이스 0건 (UNEXERCISED)`); continue; }
     if (!e.ingredients) coverageFailures.push(`${a}: 원재료 경로 케이스 없음`);

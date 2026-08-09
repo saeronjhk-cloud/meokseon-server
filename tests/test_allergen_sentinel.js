@@ -29,8 +29,11 @@
 
 const fs = require('fs');
 const path = require('path');
-const { detectAllergens, detectAllergensV2 } = require('../src/services/ocrParser');
+// ★ 세션58 — `ALLERGEN_KEYWORDS` import 를 뺐다. 이 검사는 더 이상 그 표를 읽지 않는다.
+//   (표 자체는 되돌리기 위해 소스에 남아 있다 — 아래 NEG_REQUIRED 주석 참조)
+const { detectAllergens, detectAllergensV2, ALLERGEN_NAMES, KEYWORD_LEFT_NEGATIVE_KEYS } = require('../src/services/ocrParser');
 const { CANONICAL_19 } = require('../src/services/allergenName');
+const allergenGuards = require('../src/services/allergenGuards');
 
 const STRICT = process.env.SENTINEL_STRICT === '1';
 
@@ -65,23 +68,79 @@ const coverageFailures = [];
   const byAllergen = new Map();
   for (const c of cases) {
     if (c.status === 'policy_pending') continue;   // 정책 미정 칸은 커버리지로 세지 않는다
-    if (!byAllergen.has(c.allergen)) byAllergen.set(c.allergen, { declared: 0, ingredients: 0, pos: 0, neg: 0 });
+    if (!byAllergen.has(c.allergen)) byAllergen.set(c.allergen, { declared: 0, no_declaration: 0, pos: 0, neg: 0, declaredNeg: 0 });
     const e = byAllergen.get(c.allergen);
     e[c.path] = (e[c.path] || 0) + 1;
     if (c.expect === true) e.pos++;
-    if (c.expect === false) e.neg++;
+    if (c.expect === false) { e.neg++; if (c.path === 'declared') e.declaredNeg++; }
   }
   // ★ 세션55 — 축 매핑을 제거했다. 파서 표(`ALLERGEN_KEYWORDS`·`ALLERGEN_NAMES`)의 키를
   //   `난류(가금류)` 로 올려 A 와 통일했으므로, 여기서 이름을 되돌릴 이유가 없어졌다.
   //   종전 코드: `CANONICAL_19.map(n => n === '난류(가금류)' ? '난류' : n)`
   //   ⚠ 죽은 예외를 남기지 않는다(세션54 §10 — 해소된 예외는 즉시 제거).
   //     축이 다시 갈리면 `tests/test_allergen_axis.js` 가 먼저 빨간불이 된다.
+  // ★★★ 세션57 — `neg` 를 «억제 장치를 가진 알레르겐»에만 요구한다.
+  //   근거: IP/coverage_neg_판단_2026-08-09_세션57.md
+  //   장치는 세 가지다. 하나라도 걸린 종만 음성 대조군이 «무언가를 지킨다» —
+  //     ① 토큰 가드(allergenGuards.TOKEN_GUARDS)  ② 1글자 구분자 경계  ③ 좌측 부정 문맥
+  //   장치 없는 13종에 음성을 요구하면 둘 중 하나가 된다:
+  //     · vacuous (실물 선언 세그먼트 106개에서 오탐 관측 0건) → 거짓 안전감
+  //     · 지금 실패 (소바게티→메밀 · 치킨향분말→닭고기) → 그건 커버리지 칸이 아니라 «결함»이다.
+  //       그 통로는 `X-경로-선언오버런` 1건이 종과 무관하게 잰다.
+  //   ⚠ 종 목록을 «문자열로 박지 않는다». 박으면 가드가 사라져도 계약이 모른다(세션44 반쪽 수정).
+  // ★★★ 세션58 — `ALLERGEN_KEYWORDS` 를 인벤토리에서 **뺐다.**
+  //   왜: 2단계(추론 폐기)로 그 표는 **어느 매칭 경로에서도 읽히지 않는다**(도달 불가).
+  //     · 판별기 B — 1단계에서 표 루프를 제거했고 2단계 폴백 자체가 사라졌다.
+  //     · 판별기 C — `kind === 'ingredients'` 세그먼트를 건너뛴다.
+  //   표는 «되돌리기 위해» 소스에 남겨 뒀다(설계 §5 — 2단계는 되돌릴 수 있어야 한다).
+  //   ⚠ **남아 있다는 것과 지킨다는 것은 다르다.** 표를 계속 세면 `버터`·`분유`(우유) ·
+  //     `콩기름`(대두)이 장치로 잡혀 **우유·대두에 음성 대조군을 요구**하는데,
+  //     그 대조군이 지키는 코드는 이미 실행되지 않는다 = **vacuous**. 거짓 안전감이다.
+  //   ★ 세션56 은 반대 방향으로 틀렸다(가드만 끄고 「지키는 게 없다」고 오판). 같은 종류의 오류다 —
+  //     둘 다 「장치가 존재하는가」와 「장치가 도달 가능한가」를 혼동한 것이다.
+  const NEG_REQUIRED = new Set();
+  {
+    const wordsOf = new Map();
+    for (const [a, nm] of Object.entries(ALLERGEN_NAMES)) {
+      wordsOf.set(a, [...(wordsOf.get(a) || []), ...(Array.isArray(nm) ? nm : [nm])]);
+    }
+    for (const [a, words] of wordsOf) {
+      const hasDevice = words.some((w) =>
+        allergenGuards.hasGuard(w)                                          // ①
+        || (w.length === 1 && !allergenGuards.guardDecidesSubstring(w))     // ②
+        || KEYWORD_LEFT_NEGATIVE_KEYS.has(w));                              // ③
+      if (hasDevice) NEG_REQUIRED.add(a);
+    }
+  }
+
   for (const a of CANONICAL_19) {
     const e = byAllergen.get(a);
     if (!e) { coverageFailures.push(`${a}: 케이스 0건 (UNEXERCISED)`); continue; }
-    if (!e.ingredients) coverageFailures.push(`${a}: 원재료 경로 케이스 없음`);
+    // ★ `ingredients` 경로가 폐기됐으므로 「그 경로 케이스 존재」는 더 이상 잴 수 없다.
+    //   대신 «선언 경로»를 센다 — 재정의 후 이 앱이 실제로 읽는 유일한 경로다.
+    if (!e.declared) coverageFailures.push(`${a}: 선언 경로 케이스 없음`);
     if (!e.pos) coverageFailures.push(`${a}: 양성 케이스 없음`);
-    if (!e.neg) coverageFailures.push(`${a}: 음성 대조군 없음`);
+    if (NEG_REQUIRED.has(a) && !e.declaredNeg) {
+      coverageFailures.push(`${a}: 선언 경로 음성 대조군 없음 (억제 장치 보유 종)`);
+    }
+  }
+
+  // ★★ 이 단정이 위 규칙 자체를 지킨다.
+  //   누군가 토큰 가드를 지우면 `NEG_REQUIRED` 가 조용히 줄고 음성 요구가 «사라진다».
+  //   그 순간을 빨간불로 만든다. 장치를 «늘리는» 것은 자유다.
+  //
+  // ★★★ 세션58 — 상수를 6 → 4 로 **내렸다.** 단정을 지운 것이 아니다.
+  //   세션57 실측 6종 = 밀 · 우유 · 게 · 조개류 · 잣 · 대두 (`ALLERGEN_KEYWORDS` 포함 기준)
+  //   세션58 실측 4종 = 밀 · 게 · 조개류 · 잣          (도달 가능한 `ALLERGEN_NAMES` 기준)
+  //   빠진 2종의 정체 — **둘 다 원재료 표 전용 장치였다. 폐기로 도달 불가가 됐다.**
+  //     · 우유 ← 토큰 가드 `버터`(butterAccept) · `분유`(milkPowderAccept). 둘 다 ALLERGEN_KEYWORDS.
+  //     · 대두 ← 좌측 부정 문맥 `콩기름`(땅콩기름 방어). 역시 ALLERGEN_KEYWORDS.
+  //   ⚠ **가드 자체는 지우지 않았다.** 판별기 A(`allergenName.js`)가 HACCP `allergy` 필드와
+  //     사용자 자유입력에서 다섯 가드를 «전부» 계속 쓴다(설계 §3). 회귀는 `test_wheat_guard.js`(68건)
+  //     와 `test_allergen_name_normalize.js` 가 그 축에서 따로 지킨다.
+  //   ⚠ 이 숫자를 다시 내리려면 «무엇이 도달 불가가 됐는지»를 여기 적을 것. 그냥 낮추지 말 것.
+  if (NEG_REQUIRED.size < 4) {
+    coverageFailures.push(`억제 장치 보유 종이 ${NEG_REQUIRED.size}종으로 줄었다 (2026-08-09 세션58 실측 4종: 밀·게·조개류·잣) — 장치가 사라졌는지 확인할 것`);
   }
 }
 
@@ -105,9 +164,19 @@ for (const c of cases) {
   const gotC = detectedByC(c.text, c.allergen);
   const gotB = detectedByB(c.text, c.allergen);
   // ★ 두 판별기 «모두» 계약을 지켜야 한다. 한쪽만 맞으면 같은 응답에서 값이 갈린다(쟁점4).
-  const ok = gotC === c.expect && gotB === c.expect;
+  let ok = gotC === c.expect && gotB === c.expect;
 
-  const rec = { id: c.id, allergen: c.allergen, path: c.path, text: c.text, expect: c.expect, B: gotB, C: gotC, why: c.why };
+  // ★★★ 세션57 — `no_declaration` 경로의 «두 번째 질문».
+  //   재정의된 케이스는 「검출하지 않는가」만으로 부족하다. 그건 키워드가 없어도 통과한다(vacuous).
+  //   「이 문장에 법정 선언란이 없다고 «말하는가»」까지 물어야 경로가 실제로 실행된다.
+  //   신호는 세션56 1단계가 넣은 `detectAllergensV2().declarationFound` 다.
+  let gotDecl = null;
+  if (c.expect_declaration_found !== undefined) {
+    gotDecl = detectAllergensV2(c.text).declarationFound;
+    ok = ok && gotDecl === c.expect_declaration_found;
+  }
+
+  const rec = { id: c.id, allergen: c.allergen, path: c.path, text: c.text, expect: c.expect, B: gotB, C: gotC, decl: gotDecl, expectDecl: c.expect_declaration_found, why: c.why };
 
   if (c.status === 'known_gap') {
     (ok ? results.gapPass : results.gapFail).push(rec);
@@ -134,13 +203,14 @@ if (coverageFailures.length) {
   for (const f of coverageFailures) line(`   · ${f}`);
 } else {
   line('');
-  line('✅ 커버리지: 19종 전부 원재료 경로 + 양성 + 음성 대조군 보유');
+  line('✅ 커버리지: 19종 전부 선언 경로 + 양성 보유 · 억제 장치 보유 4종(밀·게·조개류·잣) 전부 선언 경로 음성 대조군 보유');
 }
 
 line('');
 line(`계약(contract)  통과 ${results.contractPass} · 실패 ${results.contractFail.length}`);
+const declPart = (r) => (r.expectDecl === undefined ? '' : ` / declarationFound 기대 ${r.expectDecl} 실제 ${r.decl}`);
 for (const r of results.contractFail) {
-  line(`   ❌ ${r.id}  기대 ${r.expect} / B=${r.B} C=${r.C}`);
+  line(`   ❌ ${r.id}  기대 ${r.expect} / B=${r.B} C=${r.C}${declPart(r)}`);
   line(`      "${r.text}"`);
   line(`      ${r.why}`);
 }
@@ -148,7 +218,8 @@ for (const r of results.contractFail) {
 line('');
 line(`알려진 갭(known_gap)  해소 ${results.gapPass.length} · 미해소 ${results.gapFail.length}`);
 for (const r of results.gapFail) {
-  line(`   🟠 ${r.id}  기대 ${r.expect} / B=${r.B} C=${r.C}   ← P1 수정 대상`);
+  const target = r.path === 'no_declaration' ? '2단계(원재료 추론 폐기) 대상' : '수정 대상';
+  line(`   🟠 ${r.id}  기대 ${r.expect} / B=${r.B} C=${r.C}${declPart(r)}   ← ${target}`);
   line(`      "${r.text}"`);
 }
 for (const r of results.gapPass) line(`   ✅ ${r.id}  해소됨 — GT 를 contract 로 승격할 것`);

@@ -21,6 +21,15 @@
  *
  * ★ 클라이언트 검사는 **실제 배포되는 public/ocr-test.html 을 읽어서** 실행한다.
  *   복사본을 만들지 않는다(test_withheld_client_render.js 와 같은 이유·같은 로더).
+ *
+ * ★★★ 세션58 (2026-08-09) — 「알레르기 원재료 추론 폐기」 2단계 반영
+ *   제이 결정 D55-2 · 설계 `IP/알레르기_추론폐기_설계_2026-08-08_세션55.md`
+ *   위 ① 의 «원재료 형태 축»이 폐기됐다. 이 파일에서 바뀐 칸은 3개이고, **하나도 지우지 않았다.**
+ *     · §1 「원재료 형태 표기는 그대로 유지된다」 → 「이제 읽지 않는다」로 **질문을 뒤집었다**
+ *     · §4 「원재료 항목을 혼입으로 강등하지 않는다」 → 「혼입 구획을 잃지 않는다」로 **질문을 좁혔다**
+ *     · §9 치명1 → 기대값은 그대로 두고 **묻는 상대를 B 에서 C 로 옮겼다** (질문이 살아 있는 곳)
+ *   그리고 §7 의 법정 19종 안전망을 `ALLERGEN_NAMES` 기준으로 다시 세웠다.
+ *   ⚠ 「기대값을 실행 결과에 맞춰 고쳤다」가 아님 — 각 칸에 판정 근거를 주석으로 남겼다.
  */
 'use strict';
 
@@ -30,7 +39,9 @@ const path = require('path');
 const vm = require('vm');
 const ocrParser = require('../src/services/ocrParser');
 
-const { detectAllergens, detectAllergensV2, analyzeText } = ocrParser;
+// ★ 세션58 — `ALLERGEN_NAMES` 를 직접 읽는다. 「표를 줄이면 걸린다」를 «구조»로도 잡기 위해서다
+//   (§7 의 법정 19종 칸 참조). 종전엔 동작(출력)으로만 잡아 표가 우연히 덮이면 통과했다.
+const { detectAllergens, detectAllergensV2, analyzeText, ALLERGEN_NAMES } = ocrParser;
 
 let pass = 0;
 let fail = 0;
@@ -198,8 +209,24 @@ t('게 단독 표기 (기존엔 게살/크래미/꽃게만 있었다)', () => {
   assert.deepStrictEqual(detectAllergens('알레르기 유발물질: 게, 새우 함유'), ['게', '새우']);
 });
 
-t('원재료 형태 표기는 그대로 유지된다 (밀가루 → 밀)', () => {
-  assert.deepStrictEqual(detectAllergens('대두, 밀가루 함유'), ['대두', '밀']);
+// ★★★ 세션58 2단계 — 질문을 뒤집었다. 지우지 않았다.
+//   원래 질문(세션44): 「법정 명칭 축을 «추가»하면서 원재료 형태 축을 잃지 않았는가」
+//     그때는 두 축이 공존했고, `밀가루`→`밀` 이 유지되는지가 회귀 관심사였다.
+//   지금(제이 결정 D55-2, 2026-08-08): **원재료 형태 축 자체를 폐기했다.**
+//     설계 = `IP/알레르기_추론폐기_설계_2026-08-08_세션55.md`
+//     근거 — 알레르기 유발물질은 규정상 원재료명 표시란 «근처의 별도 표시란»에 함유량과
+//     무관하게 전부 인쇄된다. `밀가루` 에서 `밀` 을 추론할 «필요»가 없다.
+//     실측(라벨 68건) — 추론의 순수 추가분 0종. v1 이 더 낸 4종 중 3종은 오탐이었다.
+//   → 그래서 이제 물어야 할 것은 「유지되는가」가 아니라 **「확실히 사라졌는가」**다.
+//     ⚠ 남는 축(법정 단독 명칭)이 함께 죽지 않았음을 같은 칸에서 대조한다 —
+//       이 짝이 없으면 「전부 [] 를 내는 구현」도 초록이 된다.
+t('★ 원재료 형태 표기(밀가루)는 이제 읽지 않는다 — 법정 단독 명칭만 남는다 (D55-2)', () => {
+  // 종전 기대값 ['대두','밀']. `밀` 은 `밀가루` 에서 «추론»된 것이었다.
+  assert.deepStrictEqual(detectAllergens('대두, 밀가루 함유'), ['대두'],
+    '원재료 형태 추론이 되살아났다 — D55-2 폐기가 풀렸는지 확인할 것');
+  // ★ 양성 대조군 — 라벨이 실제로 인쇄하는 형태(단독 명칭)는 그대로 읽는다.
+  //   실물 라벨은 `대두, 밀 함유` 로 인쇄되지 `대두, 밀가루 함유` 로 인쇄되지 않는다.
+  assert.deepStrictEqual(detectAllergens('대두, 밀 함유'), ['대두', '밀']);
 });
 
 t('법정 19종 전부가 한 줄에 선언돼도 19종이 나온다', () => {
@@ -291,11 +318,30 @@ t('006 대천김 — 혼입 4종 정확히 (대두·밀·우유·토마토)', ()
   assert.deepStrictEqual(r.mayContain.slice().sort(), ['대두', '밀', '우유', '토마토']);
 });
 
-t('★ 혼입 항목이 원재료에도 실제로 있으면 혼입으로 강등하지 않는다 (누락 방지)', () => {
+// ★★★ 세션58 2단계 — 질문을 바꿨다. 지우지 않았다.
+//   원래 질문(세션44): 「원재료에 «실제로» 있는 항목(inferred)을 혼입으로 강등하지 않는가」
+//     그 강등 방지 규칙(`ocrParser.js` 의 `for (const a of inferred) mayContain.delete(a)`)이
+//     지키던 것이 이 칸이었다.
+//   지금(D55-2): 원재료 세그먼트를 아예 읽지 않으므로 **`inferred` 가 항상 빈 배열**이다.
+//     → 「강등 방지」라는 질문이 성립하지 않는다. 지킬 대상이 없다.
+//   ⚠ 그러나 이 칸이 진짜로 막던 사고 — **혼입 경고가 소실되는 것** — 는 그대로 살아 있다.
+//     그래서 질문을 「원재료 세그먼트를 끊어도 혼입 구획은 한 종도 잃지 않는다」로 바꾼다.
+//   ⚠ `inferred` 필드 자체의 생존은 `tests/test_allergen_v2.js` 말미가 별도로 못 박는다
+//     (세션44 치명3 — 필드를 지우면 flat 전용 알레르기가 화면에서 통째로 사라진다).
+t('★ 원재료 세그먼트를 끊어도 혼입 구획은 잃지 않는다 (누락 방지 — 질문 갱신)', () => {
   const r = detectAllergensV2('원재료명: 밀가루, 설탕\n대두를 사용한 제품과 같은 제조시설에서 제조합니다.');
-  assert.ok(r.inferred.includes('밀'), '원재료의 밀은 추정으로 남아야 한다');
-  assert.ok(!r.mayContain.includes('밀'), '원재료에 있는 항목이 혼입으로 강등되면 안 된다');
+  // ① 혼입은 그대로 — 여기가 비면 2단계가 혼입 경로까지 부순 것이다(과소경고 = 즉시 되돌릴 사유).
   assert.deepStrictEqual(r.mayContain, ['대두']);
+  // ② 종전 기대값 `r.inferred.includes('밀')`. 이제 추론 구획은 항상 비어 있다.
+  assert.deepStrictEqual(r.inferred, [],
+    '원재료 추론이 되살아났다 — D55-2 폐기가 풀렸는지 확인할 것');
+  // ③ ★ 그리고 `밀` 이 «엉뚱한 칸으로 흘러가지» 않았음을 못 박는다.
+  //    원재료 세그먼트를 건너뛰는 구현이 자칫 그 문장을 other/contains 로 흘리면
+  //    「원재료의 밀」이 직접 함유로 승격되는 정반대 사고가 된다.
+  assert.ok(!r.contains.includes('밀') && !r.mayContain.includes('밀'),
+    `원재료의 밀이 다른 구획으로 샜다. got=${JSON.stringify(r)}`);
+  // ④ 필드는 살아 있어야 한다 (값이 비는 것과 필드가 없어지는 것은 다른 사건이다).
+  assert.ok(Array.isArray(r.inferred), 'inferred 필드가 사라졌다 — 세션44 치명3 재발 경로');
 });
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -321,7 +367,11 @@ t('★ ocrRoutes 의 두 엔드포인트 응답에 allergens_v2 가 실린다 (�
   //   즉 리팩터링을 막는 족쇄였다. 원래 지키려던 의도(「v2 가 응답에 실린다」·「인자 짝이 맞는다」)를
   //   함수를 직접 불러 확인한다. `ocrRoutes` 가 `buildAllergenKeys` 를 노출한다.
   const { buildAllergenKeys } = require('../src/routes/ocrRoutes');
-  const v2in = { contains: ['밀'], mayContain: ['대두'], inferred: [], evidence: [] };
+  // ★ 세션56 — `declarationFound: true` 를 명시한다.
+  //   `contains:['밀']` 은 «선언란에서 읽은» 값이므로 이 조합이 실제 파서 출력과 일치한다.
+  //   이 필드가 없으면 `buildAllergenKeys` 가 `available:false` 로 읽어
+  //   `flat_complete` 가 null 이 된다(= 「판정 없음」). 손으로 만든 v2 리터럴의 함정이다.
+  const v2in = { contains: ['밀'], mayContain: ['대두'], inferred: [], evidence: [], declarationFound: true };
   const out = buildAllergenKeys(['밀', '우유'], v2in);
 
   assert.ok(out.allergens_v2 && Array.isArray(out.allergens_v2.contains),
@@ -338,7 +388,7 @@ t('★ ocrRoutes 의 두 엔드포인트 응답에 allergens_v2 가 실린다 (�
     ['allergens', 'allergens_available', 'allergens_flat_complete', 'allergens_v2'],
     'D4 — OCR 응답의 알레르기 4키가 줄었다');
   assert.strictEqual(out.allergens_flat_complete, false, '혼입이 있는데 flat_complete=true 다');
-  const noMay = buildAllergenKeys(['밀'], { contains: ['밀'], mayContain: [], inferred: [], evidence: [] });
+  const noMay = buildAllergenKeys(['밀'], { contains: ['밀'], mayContain: [], inferred: [], evidence: [], declarationFound: true });
   assert.strictEqual(noMay.allergens_flat_complete, true, '혼입이 없는데 flat_complete=false 다 — 신호가 무의미해진다');
   // ★ 판정 자체가 없으면 null (「flat 이 전부가 아니다」라는 판정과 구별된다)
   assert.strictEqual(buildAllergenKeys(null, null).allergens_flat_complete, null,
@@ -499,16 +549,44 @@ t('detectAllergensV2 도 적대적 입력 5종에서 SLOW_MS(120) 안에 끝난�
   }
 });
 
-t('★ 합본 표에 법정 19종이 빠짐없이 있다 (표를 줄이면 여기서 걸린다)', () => {
+// ★★★ 세션58 2단계 — 이름을 「합본 표」에서 `ALLERGEN_NAMES` 로 바꿔 다시 세웠다.
+//   왜 — 「합본」이라는 말이 가리키던 두 표 중 하나(`ALLERGEN_KEYWORDS`, 원재료 형태)가
+//     D55-2 로 **어느 매칭 경로에서도 읽히지 않게** 됐다. 남은 축은 `ALLERGEN_NAMES` 하나다.
+//     이름을 안 고치면 다음 세션이 「합본 표를 줄여도 되나?」를 잘못된 표에 물어보게 된다.
+//   ⚠ **「19종 전부 있어야 한다」는 단정 자체는 그대로다.** 이것이 이 칸의 존재 이유다.
+//     세션44 실측: `고등어`·`잣` 이 표 전체에 없었다(법정 19종 중 2종 누락 = 과소경고).
+//   ⚠ 이제 표를 «구조»와 «동작» 두 방향에서 동시에 잡는다. 한쪽만으로는 부족하다:
+//     · 구조만 보면 — 키는 19개인데 값이 비어 라벨을 못 잡아도 초록.
+//     · 동작만 보면 — 표에 없는 종이 다른 경로(옛 원재료 표)로 우연히 잡혀도 초록이었다.
+//       실제로 세션58 이전 `아황산류`·`조개류` 가 정확히 그 상태였다(아래 주석 참조).
+t('★ ALLERGEN_NAMES 에 법정 19종이 빠짐없이 있다 (표를 줄이면 여기서 걸린다)', () => {
+  // ① 구조 — 표의 «키»가 법정 19종 정본명과 정확히 일치한다. 하나라도 빼면 여기서 걸린다.
+  const CANONICAL_19 = ['게', '고등어', '난류(가금류)', '닭고기', '대두', '돼지고기', '땅콩', '메밀',
+    '밀', '복숭아', '새우', '쇠고기', '아황산류', '오징어', '우유', '잣', '조개류', '토마토', '호두'];
+  assert.deepStrictEqual(Object.keys(ALLERGEN_NAMES).slice().sort(), CANONICAL_19,
+    'ALLERGEN_NAMES 의 키 집합이 법정 19종과 다르다 — 표를 줄였거나 정본명을 바꿨다');
+  // ② 값이 비어 있지 않다 — 키만 남기고 별칭을 비우면 라벨을 한 글자도 못 잡는다.
+  for (const [k, v] of Object.entries(ALLERGEN_NAMES)) {
+    assert.ok(Array.isArray(v) && v.length >= 1, `ALLERGEN_NAMES['${k}'] 의 별칭 목록이 비었다`);
+  }
+
+  // ③ 동작 — 실제 포장지에 «인쇄되는 문구»로 선언했을 때 그 1종이 나온다.
   // ⚠ 세션55 — 여기의 `난류` 는 **일부러 그대로 뒀다.** 이 목록은 기대값이 아니라
   //   `detectAllergens('알레르기 유발물질: ${a} 함유')` 의 **입력**, 즉 «라벨에 인쇄되는 문구»다.
   //   실제 포장지에는 `난류`·`알류` 로 인쇄되지 출력 정본명(`난류(가금류)`)으로 인쇄되지 않는다.
   //   여기를 정본명으로 바꾸면 「인쇄 문구를 잡는가」라는 이 테스트의 질문 자체가 사라진다.
+  // ★ 세션58 — `아황산류`·`조개류` 는 세션58 이전에도 이 칸을 «통과»했지만, 그건
+  //   원재료 형태 표가 단순 포함으로 우연히 덮어 주고 있었기 때문이다. 그 경로를 끊자
+  //   경계 규칙(`ALLERGEN_NAME_BOUNDED`)이 `아황산`+`류`·`조개`+`류` 를 못 잡는 것이 드러났고,
+  //   `ALLERGEN_NAMES` 값에 법정 전체형을 넣어 고쳤다. **폐기가 만든 결함이 아니라 원래 있던 결함이다.**
   const LEGAL_19 = ['난류', '우유', '메밀', '땅콩', '대두', '밀', '고등어', '게', '새우', '돼지고기',
     '복숭아', '토마토', '아황산류', '호두', '닭고기', '쇠고기', '오징어', '조개류', '잣'];
+  assert.strictEqual(LEGAL_19.length, 19, '인쇄 문구 목록이 19개가 아니다');
   for (const a of LEGAL_19) {
     const got = detectAllergens(`알레르기 유발물질: ${a} 함유`);
     assert.ok(got.length === 1, `${a} → ${JSON.stringify(got)} (1종이어야 한다)`);
+    // ★ 그리고 그 1종이 «정본명»이어야 한다 — 표의 키와 출력이 어긋나면 화면에서 중복·누락이 난다.
+    assert.ok(CANONICAL_19.includes(got[0]), `${a} → ${got[0]} 는 정본 19종이 아니다`);
   }
 });
 
@@ -580,28 +658,59 @@ t('★ 치명1 — 긴 원재료 낱말이 짧은 알레르기 명칭을 먹지 
   //     메밀은 buckwheat 이고 소맥이 아니다. 세션51 밀 GT 라벨도 N 이다(메밀 157회·메밀가루 67회).
   //     회신 쟁점7-7 도 같은 결론. 세션44 는 소비 매칭을 걷어내는 데 집중하느라
   //     곁다리로 나온 `밀` 을 기대값에 굳혔다.
-  assert.deepStrictEqual(detectAllergens('메밀가루 함유'), ['메밀']);
-  assert.deepStrictEqual(detectAllergens('땅콩기름 함유'), ['땅콩']);
-  assert.deepStrictEqual(detectAllergens('볶은메밀가루 함유'), ['메밀']);
-  assert.deepStrictEqual(detectAllergens('계란, 메밀가루, 땅콩기름 함유'),
+  //   ★★★ 세션58 2단계 — **기대값은 한 글자도 안 바꿨다. «묻는 상대»를 바꿨다.**
+  //     아래 단정들이 지키는 질문(「긴 낱말이 짧은 명칭을 먹지 않는가」)은 `_matchSet` 의
+  //     최장-우선-소비를 겨냥한 것이고, 그 `_matchSet` 을 쓰는 것은 **판별기 C(`detectAllergensV2`)** 다.
+  //     세션44 는 이 칸을 B(`detectAllergens`)에 물었는데, B 는 세션44 이후 소비를 쓰지 않는다.
+  //     그리고 세션58 에서 B 는 원재료 형태 표를 **아예 읽지 않게** 됐다(D55-2) —
+  //     그러니 B 에 물으면 「메밀가루→메밀」이 전부 `[]` 가 되고, «소비가 되살아나도» 초록이다.
+  //     ⚠ 그건 안전망이 아니라 무늬다. 질문이 살아 있는 곳(C)에 그대로 옮겨 세운다.
+  //     ⚠ C 는 화면이 실제로 쓰는 경로다(`allergens_v2`). 세션44 인수인계의 「반쪽 수정」 경고 그대로다.
+  const C = (s) => detectAllergensV2(s).contains;
+  assert.deepStrictEqual(C('메밀가루 함유'), ['메밀']);
+  assert.deepStrictEqual(C('땅콩기름 함유'), ['땅콩']);
+  assert.deepStrictEqual(C('볶은메밀가루 함유'), ['메밀']);
+  assert.deepStrictEqual(C('계란, 메밀가루, 땅콩기름 함유'),
     ['난류(가금류)', '땅콩', '메밀']);
 
   // ★ 진짜 밀은 그대로 나와야 한다 — 부정 규칙이 넓어져 밀을 통째로 놓치면 과소경고다.
-  assert.deepStrictEqual(detectAllergens('밀가루 함유'), ['밀']);
-  assert.deepStrictEqual(detectAllergens('통밀가루 함유'), ['밀']);      // GT 라벨 Y
-  assert.deepStrictEqual(detectAllergens('우리밀가루 함유'), ['밀']);     // GT 라벨 Y
+  assert.deepStrictEqual(C('밀가루 함유'), ['밀']);
+  assert.deepStrictEqual(C('통밀가루 함유'), ['밀']);      // GT 라벨 Y
+  assert.deepStrictEqual(C('우리밀가루 함유'), ['밀']);     // GT 라벨 Y
   // ★ 섞어 쓴 라벨 — 메밀도 밀도 «둘 다» 인쇄된 경우. 부정 규칙이 첫 출현만 보면 밀을 놓친다.
-  assert.deepStrictEqual(detectAllergens('메밀가루, 밀가루 함유'), ['메밀', '밀']);
+  assert.deepStrictEqual(C('메밀가루, 밀가루 함유'), ['메밀', '밀']);
   // ★ 호밀은 법정 19종의 밀(소맥)이 아니다. GT 라벨 N.
-  //   ⚠ 되돌리려면 KEYWORD_LEFT_NEGATIVE['밀가루'] 에서 '호' 한 글자만 지운다.
-  assert.deepStrictEqual(detectAllergens('호밀가루 함유'), []);
+  //   ⚠ 세션58 정정 — 여기 있던 「되돌리려면 KEYWORD_LEFT_NEGATIVE['밀가루'] 에서 '호' 를 지운다」는
+  //     주석은 **이제 틀렸다.** C 경로에서 `밀` 은 `GUARD_DECIDES_SUBSTRING`(현재 `밀` 뿐) 이므로
+  //     `allergenGuards.js` 의 호밀·통호밀 토큰 가드(148행 부근)가 판정한다.
+  //     `KEYWORD_LEFT_NEGATIVE` 는 세션58 이후 어느 매칭 경로도 읽지 않는다(도달 불가).
+  assert.deepStrictEqual(C('호밀가루 함유'), []);
 
   // ★ 양성 대조군 — 대두를 «못 잡게» 된 것이 아님을 같이 단정한다.
   //   부정 규칙을 넣을 때 이 짝이 없으면, 규칙이 너무 넓어져 진짜 대두를 놓쳐도 초록이 된다.
-  assert.deepStrictEqual(detectAllergens('콩기름 함유'), ['대두']);
-  assert.deepStrictEqual(detectAllergens('대두유, 콩기름 함유'), ['대두']);
+  //   ★★★ 세션58 — 종전 대조군은 `콩기름 함유` → ['대두'] 였다. **`콩기름`→대두 는
+  //     `ALLERGEN_KEYWORDS`(원재료 형태 표)가 내던 값**이고 D55-2 로 폐기됐다. 이제 `[]` 다.
+  //     대조군의 «목적»(대두를 못 잡게 된 것이 아님)은 그대로 두고, 근거가 남아 있는 표기로 바꾼다.
+  //     `대두유` 는 `ALLERGEN_NAMES['대두'] = ['대두']` 의 부분문자열이므로 남은 축이 잡는다.
+  assert.deepStrictEqual(C('콩기름 함유'), [],
+    '원재료 형태 추론이 되살아났다 — D55-2 폐기가 풀렸는지 확인할 것');
+  assert.deepStrictEqual(C('대두유, 콩기름 함유'), ['대두']);
   // ★ 둘 다 있으면 둘 다 나와야 한다 — 부정 규칙이 «첫 출현»만 보고 접으면 여기서 대두를 놓친다.
-  assert.deepStrictEqual(detectAllergens('땅콩기름, 콩기름 함유'), ['대두', '땅콩']);
+  //   (종전 `땅콩기름, 콩기름 함유` → ['대두','땅콩']. `콩기름` 축이 사라졌으므로 `대두유` 로 바꾼다.)
+  assert.deepStrictEqual(C('땅콩기름, 대두유 함유'), ['대두', '땅콩']);
+
+  // ★★★ 세션58 — B(판별기 v1)에는 «반대 방향»의 질문을 세운다.
+  //   B 는 이제 법정 단독 명칭만 읽는다. 원재료 형태는 한 종도 내지 않아야 한다.
+  //   ⚠ 이 칸이 빨간불이면 D55-2 폐기가 풀렸거나 되돌려진 것이다.
+  for (const s of ['메밀가루 함유', '땅콩기름 함유', '볶은메밀가루 함유', '밀가루 함유',
+    '통밀가루 함유', '우리밀가루 함유', '호밀가루 함유', '콩기름 함유', '대두유, 콩기름 함유']) {
+    assert.deepStrictEqual(detectAllergens(s), [],
+      `B 가 원재료 형태를 다시 읽는다 — ${s} → ${JSON.stringify(detectAllergens(s))}`);
+  }
+  // ★ 그리고 B 가 «전부 [] 를 내는 껍데기»가 된 것이 아님을 같은 칸에서 대조한다.
+  //   법정 단독 명칭으로 인쇄된 선언은 그대로 읽어야 한다. 이 짝이 없으면 위 루프는 무의미하다.
+  assert.deepStrictEqual(detectAllergens('메밀, 밀 함유'), ['메밀', '밀']);
+  assert.deepStrictEqual(detectAllergens('계란, 메밀, 땅콩 함유'), ['난류(가금류)', '땅콩', '메밀']);
 });
 
 t('★ 중대4 — 1글자 명칭이 무관한 낱말에 걸리지 않는다 (실물 096 포함)', () => {

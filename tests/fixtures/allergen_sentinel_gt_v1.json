@@ -9,13 +9,14 @@
     "sealed_note": "★ 이 GT 는 P1 수정에 «착수하기 전» 에 작성했다. 수정 결과에 맞춰 사후에 라벨을 고치면 안 된다. 현행 성적은 baseline_2026-08-06 필드에 함께 봉인한다.",
     "paths": {
       "declared": "법정 알레르기 표시문. detectAllergens 1단계 · detectAllergensV2 의 kind='contains'. 표 = ALLERGEN_NAMES(19종)",
-      "ingredients": "원재료명 전문. detectAllergens 2단계 · detectAllergensV2 의 kind='ingredients'. 표 = ALLERGEN_KEYWORDS(17종)",
-      "mayContain": "혼입 문구. detectAllergensV2 의 kind='mayContain'"
+      "mayContain": "혼입 문구. detectAllergensV2 의 kind='mayContain'",
+      "no_declaration": "★ 세션57 신설. 법정 선언란이 «없는» 문장. 원재료 추론 폐기(D55-2) 후 이 경로의 계약은 「검출하지 않는다 + declarationFound=false」다. 종전 `ingredients` 경로가 여기로 바뀌었다.",
+      "ingredients (폐기)": "2026-08-09 폐기. 원재료명 전문에서 알레르겐을 «추론»하던 경로. D55-2 로 폐기됐다. 종전 정의: detectAllergens 2단계 · detectAllergensV2 kind=ingredients."
     },
     "status_values": {
       "contract": "지금 반드시 성립해야 하는 계약. 실패하면 결함이다.",
       "policy_pending": "외부검증 회신 쟁점7 이 판단을 권고했으나 제이 결정 전. ★기대값을 확정하지 않는다 — 현행 동작만 기록한다.",
-      "known_gap": "결함임이 확인됐고 P1 에서 고칠 대상. 수정 전에는 실패가 정상이다."
+      "known_gap": "결함임이 확인됐고 P1 에서 고칠 대상. 수정 전에는 실패가 정상이다. ⚠ 세션58 기준 known_gap 케이스는 0건이다(전부 승격). 새로 추가할 때만 쓴다."
     },
     "canonical_19_note": "allergenName.js CANONICAL_19 는 '난류(가금류)' 를 쓰고 ocrParser 두 표는 '난류' 를 쓴다. 이름 축이 이미 갈려 있다 — 쟁점4 공통 코어에서 정리 대상.",
     "runner": "meokseon-server/tests/test_allergen_sentinel.js",
@@ -78,7 +79,237 @@
         "P-난류-날치알 (어란을 법정 난류로 볼지 — 현행 미검출이 회신 권고와 일치)",
         "P-우유-유당 (contains 가 아니라 우유 유래 «추정» 으로 분리할지)"
       ]
-    }
+    },
+    "revisions": [
+      {
+        "date": "2026-08-09",
+        "session": 57,
+        "decisions": [
+          "D55-2 원재료 추론 폐기",
+          "D56-2 GT 3분할",
+          "D57-1 은퇴 21→16 (5건 이관)"
+        ],
+        "summary": "반전 26 · 이관 13(병합 1) · 은퇴 16 · 종결 3 · 신설 1",
+        "why_d57_1": "세션56 의 MUT-G 는 «토큰 가드만» 껐다. 그래서 1글자 구분자 경계·좌측 부정 문맥이 지키던 5건(S-대두-I2 · S-잣-I2 · S-잣-I3 · S-조개류-I3 · P-게-게맛살)이 vacuous 로 보였다. 세션57 이 MUT-B·MUT-L·MUT-GB 를 추가로 돌려 잡아냈다. ⚠ S-대두-I2 는 KEYWORD_LEFT_NEGATIVE 를 지키는 저장소 «유일» 회귀였다 — 은퇴시켰다면 그 장치의 회귀가 0개가 됐다.",
+        "docs": [
+          "IP/알레르기_추론폐기_설계_2026-08-08_세션55.md",
+          "IP/GT_재정의_계획_2026-08-09_세션56.md",
+          "IP/coverage_neg_판단_2026-08-09_세션57.md"
+        ],
+        "file_id_note": "★ 파일명의 2026-08-06 은 v1 식별자다. 개정해도 파일명은 바꾸지 않는다."
+      },
+      {
+        "date": "2026-08-09",
+        "session": 58,
+        "what": "known_gap 27건 → contract 승격",
+        "why": "2단계(추론 폐기) 구현 완료. 세션57 이 각 케이스 promote_when 에 적은 조건이 충족됐다.",
+        "evidence": "SENTINEL_STRICT=1 EXIT 0 · 해소 27 · 미해소 0",
+        "ids": [
+          "S-난류-I1",
+          "S-우유-I1",
+          "S-메밀-I1",
+          "S-땅콩-I1",
+          "S-대두-I1",
+          "S-대두-I3",
+          "S-대두-I4",
+          "S-밀-I1",
+          "S-밀-I2",
+          "S-고등어-I1",
+          "S-게-I1",
+          "S-새우-I1",
+          "S-돼지고기-I1",
+          "S-복숭아-I1",
+          "S-토마토-I1",
+          "S-아황산류-I1",
+          "S-호두-I1",
+          "S-닭고기-I1",
+          "S-쇠고기-I1",
+          "S-오징어-I1",
+          "S-조개류-I1",
+          "S-잣-I1",
+          "S-조개류-I2",
+          "P-대두-대두레시틴",
+          "S-밀-I7",
+          "S-밀-I8",
+          "X-경로-선언오버런"
+        ],
+        "★ 세션57 예측과 다른 점": "세션57 은 「26건은 2단계로 초록, X-경로-선언오버런 1건은 별개 결함이라 남는다」고 적었다. 실측은 **27건 전부 해소**다. 판별기 B(v1)의 1단계에서 ALLERGEN_KEYWORDS 루프를 제거한 것이 오버런이 삼킨 원재료 줄의 오탐(치킨→닭고기·크림→우유)까지 함께 없앴기 때문이다. 오버런 «메커니즘»(정규식이 앞 줄을 삼키는 것)은 그대로 있으나, 그것이 알레르겐을 낳는 경로가 사라졌다.",
+        "⚠ 되돌리려면": "superseded_expect_v1 / _value / _status_v1 로 되돌린다. 그 필드는 지우지 않았다."
+      }
+    ],
+    "neg_coverage_rule": {
+      "rule": "neg(음성 대조군) 커버리지는 «억제 장치를 가진 알레르겐»에만 요구한다. 종 목록을 손으로 박지 말고 코드에서 도출할 것(TOKEN_GUARDS ∪ 1글자 구분자 경계 ∪ KEYWORD_LEFT_NEGATIVE).",
+      "measured_2026_08_09": [
+        "밀",
+        "우유",
+        "게",
+        "조개류",
+        "잣",
+        "대두"
+      ],
+      "why": "장치가 없는 13종은 음성 대조군이 지킬 것이 없다. 만들면 vacuous 이거나(실물 선언 세그먼트 106개에서 오탐 관측 0건) 지금 실패한다(소바게티→메밀 · 치킨향분말→닭고기 · 마요네즈맛→난류). 후자는 커버리지 칸이 아니라 결함이므로 X-경로-선언오버런 1건으로 «통로»를 잰다.",
+      "doc": "IP/coverage_neg_판단_2026-08-09_세션57.md"
+    },
+    "retired_2026-08-09": [
+      {
+        "id": "S-난류-I2",
+        "allergen": "난류(가금류)",
+        "path": "ingredients",
+        "text": "원재료명: 정제수, 알로에겔, 구연산",
+        "expect": false,
+        "reason": "그 알레르겐 이름이 텍스트에 아예 없어서 음성이다. 억제 장치가 관여하지 않아 장치를 전부 꺼도(MUT-G·MUT-B·MUT-L·MUT-GB) 초록이다 = 회귀로서 정보량 0(vacuous)."
+      },
+      {
+        "id": "S-우유-I2",
+        "allergen": "우유",
+        "path": "ingredients",
+        "text": "원재료명: 대두유, 정제수, 향료",
+        "expect": false,
+        "reason": "그 알레르겐 이름이 텍스트에 아예 없어서 음성이다. 억제 장치가 관여하지 않아 장치를 전부 꺼도(MUT-G·MUT-B·MUT-L·MUT-GB) 초록이다 = 회귀로서 정보량 0(vacuous)."
+      },
+      {
+        "id": "S-메밀-I2",
+        "allergen": "메밀",
+        "path": "ingredients",
+        "text": "원재료명: 밀가루, 정제소금",
+        "expect": false,
+        "reason": "그 알레르겐 이름이 텍스트에 아예 없어서 음성이다. 억제 장치가 관여하지 않아 장치를 전부 꺼도(MUT-G·MUT-B·MUT-L·MUT-GB) 초록이다 = 회귀로서 정보량 0(vacuous)."
+      },
+      {
+        "id": "S-땅콩-I2",
+        "allergen": "땅콩",
+        "path": "ingredients",
+        "text": "원재료명: 대두유, 콩기름, 설탕",
+        "expect": false,
+        "reason": "그 알레르겐 이름이 텍스트에 아예 없어서 음성이다. 억제 장치가 관여하지 않아 장치를 전부 꺼도(MUT-G·MUT-B·MUT-L·MUT-GB) 초록이다 = 회귀로서 정보량 0(vacuous)."
+      },
+      {
+        "id": "S-고등어-I2",
+        "allergen": "고등어",
+        "path": "ingredients",
+        "text": "원재료명: 연어, 정제소금",
+        "expect": false,
+        "reason": "그 알레르겐 이름이 텍스트에 아예 없어서 음성이다. 억제 장치가 관여하지 않아 장치를 전부 꺼도(MUT-G·MUT-B·MUT-L·MUT-GB) 초록이다 = 회귀로서 정보량 0(vacuous)."
+      },
+      {
+        "id": "S-새우-I2",
+        "allergen": "새우",
+        "path": "ingredients",
+        "text": "원재료명: 새송이버섯, 정제소금",
+        "expect": false,
+        "reason": "그 알레르겐 이름이 텍스트에 아예 없어서 음성이다. 억제 장치가 관여하지 않아 장치를 전부 꺼도(MUT-G·MUT-B·MUT-L·MUT-GB) 초록이다 = 회귀로서 정보량 0(vacuous)."
+      },
+      {
+        "id": "S-돼지고기-I2",
+        "allergen": "돼지고기",
+        "path": "ingredients",
+        "text": "원재료명: 닭가슴살, 후추",
+        "expect": false,
+        "reason": "그 알레르겐 이름이 텍스트에 아예 없어서 음성이다. 억제 장치가 관여하지 않아 장치를 전부 꺼도(MUT-G·MUT-B·MUT-L·MUT-GB) 초록이다 = 회귀로서 정보량 0(vacuous)."
+      },
+      {
+        "id": "S-복숭아-I2",
+        "allergen": "복숭아",
+        "path": "ingredients",
+        "text": "원재료명: 자두농축액, 설탕",
+        "expect": false,
+        "reason": "그 알레르겐 이름이 텍스트에 아예 없어서 음성이다. 억제 장치가 관여하지 않아 장치를 전부 꺼도(MUT-G·MUT-B·MUT-L·MUT-GB) 초록이다 = 회귀로서 정보량 0(vacuous)."
+      },
+      {
+        "id": "S-토마토-I2",
+        "allergen": "토마토",
+        "path": "ingredients",
+        "text": "원재료명: 파프리카추출색소, 설탕",
+        "expect": false,
+        "reason": "그 알레르겐 이름이 텍스트에 아예 없어서 음성이다. 억제 장치가 관여하지 않아 장치를 전부 꺼도(MUT-G·MUT-B·MUT-L·MUT-GB) 초록이다 = 회귀로서 정보량 0(vacuous)."
+      },
+      {
+        "id": "S-아황산류-I2",
+        "allergen": "아황산류",
+        "path": "ingredients",
+        "text": "원재료명: 황기추출물, 정제수",
+        "expect": false,
+        "reason": "그 알레르겐 이름이 텍스트에 아예 없어서 음성이다. 억제 장치가 관여하지 않아 장치를 전부 꺼도(MUT-G·MUT-B·MUT-L·MUT-GB) 초록이다 = 회귀로서 정보량 0(vacuous)."
+      },
+      {
+        "id": "S-호두-I2",
+        "allergen": "호두",
+        "path": "ingredients",
+        "text": "원재료명: 호박씨, 설탕",
+        "expect": false,
+        "reason": "그 알레르겐 이름이 텍스트에 아예 없어서 음성이다. 억제 장치가 관여하지 않아 장치를 전부 꺼도(MUT-G·MUT-B·MUT-L·MUT-GB) 초록이다 = 회귀로서 정보량 0(vacuous)."
+      },
+      {
+        "id": "S-닭고기-I2",
+        "allergen": "닭고기",
+        "path": "ingredients",
+        "text": "원재료명: 오리고기, 정제소금",
+        "expect": false,
+        "reason": "그 알레르겐 이름이 텍스트에 아예 없어서 음성이다. 억제 장치가 관여하지 않아 장치를 전부 꺼도(MUT-G·MUT-B·MUT-L·MUT-GB) 초록이다 = 회귀로서 정보량 0(vacuous)."
+      },
+      {
+        "id": "S-쇠고기-I2",
+        "allergen": "쇠고기",
+        "path": "ingredients",
+        "text": "원재료명: 돼지고기, 정제소금",
+        "expect": false,
+        "reason": "그 알레르겐 이름이 텍스트에 아예 없어서 음성이다. 억제 장치가 관여하지 않아 장치를 전부 꺼도(MUT-G·MUT-B·MUT-L·MUT-GB) 초록이다 = 회귀로서 정보량 0(vacuous)."
+      },
+      {
+        "id": "S-오징어-I2",
+        "allergen": "오징어",
+        "path": "ingredients",
+        "text": "원재료명: 문어, 정제소금",
+        "expect": false,
+        "reason": "그 알레르겐 이름이 텍스트에 아예 없어서 음성이다. 억제 장치가 관여하지 않아 장치를 전부 꺼도(MUT-G·MUT-B·MUT-L·MUT-GB) 초록이다 = 회귀로서 정보량 0(vacuous)."
+      },
+      {
+        "id": "P-쇠고기-젤라틴",
+        "allergen": "쇠고기",
+        "path": "ingredients",
+        "text": "원재료명: 젤라틴, 설탕",
+        "expect": false,
+        "reason": "판별기 A 로 이관했다 — tests/test_allergen_name_normalize.js REAL_DROPPED 에 '젤라틴' 추가(축종 없는 젤라틴은 어디에도 붙이지 않는다). 제이 결정 2026-08-07"
+      },
+      {
+        "id": "P-대두-레시틴",
+        "allergen": "대두",
+        "path": "ingredients",
+        "text": "원재료명: 레시틴, 정제수",
+        "expect": false,
+        "reason": "판별기 A 로 이관했다 — tests/test_allergen_name_normalize.js REAL_DROPPED 에 '레시틴' 추가(수식어 없는 레시틴은 어디에도 붙이지 않는다). 제이 결정 2026-08-07"
+      }
+    ],
+    "closed_by_D55-2": [
+      {
+        "id": "P-메밀-모밀",
+        "allergen": "메밀",
+        "text": "원재료명: 모밀가루 80%",
+        "why": "회신 쟁점7-3 — 모밀을 메밀 별칭으로 추가 권고. 현행 동작 기록용.",
+        "closed_reason": "D55-2(원재료 추론 폐기)로 판단할 것이 없어졌다. ★「결정이 끝났다」가 아니라 「결정이 불필요해졌다」. 선언란에 이 이름이 인쇄되는 경우의 판단은 여전히 미결이며 판별기 A 소관이다."
+      },
+      {
+        "id": "P-난류-날치알",
+        "allergen": "난류(가금류)",
+        "text": "원재료명: 날치알 10%, 정제수",
+        "why": "회신 쟁점7-8 — 어란을 법정 난류(가금류)로 매핑하지 말 것.",
+        "closed_reason": "D55-2(원재료 추론 폐기)로 판단할 것이 없어졌다. ★「결정이 끝났다」가 아니라 「결정이 불필요해졌다」. 선언란에 이 이름이 인쇄되는 경우의 판단은 여전히 미결이며 판별기 A 소관이다."
+      },
+      {
+        "id": "P-우유-유당",
+        "allergen": "우유",
+        "text": "원재료명: 유당, 부형제",
+        "why": "회신 쟁점7-6 — contains 가 아니라 우유 유래 추정으로 분리 권고.",
+        "closed_reason": "D55-2(원재료 추론 폐기)로 판단할 것이 없어졌다. ★「결정이 끝났다」가 아니라 「결정이 불필요해졌다」. 선언란에 이 이름이 인쇄되는 경우의 판단은 여전히 미결이며 판별기 A 소관이다."
+      }
+    ],
+    "merged_2026-08-09": [
+      {
+        "removed": "P-밀-호밀가루2",
+        "kept": "P-밀-호밀",
+        "reason": "텍스트가 완전히 동일하다(원재료명: 호밀가루 70%). 같은 질문을 두 번 세면 커버리지가 부풀려진다"
+      }
+    ]
   },
   "cases": [
     {
@@ -93,20 +324,23 @@
     {
       "id": "S-난류-I1",
       "allergen": "난류(가금류)",
-      "path": "ingredients",
+      "path": "no_declaration",
       "text": "원재료명: 밀가루, 계란, 설탕",
-      "expect": true,
-      "status": "contract",
-      "why": "계란은 난류의 확정 원재료 표기"
-    },
-    {
-      "id": "S-난류-I2",
-      "allergen": "난류(가금류)",
-      "path": "ingredients",
-      "text": "원재료명: 정제수, 알로에겔, 구연산",
       "expect": false,
+      "expect_declaration_found": false,
       "status": "contract",
-      "why": "'알로에' 의 '알' 이 걸리면 안 된다"
+      "why": "[재정의] 질문이 바뀌었다 — 「이 원재료 문장에서 난류(가금류)을(를) 검출하는가」 → 「이 문장에는 법정 선언란이 없다고 말하는가」. 원재료 추론을 폐기하므로 검출은 없어야 하고 declarationFound 는 false 여야 한다. 원래 질문: 계란은 난류의 확정 원재료 표기",
+      "superseded_expect_v1": true,
+      "superseded_expect_v1_value": true,
+      "superseded_reason": "D55-2 원재료 추론 폐기 (제이 결정 2026-08-08). ★ 라벨을 뒤집는 근거는 «측정 결과»가 아니라 «도메인 결정»이다. 결정이 뒤집히면 이 필드로 되돌린다.",
+      "superseded_status_v1": "contract",
+      "decided": "IP/GT_재정의_계획_2026-08-09_세션56.md §2-1",
+      "promoted_2026_08_09_session58": {
+        "from": "known_gap",
+        "condition_met": "2단계(추론 폐기) 완료 후 이 케이스들이 통과하면 status 를 contract 로 승격한다. 그때 SENTINEL_STRICT=1 이 초록이어야 한다.",
+        "evidence": "SENTINEL_STRICT=1 EXIT 0 (계약 36+27=63 · 실패 0)",
+        "note": "[세션58 승격] 2단계(추론 폐기) 완료. 실측: SENTINEL_STRICT=1 EXIT 0 · 해소 27 / 미해소 0. 승격 전 조건은 promoted_from 에 보존한다."
+      }
     },
     {
       "id": "S-우유-D1",
@@ -120,20 +354,23 @@
     {
       "id": "S-우유-I1",
       "allergen": "우유",
-      "path": "ingredients",
+      "path": "no_declaration",
       "text": "원재료명: 탈지분유, 정제소금",
-      "expect": true,
-      "status": "contract",
-      "why": "탈지분유는 우유 유래 확정"
-    },
-    {
-      "id": "S-우유-I2",
-      "allergen": "우유",
-      "path": "ingredients",
-      "text": "원재료명: 대두유, 정제수, 향료",
       "expect": false,
+      "expect_declaration_found": false,
       "status": "contract",
-      "why": "우유 근거 없음"
+      "why": "[재정의] 질문이 바뀌었다 — 「이 원재료 문장에서 우유을(를) 검출하는가」 → 「이 문장에는 법정 선언란이 없다고 말하는가」. 원재료 추론을 폐기하므로 검출은 없어야 하고 declarationFound 는 false 여야 한다. 원래 질문: 탈지분유는 우유 유래 확정",
+      "superseded_expect_v1": true,
+      "superseded_expect_v1_value": true,
+      "superseded_reason": "D55-2 원재료 추론 폐기 (제이 결정 2026-08-08). ★ 라벨을 뒤집는 근거는 «측정 결과»가 아니라 «도메인 결정»이다. 결정이 뒤집히면 이 필드로 되돌린다.",
+      "superseded_status_v1": "contract",
+      "decided": "IP/GT_재정의_계획_2026-08-09_세션56.md §2-1",
+      "promoted_2026_08_09_session58": {
+        "from": "known_gap",
+        "condition_met": "2단계(추론 폐기) 완료 후 이 케이스들이 통과하면 status 를 contract 로 승격한다. 그때 SENTINEL_STRICT=1 이 초록이어야 한다.",
+        "evidence": "SENTINEL_STRICT=1 EXIT 0 (계약 36+27=63 · 실패 0)",
+        "note": "[세션58 승격] 2단계(추론 폐기) 완료. 실측: SENTINEL_STRICT=1 EXIT 0 · 해소 27 / 미해소 0. 승격 전 조건은 promoted_from 에 보존한다."
+      }
     },
     {
       "id": "S-메밀-D1",
@@ -147,20 +384,23 @@
     {
       "id": "S-메밀-I1",
       "allergen": "메밀",
-      "path": "ingredients",
+      "path": "no_declaration",
       "text": "원재료명: 메밀가루 80%, 정제소금",
-      "expect": true,
-      "status": "contract",
-      "why": "★ 2026-08-06 P1 해소(known_gap → contract). 소비 매칭 제거로 메밀이 살아났다. 종전엔 '밀가루'(3자)가 먼저 먹고 지워 메밀이 사라졌다."
-    },
-    {
-      "id": "S-메밀-I2",
-      "allergen": "메밀",
-      "path": "ingredients",
-      "text": "원재료명: 밀가루, 정제소금",
       "expect": false,
+      "expect_declaration_found": false,
       "status": "contract",
-      "why": "'밀가루' 만으로 메밀을 만들면 안 된다 (metamorphic 짝: S-메밀-I1 에서 '메' 만 뺀 것)"
+      "why": "[재정의] 질문이 바뀌었다 — 「이 원재료 문장에서 메밀을(를) 검출하는가」 → 「이 문장에는 법정 선언란이 없다고 말하는가」. 원재료 추론을 폐기하므로 검출은 없어야 하고 declarationFound 는 false 여야 한다. 원래 질문: ★ 2026-08-06 P1 해소(known_gap → contract). 소비 매칭 제거로 메밀이 살아났다. 종전엔 '밀가루'(3자)가 먼저 먹고 지워 메밀이 사라졌다.",
+      "superseded_expect_v1": true,
+      "superseded_expect_v1_value": true,
+      "superseded_reason": "D55-2 원재료 추론 폐기 (제이 결정 2026-08-08). ★ 라벨을 뒤집는 근거는 «측정 결과»가 아니라 «도메인 결정»이다. 결정이 뒤집히면 이 필드로 되돌린다.",
+      "superseded_status_v1": "contract",
+      "decided": "IP/GT_재정의_계획_2026-08-09_세션56.md §2-1",
+      "promoted_2026_08_09_session58": {
+        "from": "known_gap",
+        "condition_met": "2단계(추론 폐기) 완료 후 이 케이스들이 통과하면 status 를 contract 로 승격한다. 그때 SENTINEL_STRICT=1 이 초록이어야 한다.",
+        "evidence": "SENTINEL_STRICT=1 EXIT 0 (계약 36+27=63 · 실패 0)",
+        "note": "[세션58 승격] 2단계(추론 폐기) 완료. 실측: SENTINEL_STRICT=1 EXIT 0 · 해소 27 / 미해소 0. 승격 전 조건은 promoted_from 에 보존한다."
+      }
     },
     {
       "id": "S-땅콩-D1",
@@ -174,20 +414,23 @@
     {
       "id": "S-땅콩-I1",
       "allergen": "땅콩",
-      "path": "ingredients",
+      "path": "no_declaration",
       "text": "원재료명: 땅콩기름, 설탕",
-      "expect": true,
-      "status": "contract",
-      "why": "★ 2026-08-06 P1 해소(known_gap → contract). 종전엔 '콩기름'(3자)이 먼저 먹고 지워 땅콩이 사라졌다."
-    },
-    {
-      "id": "S-땅콩-I2",
-      "allergen": "땅콩",
-      "path": "ingredients",
-      "text": "원재료명: 대두유, 콩기름, 설탕",
       "expect": false,
+      "expect_declaration_found": false,
       "status": "contract",
-      "why": "콩기름만으로 땅콩을 만들면 안 된다"
+      "why": "[재정의] 질문이 바뀌었다 — 「이 원재료 문장에서 땅콩을(를) 검출하는가」 → 「이 문장에는 법정 선언란이 없다고 말하는가」. 원재료 추론을 폐기하므로 검출은 없어야 하고 declarationFound 는 false 여야 한다. 원래 질문: ★ 2026-08-06 P1 해소(known_gap → contract). 종전엔 '콩기름'(3자)이 먼저 먹고 지워 땅콩이 사라졌다.",
+      "superseded_expect_v1": true,
+      "superseded_expect_v1_value": true,
+      "superseded_reason": "D55-2 원재료 추론 폐기 (제이 결정 2026-08-08). ★ 라벨을 뒤집는 근거는 «측정 결과»가 아니라 «도메인 결정»이다. 결정이 뒤집히면 이 필드로 되돌린다.",
+      "superseded_status_v1": "contract",
+      "decided": "IP/GT_재정의_계획_2026-08-09_세션56.md §2-1",
+      "promoted_2026_08_09_session58": {
+        "from": "known_gap",
+        "condition_met": "2단계(추론 폐기) 완료 후 이 케이스들이 통과하면 status 를 contract 로 승격한다. 그때 SENTINEL_STRICT=1 이 초록이어야 한다.",
+        "evidence": "SENTINEL_STRICT=1 EXIT 0 (계약 36+27=63 · 실패 0)",
+        "note": "[세션58 승격] 2단계(추론 폐기) 완료. 실측: SENTINEL_STRICT=1 EXIT 0 · 해소 27 / 미해소 0. 승격 전 조건은 promoted_from 에 보존한다."
+      }
     },
     {
       "id": "S-대두-D1",
@@ -201,38 +444,79 @@
     {
       "id": "S-대두-I1",
       "allergen": "대두",
-      "path": "ingredients",
+      "path": "no_declaration",
       "text": "원재료명: 대두분말, 정제수",
-      "expect": true,
+      "expect": false,
+      "expect_declaration_found": false,
       "status": "contract",
-      "why": "대두 직접 표기"
+      "why": "[재정의] 질문이 바뀌었다 — 「이 원재료 문장에서 대두을(를) 검출하는가」 → 「이 문장에는 법정 선언란이 없다고 말하는가」. 원재료 추론을 폐기하므로 검출은 없어야 하고 declarationFound 는 false 여야 한다. 원래 질문: 대두 직접 표기",
+      "superseded_expect_v1": true,
+      "superseded_expect_v1_value": true,
+      "superseded_reason": "D55-2 원재료 추론 폐기 (제이 결정 2026-08-08). ★ 라벨을 뒤집는 근거는 «측정 결과»가 아니라 «도메인 결정»이다. 결정이 뒤집히면 이 필드로 되돌린다.",
+      "superseded_status_v1": "contract",
+      "decided": "IP/GT_재정의_계획_2026-08-09_세션56.md §2-1",
+      "promoted_2026_08_09_session58": {
+        "from": "known_gap",
+        "condition_met": "2단계(추론 폐기) 완료 후 이 케이스들이 통과하면 status 를 contract 로 승격한다. 그때 SENTINEL_STRICT=1 이 초록이어야 한다.",
+        "evidence": "SENTINEL_STRICT=1 EXIT 0 (계약 36+27=63 · 실패 0)",
+        "note": "[세션58 승격] 2단계(추론 폐기) 완료. 실측: SENTINEL_STRICT=1 EXIT 0 · 해소 27 / 미해소 0. 승격 전 조건은 promoted_from 에 보존한다."
+      }
     },
     {
       "id": "S-대두-I2",
       "allergen": "대두",
-      "path": "ingredients",
-      "text": "원재료명: 땅콩기름, 설탕",
+      "path": "declared",
+      "text": "땅콩기름, 설탕 함유",
       "expect": false,
       "status": "contract",
-      "why": "★ 2026-08-06 P1 해소(known_gap → contract). KEYWORD_LEFT_NEGATIVE['콩기름']=['땅'] 로 차단. ⚠ 이 칸은 구현 «전» 에 expect:false 로 못 박아 커밋했다(f5e1d9a) — 세션44 회귀의 기대값에서 '대두' 를 뺀 근거가 이것이다. 사후에 라벨을 맞춘 것이 아니다."
+      "why": "[이관] 같은 질문(오탐 금지)을 선언 경로에서 유지한다. 이 케이스가 지키는 것: KEYWORD_LEFT_NEGATIVE(콩기름←땅) — 끄면(MUT-L) 빨간불이 된다. ★ 좌측 부정 문맥을 지키는 저장소 유일 회귀 원래 질문: ★ 2026-08-06 P1 해소(known_gap → contract). KEYWORD_LEFT_NEGATIVE['콩기름']=['땅'] 로 차단. ⚠ 이 칸은 구현 «전» 에 expect:false 로 못 박아 커밋했다(f5e1d9a) — 세션44 회귀의 기대값에서 '대두' 를 뺀 근거가 이것이다. 사후에 라벨을 맞춘 것이 아니다.",
+      "text_v1": "원재료명: 땅콩기름, 설탕",
+      "migrated_from": "ingredients",
+      "guard_measured": "KEYWORD_LEFT_NEGATIVE(콩기름←땅)",
+      "guard_mutant": "MUT-L",
+      "decided": "IP/coverage_neg_판단_2026-08-09_세션57.md §2 (제이 결정 D57-1)"
     },
     {
       "id": "S-대두-I3",
       "allergen": "대두",
-      "path": "ingredients",
+      "path": "no_declaration",
       "text": "원재료명: 콩기름, 설탕",
-      "expect": true,
+      "expect": false,
+      "expect_declaration_found": false,
       "status": "contract",
-      "why": "★ 부정 규칙의 양성 대조군. 이 칸이 없으면 규칙이 너무 넓어져 진짜 대두를 놓쳐도 초록이 된다."
+      "why": "[재정의] 질문이 바뀌었다 — 「이 원재료 문장에서 대두을(를) 검출하는가」 → 「이 문장에는 법정 선언란이 없다고 말하는가」. 원재료 추론을 폐기하므로 검출은 없어야 하고 declarationFound 는 false 여야 한다. 원래 질문: ★ 부정 규칙의 양성 대조군. 이 칸이 없으면 규칙이 너무 넓어져 진짜 대두를 놓쳐도 초록이 된다.",
+      "superseded_expect_v1": true,
+      "superseded_expect_v1_value": true,
+      "superseded_reason": "D55-2 원재료 추론 폐기 (제이 결정 2026-08-08). ★ 라벨을 뒤집는 근거는 «측정 결과»가 아니라 «도메인 결정»이다. 결정이 뒤집히면 이 필드로 되돌린다.",
+      "superseded_status_v1": "contract",
+      "decided": "IP/GT_재정의_계획_2026-08-09_세션56.md §2-1",
+      "promoted_2026_08_09_session58": {
+        "from": "known_gap",
+        "condition_met": "2단계(추론 폐기) 완료 후 이 케이스들이 통과하면 status 를 contract 로 승격한다. 그때 SENTINEL_STRICT=1 이 초록이어야 한다.",
+        "evidence": "SENTINEL_STRICT=1 EXIT 0 (계약 36+27=63 · 실패 0)",
+        "note": "[세션58 승격] 2단계(추론 폐기) 완료. 실측: SENTINEL_STRICT=1 EXIT 0 · 해소 27 / 미해소 0. 승격 전 조건은 promoted_from 에 보존한다."
+      }
     },
     {
       "id": "S-대두-I4",
       "allergen": "대두",
-      "path": "ingredients",
+      "path": "no_declaration",
       "text": "원재료명: 땅콩기름, 콩기름, 설탕",
-      "expect": true,
+      "expect": false,
+      "expect_declaration_found": false,
       "status": "contract",
-      "why": "★ 부정 규칙이 «첫 출현»만 보고 접으면 여기서 대두를 놓친다(과소경고). _keywordHit 이 모든 출현을 보는 이유."
+      "why": "[재정의] 질문이 바뀌었다 — 「이 원재료 문장에서 대두을(를) 검출하는가」 → 「이 문장에는 법정 선언란이 없다고 말하는가」. 원재료 추론을 폐기하므로 검출은 없어야 하고 declarationFound 는 false 여야 한다. 원래 질문: ★ 부정 규칙이 «첫 출현»만 보고 접으면 여기서 대두를 놓친다(과소경고). _keywordHit 이 모든 출현을 보는 이유.",
+      "superseded_expect_v1": true,
+      "superseded_expect_v1_value": true,
+      "superseded_reason": "D55-2 원재료 추론 폐기 (제이 결정 2026-08-08). ★ 라벨을 뒤집는 근거는 «측정 결과»가 아니라 «도메인 결정»이다. 결정이 뒤집히면 이 필드로 되돌린다.",
+      "superseded_status_v1": "contract",
+      "decided": "IP/GT_재정의_계획_2026-08-09_세션56.md §2-1",
+      "promoted_2026_08_09_session58": {
+        "from": "known_gap",
+        "condition_met": "2단계(추론 폐기) 완료 후 이 케이스들이 통과하면 status 를 contract 로 승격한다. 그때 SENTINEL_STRICT=1 이 초록이어야 한다.",
+        "evidence": "SENTINEL_STRICT=1 EXIT 0 (계약 36+27=63 · 실패 0)",
+        "note": "[세션58 승격] 2단계(추론 폐기) 완료. 실측: SENTINEL_STRICT=1 EXIT 0 · 해소 27 / 미해소 0. 승격 전 조건은 promoted_from 에 보존한다."
+      }
     },
     {
       "id": "S-밀-D1",
@@ -264,56 +548,100 @@
     {
       "id": "S-밀-I1",
       "allergen": "밀",
-      "path": "ingredients",
+      "path": "no_declaration",
       "text": "원재료명: 밀가루(밀:미국산), 설탕",
-      "expect": true,
+      "expect": false,
+      "expect_declaration_found": false,
       "status": "contract",
-      "why": "밀가루"
+      "why": "[재정의] 질문이 바뀌었다 — 「이 원재료 문장에서 밀을(를) 검출하는가」 → 「이 문장에는 법정 선언란이 없다고 말하는가」. 원재료 추론을 폐기하므로 검출은 없어야 하고 declarationFound 는 false 여야 한다. 원래 질문: 밀가루",
+      "superseded_expect_v1": true,
+      "superseded_expect_v1_value": true,
+      "superseded_reason": "D55-2 원재료 추론 폐기 (제이 결정 2026-08-08). ★ 라벨을 뒤집는 근거는 «측정 결과»가 아니라 «도메인 결정»이다. 결정이 뒤집히면 이 필드로 되돌린다.",
+      "superseded_status_v1": "contract",
+      "decided": "IP/GT_재정의_계획_2026-08-09_세션56.md §2-1",
+      "promoted_2026_08_09_session58": {
+        "from": "known_gap",
+        "condition_met": "2단계(추론 폐기) 완료 후 이 케이스들이 통과하면 status 를 contract 로 승격한다. 그때 SENTINEL_STRICT=1 이 초록이어야 한다.",
+        "evidence": "SENTINEL_STRICT=1 EXIT 0 (계약 36+27=63 · 실패 0)",
+        "note": "[세션58 승격] 2단계(추론 폐기) 완료. 실측: SENTINEL_STRICT=1 EXIT 0 · 해소 27 / 미해소 0. 승격 전 조건은 promoted_from 에 보존한다."
+      }
     },
     {
       "id": "S-밀-I2",
       "allergen": "밀",
-      "path": "ingredients",
+      "path": "no_declaration",
       "text": "원재료명: 밀 90%, 정제소금",
-      "expect": true,
-      "status": "known_gap",
-      "why": "★ 원재료표에 '밀' 단독이 없어 미검출. OCR 원재료 경로 밀 FN 465/551 의 직접 원인. ⚠ 2026-08-06 범위 정정 — 이건 P1 이 «아니라» P4(밀 가드) 대상이다. 원재료표에 '밀' 을 그냥 넣으면 밀납(4,829회)·밀크씨슬·당밀·약모밀이 전부 걸려 FP 가 폭발한다. 회신도 '결합안은 shadow 측정 후 적용' 으로 P4 에 뒀다. 여기를 P1 에서 무리하게 닫으면 세션51 이 경고한 바로 그 사고가 난다."
+      "expect": false,
+      "expect_declaration_found": false,
+      "status": "contract",
+      "why": "[재정의] 질문이 바뀌었다 — 「이 원재료 문장에서 밀을(를) 검출하는가」 → 「이 문장에는 법정 선언란이 없다고 말하는가」. 원재료 추론을 폐기하므로 검출은 없어야 하고 declarationFound 는 false 여야 한다. 원래 질문: ★ 원재료표에 '밀' 단독이 없어 미검출. OCR 원재료 경로 밀 FN 465/551 의 직접 원인. ⚠ 2026-08-06 범위 정정 — 이건 P1 이 «아니라» P4(밀 가드) 대상이다. 원재료표에 '밀' 을 그냥 넣으면 밀납(4,829회)·밀크씨슬·당밀·약모밀이 전부 걸려 FP 가 폭발한다. 회신도 '결합안은 shadow 측정 후 적용' 으로 P4 에 뒀다. 여기를 P1 에서 무리하게 닫으면 세션51 이 경고한 바로 그 사고가 난다.",
+      "superseded_expect_v1": true,
+      "superseded_expect_v1_value": true,
+      "superseded_reason": "D55-2 원재료 추론 폐기 (제이 결정 2026-08-08). ★ 라벨을 뒤집는 근거는 «측정 결과»가 아니라 «도메인 결정»이다. 결정이 뒤집히면 이 필드로 되돌린다.",
+      "superseded_status_v1": "known_gap",
+      "decided": "IP/GT_재정의_계획_2026-08-09_세션56.md §2-1",
+      "promoted_2026_08_09_session58": {
+        "from": "known_gap",
+        "condition_met": "2단계(추론 폐기) 완료 후 이 케이스들이 통과하면 status 를 contract 로 승격한다. 그때 SENTINEL_STRICT=1 이 초록이어야 한다.",
+        "evidence": "SENTINEL_STRICT=1 EXIT 0 (계약 36+27=63 · 실패 0)",
+        "note": "[세션58 승격] 2단계(추론 폐기) 완료. 실측: SENTINEL_STRICT=1 EXIT 0 · 해소 27 / 미해소 0. 승격 전 조건은 promoted_from 에 보존한다."
+      }
     },
     {
       "id": "S-밀-I3",
       "allergen": "밀",
-      "path": "ingredients",
-      "text": "원재료명: 밀납(정제), 글리세린",
+      "path": "declared",
+      "text": "밀납(정제), 글리세린 함유",
       "expect": false,
       "status": "contract",
-      "why": "밀납=蜜蠟 beeswax. 실측 4,829회. C3 후보가 여기서 무너졌다"
+      "why": "[이관] 같은 질문(오탐 금지)을 선언 경로에서 유지한다. 이 케이스가 지키는 것: wheatAccept — 끄면(MUT-G) 빨간불이 된다. 원래 질문: 밀납=蜜蠟 beeswax. 실측 4,829회. C3 후보가 여기서 무너졌다",
+      "text_v1": "원재료명: 밀납(정제), 글리세린",
+      "migrated_from": "ingredients",
+      "guard_measured": "wheatAccept",
+      "guard_mutant": "MUT-G",
+      "decided": "IP/GT_재정의_계획_2026-08-09_세션56.md §2-2"
     },
     {
       "id": "S-밀-I4",
       "allergen": "밀",
-      "path": "ingredients",
-      "text": "원재료명: 밀크씨슬추출물, 부형제",
+      "path": "declared",
+      "text": "밀크씨슬추출물, 부형제 함유",
       "expect": false,
       "status": "contract",
-      "why": "건강기능식품 기능성원료. 회신 쟁점7-10"
+      "why": "[이관] 같은 질문(오탐 금지)을 선언 경로에서 유지한다. 이 케이스가 지키는 것: wheatAccept — 끄면(MUT-G) 빨간불이 된다. 원래 질문: 건강기능식품 기능성원료. 회신 쟁점7-10",
+      "text_v1": "원재료명: 밀크씨슬추출물, 부형제",
+      "migrated_from": "ingredients",
+      "guard_measured": "wheatAccept",
+      "guard_mutant": "MUT-G",
+      "decided": "IP/GT_재정의_계획_2026-08-09_세션56.md §2-2"
     },
     {
       "id": "S-밀-I5",
       "allergen": "밀",
-      "path": "ingredients",
-      "text": "원재료명: 당밀, 정제수",
+      "path": "declared",
+      "text": "당밀, 정제수 함유",
       "expect": false,
       "status": "contract",
-      "why": "당밀=molasses"
+      "why": "[이관] 같은 질문(오탐 금지)을 선언 경로에서 유지한다. 이 케이스가 지키는 것: wheatAccept — 끄면(MUT-G) 빨간불이 된다. 원래 질문: 당밀=molasses",
+      "text_v1": "원재료명: 당밀, 정제수",
+      "migrated_from": "ingredients",
+      "guard_measured": "wheatAccept",
+      "guard_mutant": "MUT-G",
+      "decided": "IP/GT_재정의_계획_2026-08-09_세션56.md §2-2"
     },
     {
       "id": "S-밀-I6",
       "allergen": "밀",
-      "path": "ingredients",
-      "text": "원재료명: 약모밀추출물",
+      "path": "declared",
+      "text": "약모밀추출물 함유",
       "expect": false,
       "status": "contract",
-      "why": "약모밀=어성초. 실측 204회"
+      "why": "[이관] 같은 질문(오탐 금지)을 선언 경로에서 유지한다. 이 케이스가 지키는 것: wheatAccept — 끄면(MUT-G) 빨간불이 된다. 원래 질문: 약모밀=어성초. 실측 204회",
+      "text_v1": "원재료명: 약모밀추출물",
+      "migrated_from": "ingredients",
+      "guard_measured": "wheatAccept",
+      "guard_mutant": "MUT-G",
+      "decided": "IP/GT_재정의_계획_2026-08-09_세션56.md §2-2"
     },
     {
       "id": "S-고등어-D1",
@@ -327,20 +655,23 @@
     {
       "id": "S-고등어-I1",
       "allergen": "고등어",
-      "path": "ingredients",
+      "path": "no_declaration",
       "text": "원재료명: 고등어 60%, 무, 정제소금",
-      "expect": true,
-      "status": "contract",
-      "why": "★ 2026-08-06 P1 해소(known_gap → contract). ALLERGEN_KEYWORDS 에 '고등어' 추가. 17종 → 19종."
-    },
-    {
-      "id": "S-고등어-I2",
-      "allergen": "고등어",
-      "path": "ingredients",
-      "text": "원재료명: 연어, 정제소금",
       "expect": false,
+      "expect_declaration_found": false,
       "status": "contract",
-      "why": "다른 어류를 고등어로 만들면 안 된다"
+      "why": "[재정의] 질문이 바뀌었다 — 「이 원재료 문장에서 고등어을(를) 검출하는가」 → 「이 문장에는 법정 선언란이 없다고 말하는가」. 원재료 추론을 폐기하므로 검출은 없어야 하고 declarationFound 는 false 여야 한다. 원래 질문: ★ 2026-08-06 P1 해소(known_gap → contract). ALLERGEN_KEYWORDS 에 '고등어' 추가. 17종 → 19종.",
+      "superseded_expect_v1": true,
+      "superseded_expect_v1_value": true,
+      "superseded_reason": "D55-2 원재료 추론 폐기 (제이 결정 2026-08-08). ★ 라벨을 뒤집는 근거는 «측정 결과»가 아니라 «도메인 결정»이다. 결정이 뒤집히면 이 필드로 되돌린다.",
+      "superseded_status_v1": "contract",
+      "decided": "IP/GT_재정의_계획_2026-08-09_세션56.md §2-1",
+      "promoted_2026_08_09_session58": {
+        "from": "known_gap",
+        "condition_met": "2단계(추론 폐기) 완료 후 이 케이스들이 통과하면 status 를 contract 로 승격한다. 그때 SENTINEL_STRICT=1 이 초록이어야 한다.",
+        "evidence": "SENTINEL_STRICT=1 EXIT 0 (계약 36+27=63 · 실패 0)",
+        "note": "[세션58 승격] 2단계(추론 폐기) 완료. 실측: SENTINEL_STRICT=1 EXIT 0 · 해소 27 / 미해소 0. 승격 전 조건은 promoted_from 에 보존한다."
+      }
     },
     {
       "id": "S-게-D1",
@@ -363,11 +694,23 @@
     {
       "id": "S-게-I1",
       "allergen": "게",
-      "path": "ingredients",
+      "path": "no_declaration",
       "text": "원재료명: 꽃게 20%, 정제수",
-      "expect": true,
+      "expect": false,
+      "expect_declaration_found": false,
       "status": "contract",
-      "why": "꽃게"
+      "why": "[재정의] 질문이 바뀌었다 — 「이 원재료 문장에서 게을(를) 검출하는가」 → 「이 문장에는 법정 선언란이 없다고 말하는가」. 원재료 추론을 폐기하므로 검출은 없어야 하고 declarationFound 는 false 여야 한다. 원래 질문: 꽃게",
+      "superseded_expect_v1": true,
+      "superseded_expect_v1_value": true,
+      "superseded_reason": "D55-2 원재료 추론 폐기 (제이 결정 2026-08-08). ★ 라벨을 뒤집는 근거는 «측정 결과»가 아니라 «도메인 결정»이다. 결정이 뒤집히면 이 필드로 되돌린다.",
+      "superseded_status_v1": "contract",
+      "decided": "IP/GT_재정의_계획_2026-08-09_세션56.md §2-1",
+      "promoted_2026_08_09_session58": {
+        "from": "known_gap",
+        "condition_met": "2단계(추론 폐기) 완료 후 이 케이스들이 통과하면 status 를 contract 로 승격한다. 그때 SENTINEL_STRICT=1 이 초록이어야 한다.",
+        "evidence": "SENTINEL_STRICT=1 EXIT 0 (계약 36+27=63 · 실패 0)",
+        "note": "[세션58 승격] 2단계(추론 폐기) 완료. 실측: SENTINEL_STRICT=1 EXIT 0 · 해소 27 / 미해소 0. 승격 전 조건은 promoted_from 에 보존한다."
+      }
     },
     {
       "id": "S-새우-D1",
@@ -381,20 +724,23 @@
     {
       "id": "S-새우-I1",
       "allergen": "새우",
-      "path": "ingredients",
+      "path": "no_declaration",
       "text": "원재료명: 건새우, 정제소금",
-      "expect": true,
-      "status": "contract",
-      "why": "건새우"
-    },
-    {
-      "id": "S-새우-I2",
-      "allergen": "새우",
-      "path": "ingredients",
-      "text": "원재료명: 새송이버섯, 정제소금",
       "expect": false,
+      "expect_declaration_found": false,
       "status": "contract",
-      "why": "'새' 로 시작하는 무관 원재료 대조군"
+      "why": "[재정의] 질문이 바뀌었다 — 「이 원재료 문장에서 새우을(를) 검출하는가」 → 「이 문장에는 법정 선언란이 없다고 말하는가」. 원재료 추론을 폐기하므로 검출은 없어야 하고 declarationFound 는 false 여야 한다. 원래 질문: 건새우",
+      "superseded_expect_v1": true,
+      "superseded_expect_v1_value": true,
+      "superseded_reason": "D55-2 원재료 추론 폐기 (제이 결정 2026-08-08). ★ 라벨을 뒤집는 근거는 «측정 결과»가 아니라 «도메인 결정»이다. 결정이 뒤집히면 이 필드로 되돌린다.",
+      "superseded_status_v1": "contract",
+      "decided": "IP/GT_재정의_계획_2026-08-09_세션56.md §2-1",
+      "promoted_2026_08_09_session58": {
+        "from": "known_gap",
+        "condition_met": "2단계(추론 폐기) 완료 후 이 케이스들이 통과하면 status 를 contract 로 승격한다. 그때 SENTINEL_STRICT=1 이 초록이어야 한다.",
+        "evidence": "SENTINEL_STRICT=1 EXIT 0 (계약 36+27=63 · 실패 0)",
+        "note": "[세션58 승격] 2단계(추론 폐기) 완료. 실측: SENTINEL_STRICT=1 EXIT 0 · 해소 27 / 미해소 0. 승격 전 조건은 promoted_from 에 보존한다."
+      }
     },
     {
       "id": "S-돼지고기-D1",
@@ -408,20 +754,23 @@
     {
       "id": "S-돼지고기-I1",
       "allergen": "돼지고기",
-      "path": "ingredients",
+      "path": "no_declaration",
       "text": "원재료명: 베이컨(돼지고기), 후추",
-      "expect": true,
-      "status": "contract",
-      "why": "베이컨"
-    },
-    {
-      "id": "S-돼지고기-I2",
-      "allergen": "돼지고기",
-      "path": "ingredients",
-      "text": "원재료명: 닭가슴살, 후추",
       "expect": false,
+      "expect_declaration_found": false,
       "status": "contract",
-      "why": "다른 축종 대조군"
+      "why": "[재정의] 질문이 바뀌었다 — 「이 원재료 문장에서 돼지고기을(를) 검출하는가」 → 「이 문장에는 법정 선언란이 없다고 말하는가」. 원재료 추론을 폐기하므로 검출은 없어야 하고 declarationFound 는 false 여야 한다. 원래 질문: 베이컨",
+      "superseded_expect_v1": true,
+      "superseded_expect_v1_value": true,
+      "superseded_reason": "D55-2 원재료 추론 폐기 (제이 결정 2026-08-08). ★ 라벨을 뒤집는 근거는 «측정 결과»가 아니라 «도메인 결정»이다. 결정이 뒤집히면 이 필드로 되돌린다.",
+      "superseded_status_v1": "contract",
+      "decided": "IP/GT_재정의_계획_2026-08-09_세션56.md §2-1",
+      "promoted_2026_08_09_session58": {
+        "from": "known_gap",
+        "condition_met": "2단계(추론 폐기) 완료 후 이 케이스들이 통과하면 status 를 contract 로 승격한다. 그때 SENTINEL_STRICT=1 이 초록이어야 한다.",
+        "evidence": "SENTINEL_STRICT=1 EXIT 0 (계약 36+27=63 · 실패 0)",
+        "note": "[세션58 승격] 2단계(추론 폐기) 완료. 실측: SENTINEL_STRICT=1 EXIT 0 · 해소 27 / 미해소 0. 승격 전 조건은 promoted_from 에 보존한다."
+      }
     },
     {
       "id": "S-복숭아-D1",
@@ -435,20 +784,23 @@
     {
       "id": "S-복숭아-I1",
       "allergen": "복숭아",
-      "path": "ingredients",
+      "path": "no_declaration",
       "text": "원재료명: 황도 30%, 설탕",
-      "expect": true,
-      "status": "contract",
-      "why": "황도=복숭아 품종"
-    },
-    {
-      "id": "S-복숭아-I2",
-      "allergen": "복숭아",
-      "path": "ingredients",
-      "text": "원재료명: 자두농축액, 설탕",
       "expect": false,
+      "expect_declaration_found": false,
       "status": "contract",
-      "why": "핵과류 대조군"
+      "why": "[재정의] 질문이 바뀌었다 — 「이 원재료 문장에서 복숭아을(를) 검출하는가」 → 「이 문장에는 법정 선언란이 없다고 말하는가」. 원재료 추론을 폐기하므로 검출은 없어야 하고 declarationFound 는 false 여야 한다. 원래 질문: 황도=복숭아 품종",
+      "superseded_expect_v1": true,
+      "superseded_expect_v1_value": true,
+      "superseded_reason": "D55-2 원재료 추론 폐기 (제이 결정 2026-08-08). ★ 라벨을 뒤집는 근거는 «측정 결과»가 아니라 «도메인 결정»이다. 결정이 뒤집히면 이 필드로 되돌린다.",
+      "superseded_status_v1": "contract",
+      "decided": "IP/GT_재정의_계획_2026-08-09_세션56.md §2-1",
+      "promoted_2026_08_09_session58": {
+        "from": "known_gap",
+        "condition_met": "2단계(추론 폐기) 완료 후 이 케이스들이 통과하면 status 를 contract 로 승격한다. 그때 SENTINEL_STRICT=1 이 초록이어야 한다.",
+        "evidence": "SENTINEL_STRICT=1 EXIT 0 (계약 36+27=63 · 실패 0)",
+        "note": "[세션58 승격] 2단계(추론 폐기) 완료. 실측: SENTINEL_STRICT=1 EXIT 0 · 해소 27 / 미해소 0. 승격 전 조건은 promoted_from 에 보존한다."
+      }
     },
     {
       "id": "S-토마토-D1",
@@ -462,20 +814,23 @@
     {
       "id": "S-토마토-I1",
       "allergen": "토마토",
-      "path": "ingredients",
+      "path": "no_declaration",
       "text": "원재료명: 토마토페이스트, 설탕",
-      "expect": true,
-      "status": "contract",
-      "why": "토마토"
-    },
-    {
-      "id": "S-토마토-I2",
-      "allergen": "토마토",
-      "path": "ingredients",
-      "text": "원재료명: 파프리카추출색소, 설탕",
       "expect": false,
+      "expect_declaration_found": false,
       "status": "contract",
-      "why": "가지과 대조군"
+      "why": "[재정의] 질문이 바뀌었다 — 「이 원재료 문장에서 토마토을(를) 검출하는가」 → 「이 문장에는 법정 선언란이 없다고 말하는가」. 원재료 추론을 폐기하므로 검출은 없어야 하고 declarationFound 는 false 여야 한다. 원래 질문: 토마토",
+      "superseded_expect_v1": true,
+      "superseded_expect_v1_value": true,
+      "superseded_reason": "D55-2 원재료 추론 폐기 (제이 결정 2026-08-08). ★ 라벨을 뒤집는 근거는 «측정 결과»가 아니라 «도메인 결정»이다. 결정이 뒤집히면 이 필드로 되돌린다.",
+      "superseded_status_v1": "contract",
+      "decided": "IP/GT_재정의_계획_2026-08-09_세션56.md §2-1",
+      "promoted_2026_08_09_session58": {
+        "from": "known_gap",
+        "condition_met": "2단계(추론 폐기) 완료 후 이 케이스들이 통과하면 status 를 contract 로 승격한다. 그때 SENTINEL_STRICT=1 이 초록이어야 한다.",
+        "evidence": "SENTINEL_STRICT=1 EXIT 0 (계약 36+27=63 · 실패 0)",
+        "note": "[세션58 승격] 2단계(추론 폐기) 완료. 실측: SENTINEL_STRICT=1 EXIT 0 · 해소 27 / 미해소 0. 승격 전 조건은 promoted_from 에 보존한다."
+      }
     },
     {
       "id": "S-아황산류-D1",
@@ -489,20 +844,23 @@
     {
       "id": "S-아황산류-I1",
       "allergen": "아황산류",
-      "path": "ingredients",
+      "path": "no_declaration",
       "text": "원재료명: 건포도, 이산화황",
-      "expect": true,
-      "status": "contract",
-      "why": "이산화황"
-    },
-    {
-      "id": "S-아황산류-I2",
-      "allergen": "아황산류",
-      "path": "ingredients",
-      "text": "원재료명: 황기추출물, 정제수",
       "expect": false,
+      "expect_declaration_found": false,
       "status": "contract",
-      "why": "'황'(황기=Astragalus) 이 아황산으로 걸리면 안 된다"
+      "why": "[재정의] 질문이 바뀌었다 — 「이 원재료 문장에서 아황산류을(를) 검출하는가」 → 「이 문장에는 법정 선언란이 없다고 말하는가」. 원재료 추론을 폐기하므로 검출은 없어야 하고 declarationFound 는 false 여야 한다. 원래 질문: 이산화황",
+      "superseded_expect_v1": true,
+      "superseded_expect_v1_value": true,
+      "superseded_reason": "D55-2 원재료 추론 폐기 (제이 결정 2026-08-08). ★ 라벨을 뒤집는 근거는 «측정 결과»가 아니라 «도메인 결정»이다. 결정이 뒤집히면 이 필드로 되돌린다.",
+      "superseded_status_v1": "contract",
+      "decided": "IP/GT_재정의_계획_2026-08-09_세션56.md §2-1",
+      "promoted_2026_08_09_session58": {
+        "from": "known_gap",
+        "condition_met": "2단계(추론 폐기) 완료 후 이 케이스들이 통과하면 status 를 contract 로 승격한다. 그때 SENTINEL_STRICT=1 이 초록이어야 한다.",
+        "evidence": "SENTINEL_STRICT=1 EXIT 0 (계약 36+27=63 · 실패 0)",
+        "note": "[세션58 승격] 2단계(추론 폐기) 완료. 실측: SENTINEL_STRICT=1 EXIT 0 · 해소 27 / 미해소 0. 승격 전 조건은 promoted_from 에 보존한다."
+      }
     },
     {
       "id": "S-호두-D1",
@@ -516,20 +874,23 @@
     {
       "id": "S-호두-I1",
       "allergen": "호두",
-      "path": "ingredients",
+      "path": "no_declaration",
       "text": "원재료명: 호두분태 10%, 설탕",
-      "expect": true,
-      "status": "contract",
-      "why": "호두"
-    },
-    {
-      "id": "S-호두-I2",
-      "allergen": "호두",
-      "path": "ingredients",
-      "text": "원재료명: 호박씨, 설탕",
       "expect": false,
+      "expect_declaration_found": false,
       "status": "contract",
-      "why": "'호' 로 시작하는 무관 원재료"
+      "why": "[재정의] 질문이 바뀌었다 — 「이 원재료 문장에서 호두을(를) 검출하는가」 → 「이 문장에는 법정 선언란이 없다고 말하는가」. 원재료 추론을 폐기하므로 검출은 없어야 하고 declarationFound 는 false 여야 한다. 원래 질문: 호두",
+      "superseded_expect_v1": true,
+      "superseded_expect_v1_value": true,
+      "superseded_reason": "D55-2 원재료 추론 폐기 (제이 결정 2026-08-08). ★ 라벨을 뒤집는 근거는 «측정 결과»가 아니라 «도메인 결정»이다. 결정이 뒤집히면 이 필드로 되돌린다.",
+      "superseded_status_v1": "contract",
+      "decided": "IP/GT_재정의_계획_2026-08-09_세션56.md §2-1",
+      "promoted_2026_08_09_session58": {
+        "from": "known_gap",
+        "condition_met": "2단계(추론 폐기) 완료 후 이 케이스들이 통과하면 status 를 contract 로 승격한다. 그때 SENTINEL_STRICT=1 이 초록이어야 한다.",
+        "evidence": "SENTINEL_STRICT=1 EXIT 0 (계약 36+27=63 · 실패 0)",
+        "note": "[세션58 승격] 2단계(추론 폐기) 완료. 실측: SENTINEL_STRICT=1 EXIT 0 · 해소 27 / 미해소 0. 승격 전 조건은 promoted_from 에 보존한다."
+      }
     },
     {
       "id": "S-닭고기-D1",
@@ -543,20 +904,23 @@
     {
       "id": "S-닭고기-I1",
       "allergen": "닭고기",
-      "path": "ingredients",
+      "path": "no_declaration",
       "text": "원재료명: 닭가슴살 90%, 정제소금",
-      "expect": true,
-      "status": "contract",
-      "why": "닭가슴살"
-    },
-    {
-      "id": "S-닭고기-I2",
-      "allergen": "닭고기",
-      "path": "ingredients",
-      "text": "원재료명: 오리고기, 정제소금",
       "expect": false,
+      "expect_declaration_found": false,
       "status": "contract",
-      "why": "다른 가금 대조군"
+      "why": "[재정의] 질문이 바뀌었다 — 「이 원재료 문장에서 닭고기을(를) 검출하는가」 → 「이 문장에는 법정 선언란이 없다고 말하는가」. 원재료 추론을 폐기하므로 검출은 없어야 하고 declarationFound 는 false 여야 한다. 원래 질문: 닭가슴살",
+      "superseded_expect_v1": true,
+      "superseded_expect_v1_value": true,
+      "superseded_reason": "D55-2 원재료 추론 폐기 (제이 결정 2026-08-08). ★ 라벨을 뒤집는 근거는 «측정 결과»가 아니라 «도메인 결정»이다. 결정이 뒤집히면 이 필드로 되돌린다.",
+      "superseded_status_v1": "contract",
+      "decided": "IP/GT_재정의_계획_2026-08-09_세션56.md §2-1",
+      "promoted_2026_08_09_session58": {
+        "from": "known_gap",
+        "condition_met": "2단계(추론 폐기) 완료 후 이 케이스들이 통과하면 status 를 contract 로 승격한다. 그때 SENTINEL_STRICT=1 이 초록이어야 한다.",
+        "evidence": "SENTINEL_STRICT=1 EXIT 0 (계약 36+27=63 · 실패 0)",
+        "note": "[세션58 승격] 2단계(추론 폐기) 완료. 실측: SENTINEL_STRICT=1 EXIT 0 · 해소 27 / 미해소 0. 승격 전 조건은 promoted_from 에 보존한다."
+      }
     },
     {
       "id": "S-쇠고기-D1",
@@ -570,20 +934,23 @@
     {
       "id": "S-쇠고기-I1",
       "allergen": "쇠고기",
-      "path": "ingredients",
+      "path": "no_declaration",
       "text": "원재료명: 쇠고기엑기스, 정제소금",
-      "expect": true,
-      "status": "contract",
-      "why": "쇠고기 직접 표기"
-    },
-    {
-      "id": "S-쇠고기-I2",
-      "allergen": "쇠고기",
-      "path": "ingredients",
-      "text": "원재료명: 돼지고기, 정제소금",
       "expect": false,
+      "expect_declaration_found": false,
       "status": "contract",
-      "why": "다른 축종 대조군"
+      "why": "[재정의] 질문이 바뀌었다 — 「이 원재료 문장에서 쇠고기을(를) 검출하는가」 → 「이 문장에는 법정 선언란이 없다고 말하는가」. 원재료 추론을 폐기하므로 검출은 없어야 하고 declarationFound 는 false 여야 한다. 원래 질문: 쇠고기 직접 표기",
+      "superseded_expect_v1": true,
+      "superseded_expect_v1_value": true,
+      "superseded_reason": "D55-2 원재료 추론 폐기 (제이 결정 2026-08-08). ★ 라벨을 뒤집는 근거는 «측정 결과»가 아니라 «도메인 결정»이다. 결정이 뒤집히면 이 필드로 되돌린다.",
+      "superseded_status_v1": "contract",
+      "decided": "IP/GT_재정의_계획_2026-08-09_세션56.md §2-1",
+      "promoted_2026_08_09_session58": {
+        "from": "known_gap",
+        "condition_met": "2단계(추론 폐기) 완료 후 이 케이스들이 통과하면 status 를 contract 로 승격한다. 그때 SENTINEL_STRICT=1 이 초록이어야 한다.",
+        "evidence": "SENTINEL_STRICT=1 EXIT 0 (계약 36+27=63 · 실패 0)",
+        "note": "[세션58 승격] 2단계(추론 폐기) 완료. 실측: SENTINEL_STRICT=1 EXIT 0 · 해소 27 / 미해소 0. 승격 전 조건은 promoted_from 에 보존한다."
+      }
     },
     {
       "id": "S-오징어-D1",
@@ -597,20 +964,23 @@
     {
       "id": "S-오징어-I1",
       "allergen": "오징어",
-      "path": "ingredients",
+      "path": "no_declaration",
       "text": "원재료명: 오징어 40%, 정제소금",
-      "expect": true,
-      "status": "contract",
-      "why": "오징어"
-    },
-    {
-      "id": "S-오징어-I2",
-      "allergen": "오징어",
-      "path": "ingredients",
-      "text": "원재료명: 문어, 정제소금",
       "expect": false,
+      "expect_declaration_found": false,
       "status": "contract",
-      "why": "두족류 대조군"
+      "why": "[재정의] 질문이 바뀌었다 — 「이 원재료 문장에서 오징어을(를) 검출하는가」 → 「이 문장에는 법정 선언란이 없다고 말하는가」. 원재료 추론을 폐기하므로 검출은 없어야 하고 declarationFound 는 false 여야 한다. 원래 질문: 오징어",
+      "superseded_expect_v1": true,
+      "superseded_expect_v1_value": true,
+      "superseded_reason": "D55-2 원재료 추론 폐기 (제이 결정 2026-08-08). ★ 라벨을 뒤집는 근거는 «측정 결과»가 아니라 «도메인 결정»이다. 결정이 뒤집히면 이 필드로 되돌린다.",
+      "superseded_status_v1": "contract",
+      "decided": "IP/GT_재정의_계획_2026-08-09_세션56.md §2-1",
+      "promoted_2026_08_09_session58": {
+        "from": "known_gap",
+        "condition_met": "2단계(추론 폐기) 완료 후 이 케이스들이 통과하면 status 를 contract 로 승격한다. 그때 SENTINEL_STRICT=1 이 초록이어야 한다.",
+        "evidence": "SENTINEL_STRICT=1 EXIT 0 (계약 36+27=63 · 실패 0)",
+        "note": "[세션58 승격] 2단계(추론 폐기) 완료. 실측: SENTINEL_STRICT=1 EXIT 0 · 해소 27 / 미해소 0. 승격 전 조건은 promoted_from 에 보존한다."
+      }
     },
     {
       "id": "S-조개류-D1",
@@ -633,11 +1003,23 @@
     {
       "id": "S-조개류-I1",
       "allergen": "조개류",
-      "path": "ingredients",
+      "path": "no_declaration",
       "text": "원재료명: 바지락 20%, 정제수",
-      "expect": true,
+      "expect": false,
+      "expect_declaration_found": false,
       "status": "contract",
-      "why": "바지락"
+      "why": "[재정의] 질문이 바뀌었다 — 「이 원재료 문장에서 조개류을(를) 검출하는가」 → 「이 문장에는 법정 선언란이 없다고 말하는가」. 원재료 추론을 폐기하므로 검출은 없어야 하고 declarationFound 는 false 여야 한다. 원래 질문: 바지락",
+      "superseded_expect_v1": true,
+      "superseded_expect_v1_value": true,
+      "superseded_reason": "D55-2 원재료 추론 폐기 (제이 결정 2026-08-08). ★ 라벨을 뒤집는 근거는 «측정 결과»가 아니라 «도메인 결정»이다. 결정이 뒤집히면 이 필드로 되돌린다.",
+      "superseded_status_v1": "contract",
+      "decided": "IP/GT_재정의_계획_2026-08-09_세션56.md §2-1",
+      "promoted_2026_08_09_session58": {
+        "from": "known_gap",
+        "condition_met": "2단계(추론 폐기) 완료 후 이 케이스들이 통과하면 status 를 contract 로 승격한다. 그때 SENTINEL_STRICT=1 이 초록이어야 한다.",
+        "evidence": "SENTINEL_STRICT=1 EXIT 0 (계약 36+27=63 · 실패 0)",
+        "note": "[세션58 승격] 2단계(추론 폐기) 완료. 실측: SENTINEL_STRICT=1 EXIT 0 · 해소 27 / 미해소 0. 승격 전 조건은 promoted_from 에 보존한다."
+      }
     },
     {
       "id": "S-잣-D1",
@@ -651,215 +1033,236 @@
     {
       "id": "S-잣-I1",
       "allergen": "잣",
-      "path": "ingredients",
+      "path": "no_declaration",
       "text": "원재료명: 잣 15%, 쌀",
-      "expect": true,
+      "expect": false,
+      "expect_declaration_found": false,
       "status": "contract",
-      "why": "★ 2026-08-06 P1 해소(known_gap → contract). ALLERGEN_KEYWORDS 에 '잣' 추가 + 2단계 폴백이 1글자를 건너뛰던 것을 경계 규칙으로 대체. 같은 수정으로 '굴'(조개류)도 원재료 경로에서 살아났다."
+      "why": "[재정의] 질문이 바뀌었다 — 「이 원재료 문장에서 잣을(를) 검출하는가」 → 「이 문장에는 법정 선언란이 없다고 말하는가」. 원재료 추론을 폐기하므로 검출은 없어야 하고 declarationFound 는 false 여야 한다. 원래 질문: ★ 2026-08-06 P1 해소(known_gap → contract). ALLERGEN_KEYWORDS 에 '잣' 추가 + 2단계 폴백이 1글자를 건너뛰던 것을 경계 규칙으로 대체. 같은 수정으로 '굴'(조개류)도 원재료 경로에서 살아났다.",
+      "superseded_expect_v1": true,
+      "superseded_expect_v1_value": true,
+      "superseded_reason": "D55-2 원재료 추론 폐기 (제이 결정 2026-08-08). ★ 라벨을 뒤집는 근거는 «측정 결과»가 아니라 «도메인 결정»이다. 결정이 뒤집히면 이 필드로 되돌린다.",
+      "superseded_status_v1": "contract",
+      "decided": "IP/GT_재정의_계획_2026-08-09_세션56.md §2-1",
+      "promoted_2026_08_09_session58": {
+        "from": "known_gap",
+        "condition_met": "2단계(추론 폐기) 완료 후 이 케이스들이 통과하면 status 를 contract 로 승격한다. 그때 SENTINEL_STRICT=1 이 초록이어야 한다.",
+        "evidence": "SENTINEL_STRICT=1 EXIT 0 (계약 36+27=63 · 실패 0)",
+        "note": "[세션58 승격] 2단계(추론 폐기) 완료. 실측: SENTINEL_STRICT=1 EXIT 0 · 해소 27 / 미해소 0. 승격 전 조건은 promoted_from 에 보존한다."
+      }
     },
     {
       "id": "S-조개류-I2",
       "allergen": "조개류",
-      "path": "ingredients",
+      "path": "no_declaration",
       "text": "원재료명: 굴 20%, 정제수",
-      "expect": true,
+      "expect": false,
+      "expect_declaration_found": false,
       "status": "contract",
-      "why": "★ 2026-08-06 신규. 종전엔 2단계 폴백이 keyword.length<2 를 통째로 건너뛰어 '굴' 이 죽어 있었다. 회신에 없던 FN 이고, P1 수정으로 함께 해소됐다."
+      "why": "[재정의] 질문이 바뀌었다 — 「이 원재료 문장에서 조개류을(를) 검출하는가」 → 「이 문장에는 법정 선언란이 없다고 말하는가」. 원재료 추론을 폐기하므로 검출은 없어야 하고 declarationFound 는 false 여야 한다. 원래 질문: ★ 2026-08-06 신규. 종전엔 2단계 폴백이 keyword.length<2 를 통째로 건너뛰어 '굴' 이 죽어 있었다. 회신에 없던 FN 이고, P1 수정으로 함께 해소됐다.",
+      "superseded_expect_v1": true,
+      "superseded_expect_v1_value": true,
+      "superseded_reason": "D55-2 원재료 추론 폐기 (제이 결정 2026-08-08). ★ 라벨을 뒤집는 근거는 «측정 결과»가 아니라 «도메인 결정»이다. 결정이 뒤집히면 이 필드로 되돌린다.",
+      "superseded_status_v1": "contract",
+      "decided": "IP/GT_재정의_계획_2026-08-09_세션56.md §2-1",
+      "promoted_2026_08_09_session58": {
+        "from": "known_gap",
+        "condition_met": "2단계(추론 폐기) 완료 후 이 케이스들이 통과하면 status 를 contract 로 승격한다. 그때 SENTINEL_STRICT=1 이 초록이어야 한다.",
+        "evidence": "SENTINEL_STRICT=1 EXIT 0 (계약 36+27=63 · 실패 0)",
+        "note": "[세션58 승격] 2단계(추론 폐기) 완료. 실측: SENTINEL_STRICT=1 EXIT 0 · 해소 27 / 미해소 0. 승격 전 조건은 promoted_from 에 보존한다."
+      }
     },
     {
       "id": "S-조개류-I3",
       "allergen": "조개류",
-      "path": "ingredients",
-      "text": "원재료명: 얼굴용 크림베이스",
+      "path": "declared",
+      "text": "얼굴용 크림베이스 함유",
       "expect": false,
       "status": "contract",
-      "why": "1글자 '굴' 을 살릴 때 반드시 함께 지켜야 하는 대조군. 세션44 2차 검증 실측 사례."
+      "why": "[이관] 같은 질문(오탐 금지)을 선언 경로에서 유지한다. 이 케이스가 지키는 것: 1글자 경계 + oysterAccept (이중) — 끄면(MUT-GB) 빨간불이 된다. 단일 뮤턴트로는 관측되지 않는다 원래 질문: 1글자 '굴' 을 살릴 때 반드시 함께 지켜야 하는 대조군. 세션44 2차 검증 실측 사례.",
+      "text_v1": "원재료명: 얼굴용 크림베이스",
+      "migrated_from": "ingredients",
+      "guard_measured": "1글자 경계 + oysterAccept (이중)",
+      "guard_mutant": "MUT-GB",
+      "decided": "IP/coverage_neg_판단_2026-08-09_세션57.md §2 (제이 결정 D57-1)"
     },
     {
       "id": "S-잣-I2",
       "allergen": "잣",
-      "path": "ingredients",
-      "text": "원재료명: 잣나무향 합성착향료",
+      "path": "declared",
+      "text": "잣나무향 합성착향료 함유",
       "expect": false,
       "status": "contract",
-      "why": "1글자 '잣' 을 원재료표에 추가할 때 반드시 함께 지켜야 하는 대조군. 경계 규칙 없이 넣으면 여기서 FP 가 난다."
+      "why": "[이관] 같은 질문(오탐 금지)을 선언 경로에서 유지한다. 이 케이스가 지키는 것: 1글자 구분자 경계(_boundedNameRe) — 끄면(MUT-B) 빨간불이 된다. 원래 질문: 1글자 '잣' 을 원재료표에 추가할 때 반드시 함께 지켜야 하는 대조군. 경계 규칙 없이 넣으면 여기서 FP 가 난다.",
+      "text_v1": "원재료명: 잣나무향 합성착향료",
+      "migrated_from": "ingredients",
+      "guard_measured": "1글자 구분자 경계(_boundedNameRe)",
+      "guard_mutant": "MUT-B",
+      "decided": "IP/coverage_neg_판단_2026-08-09_세션57.md §2 (제이 결정 D57-1)"
     },
     {
       "id": "S-잣-I3",
       "allergen": "잣",
-      "path": "ingredients",
-      "text": "원재료명: 가잣이 아닌 일반 원료",
+      "path": "declared",
+      "text": "가잣이 아닌 일반 원료 함유",
       "expect": false,
       "status": "contract",
-      "why": "앞 경계 대조군"
+      "why": "[이관] 같은 질문(오탐 금지)을 선언 경로에서 유지한다. 이 케이스가 지키는 것: 1글자 구분자 경계(_boundedNameRe) — 끄면(MUT-B) 빨간불이 된다. 원래 질문: 앞 경계 대조군",
+      "text_v1": "원재료명: 가잣이 아닌 일반 원료",
+      "migrated_from": "ingredients",
+      "guard_measured": "1글자 구분자 경계(_boundedNameRe)",
+      "guard_mutant": "MUT-B",
+      "decided": "IP/coverage_neg_판단_2026-08-09_세션57.md §2 (제이 결정 D57-1)"
     },
     {
       "id": "P-우유-땅콩버터",
       "allergen": "우유",
-      "path": "ingredients",
-      "text": "원재료명: 땅콩버터 30%, 설탕",
+      "path": "declared",
+      "text": "땅콩버터 30%, 설탕 함유",
       "expect": false,
       "status": "contract",
-      "why": "회신 쟁점7-9 — '버터' 단독 부분문자열 별칭 폐지·경계화 권고. 현행은 우유 FP. 제이 결정 전이라 기대값을 확정하지 않는다.  ★세션54 승격: policy_pending → contract(expect=false). 근거 D54-1.",
-      "decided": {
-        "id": "D54-1",
-        "date": "2026-08-07",
-        "session": 54,
-        "by": "제이",
-        "why": "제이(2026-08-07): 버터는 밀 가드와 같은 2축 구조로 간다. 땅콩·코코아·카카오·시어 등 견과/종실/과육 버터는 유제품이 아니다. → allergenGuards.js butterAccept"
-      }
-    },
-    {
-      "id": "P-쇠고기-젤라틴",
-      "allergen": "쇠고기",
-      "path": "ingredients",
-      "text": "원재료명: 젤라틴, 설탕",
-      "expect": false,
-      "status": "contract",
-      "why": "회신 쟁점7-5 — 출처 없는 젤라틴을 쇠고기로 단정하지 말 것. 현행은 쇠고기.  ★세션54 승격: policy_pending → contract(expect=false). 근거 D54-2.",
-      "decided": {
-        "id": "D54-2",
-        "date": "2026-08-07",
-        "session": 54,
-        "by": "제이",
-        "why": "제이(2026-08-07): 수식어 없는 젤라틴은 어떤 축종도 붙이지 않는다. 원료는 돈피·우피·어류이며 법정 19종은 쇠고기와 돼지고기가 별개 항목이라, 무조건 쇠고기로 붙이면 두 방향으로 동시에 틀린다. 축종 명시형(우육/소/비프 · 돈피/돈/포크)만 각 항목에 붙인다."
-      }
-    },
-    {
-      "id": "P-대두-레시틴",
-      "allergen": "대두",
-      "path": "ingredients",
-      "text": "원재료명: 레시틴, 정제수",
-      "expect": false,
-      "status": "contract",
-      "why": "회신 쟁점7-4 — 일반 레시틴은 origin_unspecified. 현행은 대두.  ★세션54 승격: policy_pending → contract(expect=false). 근거 D54-3.",
-      "decided": {
-        "id": "D54-3",
-        "date": "2026-08-07",
-        "session": 54,
-        "by": "제이",
-        "why": "제이(2026-08-07): 대두 레시틴이면 제조사가 알러지 표기에 대두를 표기하게 되어 있다. 표기가 있으면 대두 레시틴이고, 없으면 대두 기원이 아니라고 판단한다. → 맨 레시틴은 대두 미판정. 대두레시틴/난황레시틴 등 명시형만 잡는다."
-      }
+      "why": "[이관] 같은 질문(오탐 금지)을 선언 경로에서 유지한다. 이 케이스가 지키는 것: butterAccept — 끄면(MUT-G) 빨간불이 된다. 원래 질문: 회신 쟁점7-9 — '버터' 단독 부분문자열 별칭 폐지·경계화 권고. 현행은 우유 FP. 제이 결정 전이라 기대값을 확정하지 않는다.  ★세션54 승격: policy_pending → contract(expect=false). 근거 D54-1.",
+      "text_v1": "원재료명: 땅콩버터 30%, 설탕",
+      "migrated_from": "ingredients",
+      "guard_measured": "butterAccept",
+      "guard_mutant": "MUT-G",
+      "decided": "IP/GT_재정의_계획_2026-08-09_세션56.md §2-2"
     },
     {
       "id": "P-대두-대두레시틴",
       "allergen": "대두",
-      "path": "ingredients",
+      "path": "no_declaration",
       "text": "원재료명: 대두레시틴, 정제수",
-      "expect": true,
+      "expect": false,
+      "expect_declaration_found": false,
       "status": "contract",
-      "why": "출처가 명시된 경우는 회신도 대두 추론을 인정한다"
+      "why": "[재정의] 질문이 바뀌었다 — 「이 원재료 문장에서 대두을(를) 검출하는가」 → 「이 문장에는 법정 선언란이 없다고 말하는가」. 원재료 추론을 폐기하므로 검출은 없어야 하고 declarationFound 는 false 여야 한다. 원래 질문: 출처가 명시된 경우는 회신도 대두 추론을 인정한다",
+      "superseded_expect_v1": true,
+      "superseded_expect_v1_value": true,
+      "superseded_reason": "D55-2 원재료 추론 폐기 (제이 결정 2026-08-08). ★ 라벨을 뒤집는 근거는 «측정 결과»가 아니라 «도메인 결정»이다. 결정이 뒤집히면 이 필드로 되돌린다.",
+      "superseded_status_v1": "contract",
+      "decided": "IP/GT_재정의_계획_2026-08-09_세션56.md §2-1",
+      "promoted_2026_08_09_session58": {
+        "from": "known_gap",
+        "condition_met": "2단계(추론 폐기) 완료 후 이 케이스들이 통과하면 status 를 contract 로 승격한다. 그때 SENTINEL_STRICT=1 이 초록이어야 한다.",
+        "evidence": "SENTINEL_STRICT=1 EXIT 0 (계약 36+27=63 · 실패 0)",
+        "note": "[세션58 승격] 2단계(추론 폐기) 완료. 실측: SENTINEL_STRICT=1 EXIT 0 · 해소 27 / 미해소 0. 승격 전 조건은 promoted_from 에 보존한다."
+      }
     },
     {
       "id": "P-밀-호밀",
       "allergen": "밀",
-      "path": "ingredients",
-      "text": "원재료명: 호밀가루 70%",
+      "path": "declared",
+      "text": "호밀가루 70% 함유",
       "expect": false,
       "status": "contract",
-      "why": "회신 쟁점7-1 — 호밀을 법정 밀로 매핑하지 말 것 권고. 현행 동작 기록용.  ★세션54 승격: policy_pending → contract(expect=false). 근거 D53-3.",
-      "decided": {
-        "id": "D53-3",
-        "date": "2026-08-07",
-        "session": 54,
-        "by": "제이",
-        "why": "제이(2026-08-06): 「호밀이 글루텐을 포함하고 있더라도 국내 법규가 우선이야. 국내에서는 호밀을 알러겐으로 표기하도록 하지 않고 있어.」 세션53 에 코드는 이미 반영됐고 세션54 에 라벨만 갱신한다."
-      }
+      "why": "[이관] 같은 질문(오탐 금지)을 선언 경로에서 유지한다. 이 케이스가 지키는 것: wheatAccept — 끄면(MUT-G) 빨간불이 된다. 원래 질문: 회신 쟁점7-1 — 호밀을 법정 밀로 매핑하지 말 것 권고. 현행 동작 기록용.  ★세션54 승격: policy_pending → contract(expect=false). 근거 D53-3.",
+      "text_v1": "원재료명: 호밀가루 70%",
+      "migrated_from": "ingredients",
+      "guard_measured": "wheatAccept",
+      "guard_mutant": "MUT-G",
+      "decided": "IP/GT_재정의_계획_2026-08-09_세션56.md §2-2",
+      "merged_duplicate": "P-밀-호밀가루2"
     },
     {
       "id": "P-밀-오트밀",
       "allergen": "밀",
-      "path": "ingredients",
-      "text": "원재료명: 오트밀 100%",
+      "path": "declared",
+      "text": "오트밀 100% 함유",
       "expect": false,
       "status": "contract",
-      "why": "회신 쟁점7-2  ★세션54 승격: policy_pending → contract(expect=false). 근거 D53-3-derived.",
-      "decided": {
-        "id": "D53-3-derived",
-        "date": "2026-08-07",
-        "session": 54,
-        "by": "제이",
-        "why": "위 호밀 결정과 «같은 원칙»의 귀결 — 이 축은 식약처 법정 19종을 판정한다. 오트밀(귀리)은 19종이 아니다. 정책 선택이 아니라 사실 확인이라 함께 승격했다. ⚠ 제이 명시 확인은 아직 받지 않았다 — 세션55 에 확인할 것."
-      }
-    },
-    {
-      "id": "P-메밀-모밀",
-      "allergen": "메밀",
-      "path": "ingredients",
-      "text": "원재료명: 모밀가루 80%",
-      "expect": null,
-      "status": "policy_pending",
-      "why": "회신 쟁점7-3 — 모밀을 메밀 별칭으로 추가 권고. 현행 동작 기록용."
-    },
-    {
-      "id": "P-난류-날치알",
-      "allergen": "난류(가금류)",
-      "path": "ingredients",
-      "text": "원재료명: 날치알 10%, 정제수",
-      "expect": null,
-      "status": "policy_pending",
-      "why": "회신 쟁점7-8 — 어란을 법정 난류(가금류)로 매핑하지 말 것."
+      "why": "[이관] 같은 질문(오탐 금지)을 선언 경로에서 유지한다. 이 케이스가 지키는 것: wheatAccept — 끄면(MUT-G) 빨간불이 된다. 원래 질문: 회신 쟁점7-2  ★세션54 승격: policy_pending → contract(expect=false). 근거 D53-3-derived.",
+      "text_v1": "원재료명: 오트밀 100%",
+      "migrated_from": "ingredients",
+      "guard_measured": "wheatAccept",
+      "guard_mutant": "MUT-G",
+      "decided": "IP/GT_재정의_계획_2026-08-09_세션56.md §2-2"
     },
     {
       "id": "P-게-게맛살",
       "allergen": "게",
-      "path": "ingredients",
-      "text": "원재료명: 게맛살(연육, 게향)",
+      "path": "declared",
+      "text": "게맛살(연육, 게향) 함유",
       "expect": false,
       "status": "contract",
-      "why": "회신 쟁점7-13 — 게맛살·게향만으로 게 직접 함유 확정 재검토.  ★세션54 승격: policy_pending → contract(expect=false). 근거 D54-4.",
-      "decided": {
-        "id": "D54-4",
-        "date": "2026-08-07",
-        "session": 54,
-        "by": "제이",
-        "why": "제이(2026-08-07): 「이전에 오판이었어. 게맛살에는 게가 들어가지 않아.」 게향도 같이 내림(실측 50건 전부 합성착향료). ★세션50 결정의 폐기다."
-      }
-    },
-    {
-      "id": "P-우유-유당",
-      "allergen": "우유",
-      "path": "ingredients",
-      "text": "원재료명: 유당, 부형제",
-      "expect": null,
-      "status": "policy_pending",
-      "why": "회신 쟁점7-6 — contains 가 아니라 우유 유래 추정으로 분리 권고."
+      "why": "[이관] 같은 질문(오탐 금지)을 선언 경로에서 유지한다. 이 케이스가 지키는 것: 1글자 경계 + crabAccept (이중) — 끄면(MUT-GB) 빨간불이 된다. 제이 결정 2026-08-07 「게맛살에 게는 없다」를 지킨다 원래 질문: 회신 쟁점7-13 — 게맛살·게향만으로 게 직접 함유 확정 재검토.  ★세션54 승격: policy_pending → contract(expect=false). 근거 D54-4.",
+      "text_v1": "원재료명: 게맛살(연육, 게향)",
+      "migrated_from": "ingredients",
+      "guard_measured": "1글자 경계 + crabAccept (이중)",
+      "guard_mutant": "MUT-GB",
+      "decided": "IP/coverage_neg_판단_2026-08-09_세션57.md §2 (제이 결정 D57-1)"
     },
     {
       "id": "P-밀-메밀가루",
       "allergen": "밀",
-      "path": "ingredients",
-      "text": "원재료명: 메밀가루 80%, 정제소금",
+      "path": "declared",
+      "text": "메밀가루 80%, 정제소금 함유",
       "expect": false,
       "status": "contract",
-      "why": "★ 제이 결정 (2026-08-06): 「메밀은 밀이 아니야. 고쳐야 돼.」 policy_pending → contract 승격. 메밀은 buckwheat, 소맥이 아니다. GT 라벨 N(메밀 157회·메밀가루 67회). 회신 쟁점7-7 도 같은 결론. KEYWORD_LEFT_NEGATIVE['밀가루']=['메','호'] 로 차단."
+      "why": "[이관] 같은 질문(오탐 금지)을 선언 경로에서 유지한다. 이 케이스가 지키는 것: wheatAccept — 끄면(MUT-G) 빨간불이 된다. 원래 질문: ★ 제이 결정 (2026-08-06): 「메밀은 밀이 아니야. 고쳐야 돼.」 policy_pending → contract 승격. 메밀은 buckwheat, 소맥이 아니다. GT 라벨 N(메밀 157회·메밀가루 67회). 회신 쟁점7-7 도 같은 결론. KEYWORD_LEFT_NEGATIVE['밀가루']=['메','호'] 로 차단.",
+      "text_v1": "원재료명: 메밀가루 80%, 정제소금",
+      "migrated_from": "ingredients",
+      "guard_measured": "wheatAccept",
+      "guard_mutant": "MUT-G",
+      "decided": "IP/GT_재정의_계획_2026-08-09_세션56.md §2-2"
     },
     {
       "id": "S-밀-I7",
       "allergen": "밀",
-      "path": "ingredients",
+      "path": "no_declaration",
       "text": "원재료명: 메밀가루 60%, 밀가루 20%",
-      "expect": true,
+      "expect": false,
+      "expect_declaration_found": false,
       "status": "contract",
-      "why": "★ 부정 규칙이 «첫 출현»만 보고 접으면 여기서 밀을 놓친다(과소경고). 메밀에 밀을 섞은 실제 제품이 이 형태다. _keywordHit 이 모든 출현을 보는 이유."
+      "why": "[재정의] 질문이 바뀌었다 — 「이 원재료 문장에서 밀을(를) 검출하는가」 → 「이 문장에는 법정 선언란이 없다고 말하는가」. 원재료 추론을 폐기하므로 검출은 없어야 하고 declarationFound 는 false 여야 한다. 원래 질문: ★ 부정 규칙이 «첫 출현»만 보고 접으면 여기서 밀을 놓친다(과소경고). 메밀에 밀을 섞은 실제 제품이 이 형태다. _keywordHit 이 모든 출현을 보는 이유.",
+      "superseded_expect_v1": true,
+      "superseded_expect_v1_value": true,
+      "superseded_reason": "D55-2 원재료 추론 폐기 (제이 결정 2026-08-08). ★ 라벨을 뒤집는 근거는 «측정 결과»가 아니라 «도메인 결정»이다. 결정이 뒤집히면 이 필드로 되돌린다.",
+      "superseded_status_v1": "contract",
+      "decided": "IP/GT_재정의_계획_2026-08-09_세션56.md §2-1",
+      "promoted_2026_08_09_session58": {
+        "from": "known_gap",
+        "condition_met": "2단계(추론 폐기) 완료 후 이 케이스들이 통과하면 status 를 contract 로 승격한다. 그때 SENTINEL_STRICT=1 이 초록이어야 한다.",
+        "evidence": "SENTINEL_STRICT=1 EXIT 0 (계약 36+27=63 · 실패 0)",
+        "note": "[세션58 승격] 2단계(추론 폐기) 완료. 실측: SENTINEL_STRICT=1 EXIT 0 · 해소 27 / 미해소 0. 승격 전 조건은 promoted_from 에 보존한다."
+      }
     },
     {
       "id": "S-밀-I8",
       "allergen": "밀",
-      "path": "ingredients",
+      "path": "no_declaration",
       "text": "원재료명: 통밀가루 100%",
-      "expect": true,
+      "expect": false,
+      "expect_declaration_found": false,
       "status": "contract",
-      "why": "★ 양성 대조군. 부정 규칙이 넓어져 진짜 밀을 놓쳐도 초록이 되는 것을 막는다. GT 라벨 Y."
+      "why": "[재정의] 질문이 바뀌었다 — 「이 원재료 문장에서 밀을(를) 검출하는가」 → 「이 문장에는 법정 선언란이 없다고 말하는가」. 원재료 추론을 폐기하므로 검출은 없어야 하고 declarationFound 는 false 여야 한다. 원래 질문: ★ 양성 대조군. 부정 규칙이 넓어져 진짜 밀을 놓쳐도 초록이 되는 것을 막는다. GT 라벨 Y.",
+      "superseded_expect_v1": true,
+      "superseded_expect_v1_value": true,
+      "superseded_reason": "D55-2 원재료 추론 폐기 (제이 결정 2026-08-08). ★ 라벨을 뒤집는 근거는 «측정 결과»가 아니라 «도메인 결정»이다. 결정이 뒤집히면 이 필드로 되돌린다.",
+      "superseded_status_v1": "contract",
+      "decided": "IP/GT_재정의_계획_2026-08-09_세션56.md §2-1",
+      "promoted_2026_08_09_session58": {
+        "from": "known_gap",
+        "condition_met": "2단계(추론 폐기) 완료 후 이 케이스들이 통과하면 status 를 contract 로 승격한다. 그때 SENTINEL_STRICT=1 이 초록이어야 한다.",
+        "evidence": "SENTINEL_STRICT=1 EXIT 0 (계약 36+27=63 · 실패 0)",
+        "note": "[세션58 승격] 2단계(추론 폐기) 완료. 실측: SENTINEL_STRICT=1 EXIT 0 · 해소 27 / 미해소 0. 승격 전 조건은 promoted_from 에 보존한다."
+      }
     },
     {
-      "id": "P-밀-호밀가루2",
-      "allergen": "밀",
-      "path": "ingredients",
-      "text": "원재료명: 호밀가루 70%",
+      "id": "X-경로-선언오버런",
+      "allergen": "닭고기",
+      "path": "declared",
+      "text": "원재료명: 정제소금, 치킨향분말, 식물성크림\n대두, 밀 함유",
       "expect": false,
       "status": "contract",
-      "why": "★ 2026-08-06 — 호밀(rye)은 법정 19종의 밀(소맥)이 아니다. GT 라벨 N 「left:호 — rye 호밀(19종 아님)」. 회신 쟁점7-1 도 매핑 반대. ⚠ 제이가 명시로 지시한 목록에는 없었다 — 되돌리려면 KEYWORD_LEFT_NEGATIVE['밀가루'] 에서 '호' 한 글자만 지운다. ⚠ 글루텐 회피 목적 사용자에게는 호밀도 위험하다. 별도 축(non_statutory_cereal)이 없어 지금은 정보가 사라진다."
+      "why": "★ 종이 아니라 «통로»를 재는 케이스. 원재료 줄이 선언 줄 바로 앞에 붙으면 v1(판별기 B)의 선언 문구 추출이 앞 줄을 삼키고, 삼킨 문구 안에서 원재료 키워드까지 매칭해 억제 장치가 없는 종(닭고기·우유)이 새어 나온다. C(v2)는 선언 세그먼트에서 법정명만 보므로 오염되지 않는다(B·C 비대칭). 사이에 다른 줄이 하나만 있어도 정상으로 돌아온다. 실물 68건 관측 0건 · 합성 재현 O → 그래서 contract 가 아니라 known_gap 이다.",
+      "decided": "IP/coverage_neg_판단_2026-08-09_세션57.md §3-3·§4-3",
+      "device_free_species_proxy": true,
+      "promoted_2026_08_09_session58": {
+        "from": "known_gap",
+        "evidence": "SENTINEL_STRICT=1 EXIT 0 (계약 36+27=63 · 실패 0)",
+        "note": "[세션58 승격] 2단계(추론 폐기) 완료. 실측: SENTINEL_STRICT=1 EXIT 0 · 해소 27 / 미해소 0. 승격 전 조건은 promoted_from 에 보존한다."
+      }
     }
   ]
 }

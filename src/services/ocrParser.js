@@ -1151,6 +1151,53 @@ function _keywordHit(text, keyword) {
  * @param {string} text
  * @returns {string[]}
  */
+/**
+ * ★★★ 세션56 1단계 — 판별기 B(v1)의 «1단계가 무엇을 찾았는가»를 밖에서 볼 수 있게 뺐다.
+ *
+ * 왜 뺐나 (설계 §4-2(b))
+ *   `detectAllergens` 는 「명시 표기를 찾았지만 19종이 0개」와 「애초에 명시 표기가 없다」를
+ *   **같은 코드 경로로 합친다**(둘 다 2단계 폴백으로 내려간다). 그래서 밖에서 구분할 수 없었다.
+ *
+ * ⚠ **동작은 한 글자도 바꾸지 않았다.** 기존 루프를 그대로 옮긴 것이다.
+ *   (1단계는 «추가»만 한다 — 2단계에서 되돌릴 수 있어야 하므로. 설계 §5)
+ *
+ * ⚠ 이 신호는 `detectAllergensV2.declarationFound` 와 **다른 것을 잰다.**
+ *   여기는 «정규식이 선언 문구를 뽑았는가», 저기는 «세그먼트가 선언으로 분류됐는가».
+ *   응답의 `allergens_available` 은 **v2 쪽**을 쓴다(세그먼트 분류가 더 정확하다).
+ *   이 함수는 판별기 B 단독 검사·회귀용이다. 두 값이 갈리면 그 자체가 조사 대상이다.
+ */
+function _explicitDeclarationText(text, patterns) {
+  const out = [];
+  for (const re of patterns) {
+    const m = (text || '').match(re);
+    if (m && m[1] && m[1].length < 200) out.push(m[1]);
+  }
+  return out;
+}
+
+// ★ 세션56 — `detectAllergens` 안에 있던 배열을 모듈 스코프로 올렸다(내용 변경 없음).
+//   주석 원문은 `detectAllergens` 본문에 그대로 남아 있다(ReDoS 이력 — 세션43).
+const EXPLICIT_DECLARATION_PATTERNS = [
+  // "알레르기 유발물질: 우유, 밀, 쇠고기"
+  /알레르기\s*유발\s*물질\s*[:：]\s*([^.\n]{1,200})/,
+  // "우유·밀·쇠고기 함유" / "우유, 밀, 쇠고기 함유"
+  // ★ 세션44 2차 검증 — 문자클래스에 `ㆍ`(U+318D)·`、`·`／`·전각 괄호·`및` 이 없어서
+  //   `밀ㆍ대두 함유` · `밀、대두 함유` · `우유및밀함유` 에서 blob 이 잘려 밀을 놓쳤다.
+  //   실물 라벨은 가운뎃점을 `·`(U+00B7) 외에 `ㆍ`·`‧`·`∙` 로도 쓴다.
+  /([가-힣()（）·ㆍ‧∙、，,／/＊*※•\s및와과]{1,200}?)함유/,
+  // "♥ 우유, 밀, 쇠고기 함유 ♥" 같이 ♥/⚠/⭐ 마커로 감싸진 부분
+  /[♥⚠⭐]([^♥⚠⭐]{0,200}?)함유[^♥⚠⭐]{0,200}[♥⚠⭐]/,
+];
+
+/**
+ * 판별기 B(v1) 기준 「법정 선언 문구를 찾았는가」.
+ * ★ 응답 계약(`allergens_available`)은 이 값을 쓰지 «않는다» — v2 쪽을 쓴다.
+ *   이 함수는 두 판별기의 선언 탐지가 어긋나는지 보기 위한 회귀·조사용이다.
+ */
+function hasExplicitDeclaration(text) {
+  return _explicitDeclarationText(text, EXPLICIT_DECLARATION_PATTERNS).length > 0;
+}
+
 function detectAllergens(text) {
   // 1단계: 명시적 알레르기 표기 추출
   // \"함유\" 또는 \"알레르기 유발물질\" 또는 ♥/⚠ 같은 강조 마커가 있는 줄 찾기
@@ -1167,25 +1214,10 @@ function detectAllergens(text) {
   //      두 lazy 수량자가 **인접**해 같은 구간을 나눠 먹는다. 역시 지수적이다.
   //      → 하나로 합친다. 뒤쪽 텍스트는 `blob.includes(keyword)` 로만 쓰이므로 한글만 남길 필요가 없다.
   //   ★ 상한 200 은 아래 `m[1].length < 200` 게이트와 같은 값이다. 200자를 넘으면 어차피 버린다.
-  const explicitPatterns = [
-    // "알레르기 유발물질: 우유, 밀, 쇠고기"
-    /알레르기\s*유발\s*물질\s*[:：]\s*([^.\n]{1,200})/,
-    // "우유·밀·쇠고기 함유" / "우유, 밀, 쇠고기 함유"
-    // ★ 세션44 2차 검증 — 문자클래스에 `ㆍ`(U+318D)·`、`·`／`·전각 괄호·`및` 이 없어서
-    //   `밀ㆍ대두 함유` · `밀、대두 함유` · `우유및밀함유` 에서 blob 이 잘려 밀을 놓쳤다.
-    //   실물 라벨은 가운뎃점을 `·`(U+00B7) 외에 `ㆍ`·`‧`·`∙` 로도 쓴다.
-    /([가-힣()（）·ㆍ‧∙、，,／/＊*※•\s및와과]{1,200}?)함유/,
-    // "♥ 우유, 밀, 쇠고기 함유 ♥" 같이 ♥/⚠/⭐ 마커로 감싸진 부분
-    /[♥⚠⭐]([^♥⚠⭐]{0,200}?)함유[^♥⚠⭐]{0,200}[♥⚠⭐]/,
-  ];
-
-  const explicitText = [];
-  for (const re of explicitPatterns) {
-    const m = text.match(re);
-    if (m && m[1] && m[1].length < 200) {
-      explicitText.push(m[1]);
-    }
-  }
+  // ★ 세션56 — 배열을 모듈 스코프(`EXPLICIT_DECLARATION_PATTERNS`)로 올렸다.
+  //   `hasExplicitDeclaration()` 이 «같은» 정규식을 써야 두 값이 갈리지 않는다.
+  //   ⚠ 정규식 내용은 한 글자도 바꾸지 않았다.
+  const explicitText = _explicitDeclarationText(text, EXPLICIT_DECLARATION_PATTERNS);
 
   if (explicitText.length > 0) {
     // 명시 표기가 있으면 그 안의 알레르기만 추출
@@ -1218,41 +1250,53 @@ function detectAllergens(text) {
     //   `얼굴 보습 성분 함유` → `굴` 이 걸려 **조개류**가 나왔다(2차 검증에서 확인).
     const blob = explicitText.join(' ');
     const detected = new Set();
-    for (const [allergen, keywords] of Object.entries(ALLERGEN_KEYWORDS)) {
-      for (const keyword of keywords) {
-        // ★ 세션53 P1 — 판별기 B 와 C 가 «같은» 매칭 함수를 쓴다.
-        //   종전엔 여기와 `_matchSet` 이 각자 규칙을 갖고 있어 같은 응답에서 값이 갈렸다(쟁점4).
-        if (_keywordHit(blob, keyword)) { detected.add(allergen); break; }
-      }
-    }
+    // ★★★ 세션58 2단계 — 여기 있던 `ALLERGEN_KEYWORDS`(원재료 형태 표) 루프를 **제거**했다.
+    //   제이 결정 D55-2: 알레르기 성분은 «법정 표시란 파싱»으로만 파악한다.
+    //   이 자리는 이미 «선언 문구를 뽑아낸 blob» 이다. 법정 선언란에는 `밀`·`대두` 같은
+    //   **19종 단독 명칭**만 인쇄되지 `밀가루`·`카제인` 같은 원재료 형태로는 인쇄되지 않는다.
+    //   → 남는 축은 `ALLERGEN_NAME_BOUNDED` 하나다.
+    //
+    //   ★ 이 제거가 «오탐 하나»도 같이 없앤다 (세션57 §5-3 이 기록한 v1 선언 문구 오버런):
+    //     `원재료명: …치킨향분말, 식물성크림\n대두, 밀 함유` 에서 정규식이 앞 줄을 삼키면
+    //     원재료 형태 표가 `치킨`→닭고기 · `크림`→우유 를 냈다. 표를 안 보므로 사라진다.
+    //     (판별기 C 는 선언 세그먼트에서 법정명만 봤으므로 처음부터 오염되지 않았다 — B·C 비대칭 해소)
+    //
+    //   ★ Q57-1(2026-08-09 제이 결정) — 「X맛·X향」을 그 알레르겐으로 보지 않는다.
+    //     「알레르겐 성분은 식품원재료에 표기된 대로만 인식하는 것이 안전하다」.
+    //     실측(세션58, 실물 68건): 「알레르겐명+맛/향」 7건은 **전부** `other`(6)·`ingredients`(1)
+    //     세그먼트다. 선언·혼입 세그먼트에는 **0건**. → 원재료 경로 제거만으로 충족된다.
+    //     ⚠ 그러므로 우측 `맛|향` 부정 가드를 **넣지 않았다.** 근거 없는 항목을 목록에 쌓지
+    //       않는다는 `allergenGuards.js` 의 규칙을 지킨 것이다. 메커니즘은 회귀로 못 박아 둔다.
     for (const [allergen, re] of ALLERGEN_NAME_BOUNDED) {
       if (re.test(blob)) detected.add(allergen);
     }
-    if (detected.size > 0) {
-      return [...detected].sort();
-    }
-    // 명시 표기 추출했지만 매칭된 알레르기가 0개면 — 텍스트가 \"함유\" 없는 일반 문장
-    // → 2단계로 폴백
+    // ★★★ 세션58 — 종전엔 `detected.size > 0` 일 때만 반환하고 **0이면 2단계로 흘렀다.**
+    //   그 분기가 「선언란은 봤는데 19종이 없다」(㉡)와 「선언란을 못 찾았다」(㉠)를 합쳤다.
+    //   이제 선언 문구를 찾았으면 **거기서 읽은 것이 전부다.** 0종이면 0종이라고 말한다.
+    return [...detected].sort();
   }
 
-  // 2단계 (보조): 원재료 키워드 추론
-  // 명시 표기가 없는 경우에만 보조로 사용. 위양성 위험을 줄이기 위해
-  // 키워드 매칭은 \"독립 단어 경계\" 를 강제 — 부분 문자열 매칭 방지
-  const detected = new Set();
-  for (const [allergen, keywords] of Object.entries(ALLERGEN_KEYWORDS)) {
-    for (const keyword of keywords) {
-      // ★★ 세션53 P1 — 종전엔 `keyword.length < 2` 를 «건너뛰었다».
-      //   그래서 1글자 원재료 키워드가 이 경로에서 통째로 죽어 있었다:
-      //     `원재료명: 굴 20%` → 조개류 미검출   ·   `원재료명: 잣 15%` → 잣 미검출
-      //   건너뛴 이유는 `얼굴` 같은 오탐 때문이었는데, 그건 **경계 규칙으로 막는 문제**이지
-      //   항목을 통째로 버릴 문제가 아니었다. `_keywordHit` 이 1글자에 구분자 경계를 요구한다.
-      if (_keywordHit(text, keyword)) {
-        detected.add(allergen);
-        break;
-      }
-    }
-  }
-  return [...detected].sort();
+  // ★★★ 세션58 2단계 — 여기 있던 «원재료 키워드 추론»(2단계 폴백)을 **제거**했다.
+  //   제이 결정 D55-2 (2026-08-08). 근거는 `IP/알레르기_추론폐기_설계_2026-08-08_세션55.md`:
+  //     · 규정 — 알레르기 유발물질은 원재료명 표시란 «근처의 별도 표시란»에 함유량과 무관하게
+  //       전부 표기된다. `밀가루` 에서 `밀` 을 추론할 필요가 없다.
+  //     · 실측(라벨 68건) — 추론의 «순수 추가분» 0종. v1 이 더 낸 4종 중 3종은 오탐이었다.
+  //
+  //   ⚠ 폐기로 «잃는» 것을 숨기지 않는다. 실측된 손실은 다음과 같다:
+  //     · `046` 토마토케첩 — 영문 라벨(`Ingredients`)이라 선언란 추출에 실패한다. 추론이
+  //       유일 근거였다. → 이제 「없음」이 아니라 **`declarationFound:false`(확인 못 함)**로 나간다.
+  //       그 신호가 세션56 1단계에서 먼저 들어갔기 때문에 이 제거가 안전해진 것이다(설계 §5 순서).
+  //     · `006` 대천김 — 「1차 산물…새우, 게, 해초, 조개껍질 등이 나올 수 있으니 제거 후 섭취」에서
+  //       새우·조개류를 냈다. **Q57-2 제이 결정(2026-08-09): 이물 고지는 알레르기 신호가 아니다.**
+  //       실측(세션58): 이 패턴은 전사 68건 중 006 단 1건이다. 일반화할 규칙이 아니다.
+  //       ★ 006 은 같은 라벨 18줄의 「대두, 밀, 우유, 토마토…같은 제조시설」을 mayContain 으로
+  //         여전히 얻는다. 잃는 것은 새우·게·조개류뿐이다.
+  //
+  //   ⚠ **되돌리려면 도메인 결정이 먼저다.** 표(`ALLERGEN_KEYWORDS`)와 그 부속 장치
+  //     (`KEYWORD_LEFT_NEGATIVE`)는 «일부러» 남겼다 — 되돌릴 수 있어야 하고, 죽은 코드 정리는
+  //     설계 §5 의 4단계로 분리돼 있다. 지금 지우면 이 커밋 하나로 되돌릴 수 없다.
+  //     ⚠ 남아 있다고 해서 「억제 장치가 살아 있다」고 세지 말 것 — 도달 불가다(세션58 계약 참조).
+  return [];
 }
 
 // ------------------------------------------------------------
@@ -1279,12 +1323,22 @@ const ALLERGEN_NAMES = {
   '돼지고기': ['돼지고기'],
   '복숭아': ['복숭아'],
   '토마토': ['토마토'],
-  '아황산류': ['아황산', '이산화황'],
+  // ★★★ 세션58 — `아황산류`·`조개류` **법정 전체형**을 값에 넣었다. 과소경고 수정이다.
+  //   무엇이 문제였나 — 판별기 B(v1)는 `ALLERGEN_NAME_BOUNDED`(구분자 경계)로 찾는다.
+  //     `아황산류 함유` 의 `아황산` 은 **뒤가 `류`** 라 경계가 성립하지 않아 **불일치**였다.
+  //     `조개류 함유` 의 `조개` 도 뒤가 `류` 라 같은 이유로 불일치.
+  //   왜 지금까지 안 보였나 — 원재료 형태 표(`ALLERGEN_KEYWORDS`)가 «단순 포함»으로 찾아
+  //     우연히 덮어 주고 있었다. 2단계에서 그 경로를 끊자 sentinel `S-아황산류-D1` 이 즉시 잡아냈다.
+  //     ★ 폐기가 만든 결함이 아니라 **원래 있던 결함이 드러난 것**이다.
+  //   ⚠ 판별기 C 는 2글자 이상에 단순 포함을 쓰므로 처음부터 정상이었다(B·C 비대칭).
+  //   ⚠ 이 두 개는 **법정 표시 문구 그 자체**다 —「아황산류」·「조개류」로 인쇄된다.
+  //     값 목록의 다른 항목(`굴`·`홍합`)은 괄호 안 예시 표기를 잡는 용도라 함께 남는다.
+  '아황산류': ['아황산류', '아황산', '이산화황'],
   '호두': ['호두'],
   '닭고기': ['닭고기'],
   '쇠고기': ['쇠고기', '소고기'],
   '오징어': ['오징어'],
-  '조개류': ['조개', '굴', '홍합', '전복', '바지락'],
+  '조개류': ['조개류', '조개', '굴', '홍합', '전복', '바지락'],
   '잣': ['잣'],
 };
 
@@ -1506,14 +1560,41 @@ function detectAllergensV2(text) {
   }
   const contains = new Set(), mayContain = new Set(), inferred = new Set();
   const evidence = [];
+  // ★★★ 세션56 1단계 — 「법정 선언란을 «봤는가»」를 별도로 기록한다.
+  //   왜 필요한가 (설계 = `IP/알레르기_추론폐기_설계_2026-08-08_세션55.md` §4)
+  //     지금까지 응답은 두 상태를 **구분하지 못했다**:
+  //       ㉠ 선언란을 못 찾았다 (사진에 안 담김·영문 라벨·OCR 실패)  → `available:true, allergens:[]`
+  //       ㉡ 선언란은 찾았는데 19종이 없다                          → `available:true, allergens:[]`
+  //     둘이 같은 응답이므로 화면이 ㉠ 을 「알레르겐 없음」으로 읽는다 = **과소경고**.
+  //     `ocrRoutes.js` 의 주석이 이 한계를 스스로 인정하고 있었다(세션54 §9-1 조건 3).
+  //
+  //   ⚠ **`kind` 는 지금까지 계산 중에만 존재하고 버려졌다.** 여기서 밖으로 꺼낸다.
+  //   ⚠ **`found.size` 와 «무관하게»** 세운다. 그것이 이 신호의 존재 이유다 —
+  //     「선언란은 봤는데 19종이 하나도 없다」가 관측 가능해져야 ㉡ 을 말할 수 있다.
+  //
+  // ★ `mayContain` 도 포함한다. 근거 2가지:
+  //   ① 설계문서 §4-2(a) 가 「`contains` 또는 `mayContain`」으로 정의했다.
+  //   ② ★ 실측(세션56, 라벨 68건) — **혼입 문구만 있는 라벨이 9건**이다.
+  //      혼입을 빼면 이 9건이 `available:false` 가 되는데,
+  //      `web/src/domain/meokseon/allergens.ts:56` 이 `available === false` 를 **가장 먼저** 보고
+  //      즉시 `uncollected` 를 반환하므로 **혼입 경고가 화면에서 통째로 사라진다.** 과소경고다.
+  let declarationFound = false;
   for (const seg of segs) {
     const kind = _classifySegment(seg);
     if (kind === 'other') continue;                 // 전체 텍스트 fallback contains 금지
-    const table = kind === 'ingredients' ? ALLERGEN_KEYWORDS : ALLERGEN_NAMES;
-    const found = _matchSet(seg, table);
+    if (kind === 'contains' || kind === 'mayContain') declarationFound = true;
+    // ★★★ 세션58 2단계 — 원재료 세그먼트를 **읽지 않는다.** 제이 결정 D55-2.
+    //   종전: `kind === 'ingredients'` 이면 `ALLERGEN_KEYWORDS`(원재료 형태 표)로 매칭해
+    //         `inferred`(원재료 추정) 구획에 넣었다. 그 구획이 «추론»이었다.
+    //   ⚠ `inferred` 필드 자체는 **응답 계약이므로 지우지 않는다** — 항상 빈 배열이 된다.
+    //     `reconcileAllergens`(flat↔3분리 정합)가 이 구획을 계속 쓴다. 필드를 없애면
+    //     세션44 치명3(「flat 에만 있는 알레르기가 화면에서 통째로 사라진다」)이 되살아난다.
+    //   ⚠ `declarationFound` 는 위에서 이미 세워졌다 — 원재료 세그먼트는 애초에 그 신호가 아니다.
+    if (kind === 'ingredients') continue;
+    const found = _matchSet(seg, ALLERGEN_NAMES);
     if (!found.size) continue;
-    const bucket = kind === 'mayContain' ? mayContain : kind === 'contains' ? contains : inferred;
-    const level = kind === 'ingredients' ? 'inferred' : kind;
+    const bucket = kind === 'mayContain' ? mayContain : contains;
+    const level = kind;
     for (const a of found) {
       bucket.add(a);
       if (evidence.length < V2_MAX_EVIDENCE) evidence.push({ allergen: a, level, textSpan: seg.slice(0, 60) });
@@ -1526,6 +1607,8 @@ function detectAllergensV2(text) {
   return {
     contains: [...contains].sort(), mayContain: [...mayContain].sort(),
     inferred: [...inferred].sort(), evidence,
+    // ★ 세션56 — 3구획과 «다른 질문»에 답하는 필드다. 구획에 섞지 말 것.
+    declarationFound,
   };
 }
 
@@ -1575,6 +1658,13 @@ function mergeAllergensV2(a, b) {
     mayContain,
     inferred,
     evidence: [...arr(a.evidence), ...arr(b.evidence)].slice(0, V2_MAX_EVIDENCE),
+    // ★★★ 세션56 — **OR 이다.** 두 사진 중 «한 장이라도» 선언란을 담았으면 본 것이다.
+    //   ⚠ AND 로 쓰면 제이의 2장 분리 촬영(`_원재료`/`_영양`)에서 영양표 사진이
+    //     선언란을 안 담았다는 이유로 라벨 사진의 선언이 「못 봤다」로 뒤집힌다.
+    //   ⚠ 이 줄을 빠뜨리면 `/multi-photo` 응답에서 필드가 `undefined` 가 되고
+    //     `buildAllergenKeys` 가 `available:false` 로 읽어 **모든 다중사진 결과가 「확인 못 함」**이 된다.
+    //     세션39·세션44 치명B 가 정확히 「합류 지점을 빠뜨린」 사고였다.
+    declarationFound: !!a.declarationFound || !!b.declarationFound,
   };
 }
 
@@ -1586,6 +1676,11 @@ function reconcileAllergens(flat, v2) {
     mayContain: arr(v2.mayContain).slice(),
     inferred: arr(v2.inferred).slice(),
     evidence: arr(v2.evidence).slice(),
+    // ★★★ 세션56 — **flat 병합으로 이 값이 올라가서는 안 된다.**
+    //   flat(`detectAllergens`)의 2단계 폴백은 «원재료 추론»이다. 그것을 근거로
+    //   `declarationFound` 를 true 로 만들면 「선언란을 봤다」는 거짓 단정이 된다.
+    //   → v2 의 값을 그대로 옮기기만 한다. 아래 루프는 이 필드를 건드리지 않는다.
+    declarationFound: !!v2.declarationFound,
   };
   const known = new Set([...out.contains, ...out.mayContain, ...out.inferred]);
   for (const a of arr(flat)) {
@@ -1823,6 +1918,8 @@ module.exports = {
   detectNutritionBasis,   // 세션42: 2장 분리 촬영 시 라우터가 합친 텍스트로 재판정한다
   detectAllergens,
   detectAllergensV2,
+  // ★ 세션56 1단계 — 판별기 B 의 선언 탐지 신호(회귀·조사용). 응답 계약은 v2 쪽을 쓴다.
+  hasExplicitDeclaration,
   reconcileAllergens,   // ★ 세션44: flat ↔ 3분리 어긋남 방지(치명3)
   mergeAllergensV2,     // ★ 세션44: 두 사진 3분리 합집합(치명B)
   flattenAllergensV2,   // ★ 세션45: flat 의 의미를 두 경로에서 일치시킨다(중대4)
@@ -1835,4 +1932,18 @@ module.exports = {
   //   소스 정규식으로 대신하지 말 것 — `Object.entries(table)` 순회라 키를 바꿔도 에러가 나지 않는다.
   //   (세션54 §9-3 · `buildAllergenKeys` 를 노출한 것과 같은 이유)
   ALLERGEN_NAMES,
+  // ★ 세션57 — `KEYWORD_LEFT_NEGATIVE` 의 «키 집합»을 노출한다.
+  //   sentinel 의 `neg` 커버리지 단정이 「이 알레르겐에 억제 장치가 있는가」를 물어야 하는데,
+  //   장치는 세 곳에 흩어져 있다 — 토큰 가드(allergenGuards) · 1글자 구분자 경계(_keywordHit) ·
+  //   좌측 부정 문맥(여기). 앞의 둘은 이미 함수로 물어볼 수 있고, 이것만 안 보였다.
+  //   ⚠ 값(부정 문자 목록)이 아니라 «키»만 낸다. 계약이 묻는 것은 「장치가 걸려 있는가」뿐이다.
+  //   ⚠ 종 목록을 테스트에 문자열로 박지 않기 위한 노출이다 — 박으면 장치가 사라져도 계약이 모른다.
+  KEYWORD_LEFT_NEGATIVE_KEYS: Object.freeze(new Set(Object.keys(KEYWORD_LEFT_NEGATIVE))),
+  // ★ 세션58 — 세그먼트 분할·분류를 관측용으로 노출한다. **동작은 바꾸지 않는다.**
+  //   왜: 「어느 세그먼트 종류에서 무엇이 걸렸는가」를 밖에서 세지 못하면
+  //   실측 스크립트가 분할·분류 규칙을 «복제»하게 된다 — 이 저장소가 반복해 겪은
+  //   「같은 규칙이 두 곳에 생기고 하나만 고쳐지는」 사고(세션44 `_matchSet` 반쪽 수정)의 씨앗이다.
+  //   ⚠ 이름 앞의 `_` 는 「내부 구현이니 계약으로 삼지 말라」는 뜻이다. 응답 계약에 쓰지 말 것.
+  _splitSegments,
+  _classifySegment,
 };

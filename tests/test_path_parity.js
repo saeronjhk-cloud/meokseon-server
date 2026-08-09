@@ -1011,8 +1011,17 @@ async function main() {
     assert.strictEqual(may.allergens_flat_complete, false,
       '★ flat 이 비었는데 flat_complete=true 다 — 화면이 「알레르기 없음」이라고 쓴다(짜왕 사고의 OCR 판)');
 
-    LABEL_TEXT = '초코과자\n원재료명: 밀가루, 설탕';
+    // ★★★ 세션56 1단계 — 대조군 텍스트에 **법정 선언란을 넣었다.**
+    //   종전 텍스트는 `원재료명: 밀가루, 설탕` 뿐이었다. 그 라벨에는 알레르기 표시란이 «없다».
+    //   `allergens_available` 이 「선언란을 봤는가」로 재정의되면서 이 입력은 `available:false`
+    //   → `flat_complete:null`(판정 없음)이 된다. **그것이 새 계약의 정답이다.**
+    //   ⚠ 그러므로 이 실패는 회귀가 아니라 «질문이 바뀐 것»이다.
+    //     이 검사의 질문(「flat_complete 가 혼입 유무를 실제로 가르는가」)을 유지하려면
+    //     대조군도 **선언란이 있는** 라벨이어야 한다. 그래야 두 입력이 혼입 유무 «하나»만 다르다.
+    LABEL_TEXT = '초코과자\n원재료명: 밀가루, 설탕\n밀 함유';
     const plain = (await callAnalyze({ image: 'x'.repeat(400), product_info: {} })).data.analysis;
+    assert.strictEqual(plain.allergens_available, true,
+      '선언란이 있는 라벨인데 available=false 다 — 대조군이 성립하지 않는다');
     assert.strictEqual(plain.allergens_flat_complete, true,
       '혼입이 없는데 flat_complete 가 false 다 — 항상 false 를 내면 신호가 무의미해진다');
   });

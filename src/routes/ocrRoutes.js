@@ -185,7 +185,28 @@ function sanitizeUserAllergens(items) {
  */
 function buildAllergenKeys(flat, v2raw) {
   const v2 = reconcileAllergens(flat, v2raw);
-  const available = !!v2;
+  // ★★★ 세션56 1단계 — `available` 의 의미를 **「법정 선언란을 봤는가」**로 재정의했다.
+  //   제이 결정 2026-08-09 (D56-1, B안). 설계 = `IP/알레르기_추론폐기_설계_2026-08-08_세션55.md` §4.
+  //
+  //   ⚠ 종전 `const available = !!v2` 는 **사실상 항상 true** 였다 —
+  //     `detectAllergensV2` 는 절대 null 을 반환하지 않는다(항상 객체). 세션56 실측.
+  //     즉 이 키는 OCR 경로에서 **아무것도 판별하지 않고 있었다.**
+  //
+  //   이제 두 상태가 갈린다:
+  //     ㉠ 선언란 못 찾음            → `false` → 화면이 **「확인 못 했다」**(uncollected)
+  //     ㉡ 선언란 있고 19종 없음     → `true` + 빈 목록 → **「확인했고 없다」**
+  //   이것이 세션48 §6 이 「아직 존재하지 않는다」고 적은 PENDING 상태의 구현이고,
+  //   세션54 §9-1 의 미해결 조건 3 이다.
+  //
+  // ★ B안 — `available === false` 여도 `allergens`·`allergens_v2` 를 **null 로 만들지 않는다.**
+  //   ① `web/src/domain/meokseon/allergens.ts:56` 이 `available === false` 를 **가장 먼저** 보고
+  //      즉시 `uncollected` 를 반환한다. 목록이 남아 있어도 **화면은 「확인 못 함」이다.** 앱 변경 0.
+  //   ② 2단계(추론 폐기)에서 되돌릴 수 있어야 한다 — 1단계가 정보를 «버리면» 되돌릴 수 없다.
+  //      설계 §5 「1과 2를 한 커밋에 묶지 말 것」과 같은 이유다.
+  //   ⚠ 그래서 `tests/test_allergen_contract.js` 의 F1(「available=false 면 둘 다 null」)은
+  //     **OCR 경로에 한해 완화**된다. 바코드 경로의 F1 은 그대로다(그쪽은 「DB 에 행이 없다」이므로
+  //     정말로 낼 값이 없다). 두 경로가 같은 키로 **다른 질문**에 답하는 비대칭은 남는다(설계 §4-3).
+  const available = !!(v2 && v2.declarationFound);
   return {
     allergens: flattenAllergensV2(v2, flat),
     allergens_v2: v2,

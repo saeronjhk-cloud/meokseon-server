@@ -67,12 +67,20 @@ function getAdditiveKeywords() {
   return additiveKeywords;
 }
 
-/**
- * 캐시된 알레르기 사전을 반환합니다.
- */
-function getAllergenKeywords() {
-  return allergenKeywords;
-}
+// ★★★ 세션59 4단계 — 여기 있던 `getAllergenKeywords()` 를 **제거**했다.
+//   호출부가 저장소 전체에 **0건**이었다(세션59 실측 · 설계 §6 이 지목한 그 함수다).
+//
+// ⚠⚠ 그런데 이 함수를 지운다고 문제가 사라지지 않는다. 지우면서 «더 큰 것»을 발견했다 — `U59-3`:
+//   `loadFromDB()` 는 서버 기동 때마다(`server.js:20`) DB 에서 알레르기 사전을 읽어
+//   `allergenKeywords` 에 채운다. **그런데 그 값을 읽는 곳이 이제 하나도 없다.**
+//   판별기 B·C 는 `ocrParser` 의 `ALLERGEN_NAMES` 를 직접 본다 — 이 캐시를 경유하지 않는다.
+//
+//   ⇒ 관리자가 DB 알레르기 사전을 고치고 `/api/admin/cache/reload` 를 눌러도 **판정은 안 바뀐다.**
+//     이 파일 머리말의 「관리자가 DB 데이터를 수정하면 리로드 가능합니다」는 첨가물에만 참이다.
+//   ⚠ 이건 «죽은 코드»가 아니라 **거짓 기대**다. 고치려면 도메인 결정이 먼저다 —
+//     ⓐ 알레르기 사전을 DB 로 옮길 것인가(그러면 D55-2 폐기 결정과 충돌한다), 아니면
+//     ⓑ 알레르기 캐시를 통째로 걷어낼 것인가.
+//   근거·판단은 `IP/인수인계_2026-08-09_세션59.md` 의 `U59-3`. **여기서 임의로 정하지 말 것.**
 
 /**
  * 캐시 상태 조회
@@ -89,6 +97,6 @@ function getCacheStatus() {
 module.exports = {
   loadFromDB,
   getAdditiveKeywords,
-  getAllergenKeywords,
+  // ★ 세션59 — `getAllergenKeywords` 를 뺐다. 호출부 0건이었다. 위 주석(`U59-3`) 참조.
   getCacheStatus,
 };

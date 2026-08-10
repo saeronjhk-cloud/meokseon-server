@@ -10,6 +10,10 @@ const {
   parseNutrition,
   detectAllergens,
   analyzeText,
+  // ★ 세션59 `U59-1` — 세그먼트 분할·분류를 «관측»한다. 응답 계약이 아니라 내부 구현이다(`_` 접두).
+  //   결과(알레르겐 목록)만 보면 「우연히 맞았다」와 「구조가 옳다」를 구분할 수 없다.
+  _splitSegments,
+  _classifySegment,
 } = require('../src/services/ocrParser');
 
 const { correctOcrText } = require('../src/services/ocrService');
@@ -169,6 +173,40 @@ const noDecl1 = detectAllergens('원재료명 및 함량: 소맥분(밀:미국�
 assert(noDecl1.length === 0, `선언란 없는 원재료 문장 → 빈 배열 (실제: [${noDecl1.join(', ')}])`);
 const noDecl2 = detectAllergens('원재료명: 정제수, 설탕, 탈지분유, 코코넛유');
 assert(noDecl2.length === 0, `탈지분유만 있고 선언란 없음 → 빈 배열 (실제: [${noDecl2.join(', ')}])`);
+
+// ── 테스트 6-C: `U59-1` 세그먼트 분류 회귀 (세션59) ──
+//
+// 무엇을 지키나 — 원재료명 줄에 `함유` 를 품은 «복합어»(`페닐알라닌함유`)가 있어도
+//   그 줄이 `contains`(직접함유 선언)로 승격되지 않아야 한다.
+//   승격되면 판별기 C 의 2단계 폐기(`kind === 'ingredients'` 건너뛰기)가 **우회**된다.
+//   근거·실측: `IP/U59-1_수정안_확정_2026-08-09_세션59.md`
+//
+// ⚠ 반대 방향도 같이 본다 — 원재료명 줄에 **진짜 법정 선언**이 같이 인쇄된 실물이 5건 있다
+//   (021·031·055·082·098). 그 5건을 잃으면 **과소경고**다. 아래 §양성 이 그것을 막는다.
+console.log('\n⚠️ 테스트 6-C: U59-1 — 원재료명 줄의 `함유` 복합어 (세션59)');
+{
+  const kinds = (t) => _splitSegments(t).map(s => _classifySegment(s));
+
+  // §음성 — `함유` 복합어만 있는 원재료명 줄은 선언이 «아니다»
+  const c1 = kinds('원재료명: 밀가루, 정제소금, 아스파탐(감미료, 페닐알라닌함유)');
+  assert(c1.length === 1 && c1[0] === 'ingredients',
+    `페닐알라닌함유 줄은 ingredients 여야 한다 (실제: ${JSON.stringify(c1)})`);
+
+  // §양성 — 원재료명 줄에 «진짜 선언»이 붙어 있으면 둘로 쪼개고 선언 쪽을 contains 로 본다
+  const c2 = kinds('원재료명: 콩 100 %[외국산(미국,브라질,파라과이 등)] 대두 함유');
+  assert(c2.length === 2 && c2[0] === 'ingredients' && c2[1] === 'contains',
+    `실물 021 형태는 ingredients + contains 로 쪼개져야 한다 (실제: ${JSON.stringify(c2)})`);
+
+  // §양성 — 붙여 인쇄(`대두함유`, 실물 098)도 같다
+  const c3 = kinds('원재료명 콩 100 %[외국산(미국,브라질,파라과이 등)] · 대두함유');
+  assert(c3.length === 2 && c3[1] === 'contains',
+    `붙여 인쇄된 선언도 쪼개져야 한다 (실제: ${JSON.stringify(c3)})`);
+
+  // §마커 보존 — `함유` 외의 선언 마커는 좁히지 않았다 (좁히면 진짜 선언을 잃는다)
+  const c4 = kinds('원재료명: 밀가루, 정제소금, 알레르기 유발물질: 대두');
+  assert(c4.includes('contains'),
+    `「알레르기 유발물질」 마커는 그대로 선언이어야 한다 (실제: ${JSON.stringify(c4)})`);
+}
 
 // ── 테스트 7: 통합 분석 ──
 console.log('\n🔄 테스트 7: 통합 분석 (analyzeText)');

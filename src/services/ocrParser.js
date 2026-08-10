@@ -1417,12 +1417,129 @@ const EXPLICIT_MARKERS = [
 ];
 const INGREDIENT_MARKERS = [/원재료명/, /원재료/, /성분명/, /배합비/];
 
+/**
+ * ★★★ 세션59 `U59-1` — 「선언으로서의 `함유`」를 가려내는 토큰 목록.
+ *
+ * 무엇이 문제였나 (실측: `IP/U58-4_실측_2026-08-09_세션59.md` §5)
+ *   `_classifySegment` 는 맨몸 `/함유/`(EXPLICIT_MARKERS)를 `원재료명`(INGREDIENT_MARKERS)
+ *   **보다 먼저** 검사한다. 그래서 원재료명 줄에 `함유` 를 품은 **복합어**가 하나만 있어도
+ *   그 줄 전체가 `contains`(직접함유 선언)로 승격됐다.
+ *   가장 흔한 것이 `아스파탐(감미료, **페닐알라닌함유**)` 다 — 국내 라벨에 매우 흔하다.
+ *
+ *   ⚠ 그러면 판별기 C 의 `if (kind === 'ingredients') continue;`(세션58 2단계 폐기)가
+ *     **적용되지 않는다.** 실측:
+ *       `원재료명: 밀가루, 정제소금, 아스파탐(감미료, 페닐알라닌함유)` → contains `['밀']`
+ *       `원재료명: 대두유, 정제소금, 아스파탐(페닐알라닌함유)`         → contains `['대두']`
+ *     즉 **D55-2(원재료 추론 폐기)의 우회로**였다. 「폐기했다」는 서술이 완전하지 않았다.
+ *
+ * 왜 이 목록인가 — 법정 선언은 **19종 단독 명칭 바로 뒤**에 `함유` 가 온다.
+ *   `대두 함유` · `대두함유`(붙여 인쇄, 실물 098) · `[대두 함유]`(대괄호, 실물 082)
+ *   반면 `페닐알라닌함유`·`글루텐함유` 는 앞이 법정명이 «아니다».
+ *
+ * ⚠ 긴 이름 우선으로 정렬한다 — `돼지고기` 가 `고기` 류보다 먼저 걸려야 자를 지점이 정확해진다.
+ * ⚠ 정규식을 쓰지 않는다. 이 파일은 세션42·43 에서 ReDoS 를 두 번 겪었다(`detectAllergens` 주석 참조).
+ *   `endsWith` 선형 탐색이면 적대적 입력에도 폭발하지 않는다.
+ */
+const DECLARED_NAME_TOKENS = Object.freeze(
+  [...new Set(Object.values(ALLERGEN_NAMES).flat())]
+    .filter(Boolean)
+    .sort((a, b) => b.length - a.length)
+);
+
+/**
+ * compact 문자열에서 「선언으로서의 `함유`」를 찾는다. 없으면 null.
+ * @returns {{name: string, at: number} | null}  at = compact 기준 `함유` 시작 위치
+ */
+function _declaredNameBeforeHayu(c) {
+  for (let i = c.indexOf('함유'); i !== -1; i = c.indexOf('함유', i + 1)) {
+    const before = c.slice(0, i);
+    for (const n of DECLARED_NAME_TOKENS) {
+      if (before.endsWith(n)) return { name: n, at: i };
+    }
+  }
+  return null;
+}
+
+/**
+ * ★★★ 세션59 `U59-1` — 원재료명 줄에 붙은 법정 선언을 «앞»에서 끊는다.
+ *
+ *   `원재료명: 콩 100%[…] 대두 함유`  →  `원재료명: 콩 100%[…]` + `대두 함유`
+ *
+ * 왜 «분리»까지 하나 — 판정만 고치면(P1) 우회가 절반만 막힌다. 실측:
+ *   `원재료명: 밀가루, 대두유, 정제소금, 대두 함유`
+ *     판정만 고침 → contains `['대두','밀']`   ← `밀` 이 `밀가루` 에서 샌다. 폐기 우회 잔존
+ *     분리까지    → contains `['대두']`        ✅
+ *
+ * ⚠⚠ **좌측 확장이 반드시 있어야 한다.** 법정 선언은 «여러 이름의 나열»이다(`대두, 밀 함유`).
+ *   `함유` 바로 앞 «한 이름»에서만 자르면 앞의 이름들이 원재료 쪽으로 떨어져 **사라진다** —
+ *   **라벨에 인쇄된 알레르겐을 서버가 지우는 것**이다. 세션59 프로토타입 실측:
+ *     `원재료명: 밀가루, 정제소금, 대두, 밀 함유`      확장 없음 → `['밀']`   ← 대두 소실
+ *     `원재료명: 밀가루, 정제소금, 우유, 대두, 밀 함유`  확장 없음 → `['밀']`   ← 2종 소실
+ *   회귀 R5·R6 이 이 방향을 못 박는다.
+ *
+ * ★ 확장은 «구분자만 사이에 두고 이어지는 법정명»까지만 간다. 원재료명에서 멈춘다:
+ *     `원재료명: 밀가루, 대두유, 밀 함유` → `밀 함유` 만 잘린다(`대두유` 는 법정명이 아니다).
+ *     종전에는 `대두` 가 나왔는데 그건 **원재료 형태 추론**이었다 — 폐기 대상이 맞다(회귀 R11).
+ *
+ * ⚠ 원문 인덱스로 자른다. compact 는 공백·구분자를 지우므로 인덱스가 어긋난다.
+ *
+ * @returns {[string, string] | null}  [원재료 부분, 선언 부분] 또는 null(자를 것이 없음)
+ */
+const _CUT_EXTEND_MAX = 20;   // 좌측 확장 상한. 무한 루프 방어 겸 적대적 입력 방어.
+function _cutDeclarationTail(line) {
+  const c = _compact(line);
+  if (!INGREDIENT_MARKERS.some(re => re.test(c))) return null;
+  if (!_declaredNameBeforeHayu(c)) return null;
+
+  // 원문에서 「선언으로서의 함유」 직전 법정명의 시작 위치를 찾는다.
+  let idx = -1;
+  for (let i = line.indexOf('함유'); i !== -1; i = line.indexOf('함유', i + 1)) {
+    const head = line.slice(0, i);
+    const compactHead = _compact(head);
+    let matched = null;
+    for (const n of DECLARED_NAME_TOKENS) {
+      if (compactHead.endsWith(n)) { matched = n; break; }
+    }
+    if (!matched) continue;
+    const start = head.lastIndexOf(matched);
+    if (start !== -1) idx = start;
+  }
+  if (idx <= 0) return null;
+
+  // 좌측 확장 — 구분자만 사이에 두고 이어지는 법정명을 계속 포함시킨다.
+  for (let hop = 0; hop < _CUT_EXTEND_MAX; hop++) {
+    const head = line.slice(0, idx).replace(/[\s,，·ㆍ、/()[\]:：및과와]+$/, '');
+    let moved = false;
+    for (const n of DECLARED_NAME_TOKENS) {
+      if (head.endsWith(n)) { idx = head.length - n.length; moved = true; break; }
+    }
+    if (!moved || idx <= 0) break;
+  }
+  if (idx <= 0) return null;
+
+  const parts = [line.slice(0, idx).trim(), line.slice(idx).trim()].filter(s => s.length >= 2);
+  return parts.length === 2 ? parts : null;
+}
+
 function _splitSegments(text) {
   // 라벨 키워드 앞에 개행 삽입 → 문장부호·개행으로 분리
   const t = (text || '').replace(
     /(원재료명|원재료|성분명|알레르기\s*유발\s*물질|알레르기\s*유발\s*성분|알레르기\s*정보|영양정보|영양성분|제품명|내용량)/g,
     '\n$1');
-  return t.split(/[\n.。!?]+/).map(s => s.trim()).filter(s => s.length >= 2);
+  const base = t.split(/[\n.。!?]+/).map(s => s.trim()).filter(s => s.length >= 2);
+
+  // ★★★ 세션59 `U59-1` — 원재료명 줄에 법정 선언이 «같이» 인쇄된 경우 둘로 쪼갠다.
+  //   실물 5건이 이 형태다: 021 · 031 · 055 · 082 · 098
+  //     `원재료명: 콩 100 %[외국산(…)] 대두 함유` · `원재료명 및 함량: 국산 원유 100% 우유 함유`
+  //   ⚠ 이 5건 때문에 「원재료명 줄은 선언이 아니다」로 단순화하면 안 된다 — **과소경고**가 된다.
+  //   실물 68건 차분: contains·화면합집합·declarationFound·v1 **전부 변화 0**(세션59 프로토타입 실측).
+  const out = [];
+  for (const s of base) {
+    const cut = _cutDeclarationTail(s);
+    if (cut) out.push(cut[0], cut[1]);
+    else out.push(s);
+  }
+  return out;
 }
 
 function _matchSet(segment, table) {
@@ -1464,6 +1581,21 @@ function _matchSet(segment, table) {
 function _classifySegment(seg) {
   const c = _compact(seg);
   if (MAY_CONTAIN_SIGNALS.some(re => re.test(c))) return 'mayContain';   // ★ 함유보다 먼저
+
+  // ★★★ 세션59 `U59-1` — 원재료명 줄에서는 맨몸 `함유` 를 «그냥» 선언 신호로 쓰지 않는다.
+  //   `아스파탐(감미료, 페닐알라닌함유)` 하나로 줄 전체가 contains 가 되면
+  //   2단계 폐기(`kind === 'ingredients'` 건너뛰기)가 우회된다. 근거·실측은 `_cutDeclarationTail` 주석.
+  //   ⚠ `함유` **외의** 선언 마커(`알레르기유발물질`·`포함` 계열)는 그대로 둔다 —
+  //     그것들은 복합어에 섞여 들어오지 않는다. 좁히면 진짜 선언을 잃는다(과소경고).
+  //   ⚠ 여기서 `ingredients` 로 떨어져도 «선언을 잃지 않는다» — `_splitSegments` 가 이미
+  //     선언 부분을 별도 세그먼트로 쪼개 놓았기 때문이다. 두 곳은 «한 쌍»이다. 하나만 되돌리지 말 것.
+  if (INGREDIENT_MARKERS.some(re => re.test(c))) {
+    const otherExplicit = EXPLICIT_MARKERS.filter(re => re.source !== '함유');
+    if (otherExplicit.some(re => re.test(c))) return 'contains';
+    if (_declaredNameBeforeHayu(c)) return 'contains';
+    return 'ingredients';
+  }
+
   if (EXPLICIT_MARKERS.some(re => re.test(c))) return 'contains';
   if (INGREDIENT_MARKERS.some(re => re.test(c))) return 'ingredients';
   return 'other';
@@ -1602,6 +1734,21 @@ function detectAllergensV2(text) {
   }
   // 병합 우선순위: contains > inferred(원재료 실제존재) > mayContain(혼입).
   // ★ 원재료에 있는(inferred) 알레르겐을 혼입경고로 강등 금지(누락 방지).
+  //
+  // ★★★ 세션59 4단계 `U58-3` — 이 두 줄 중 **`inferred` 가 걸린 부분은 «도달 불가»다.**
+  //   실측(세션59): 이 함수 안에 `inferred.add(...)` 가 **0곳**이다(선언만 있다).
+  //     세션58 2단계가 `if (kind === 'ingredients') continue;` 를 넣으면서 넣는 경로가 끊겼다.
+  //     실물 68건 + 합성 4종 전수에서 `inferred` 가 비지 않은 건 **0건**.
+  //   ⚠ 그러므로 「강등 방지 장치가 살아 있다」고 **세지 말 것.** 지금 지키는 것은 없다.
+  //
+  //   ⚠ 그런데 **지우지 않았다.** 이유는 셋이다:
+  //     ⓐ `mayContain.delete(a)`(contains 우선)는 **살아 있다** — 한 줄에서 둘을 분리하면
+  //        살아 있는 절반까지 건드리게 된다. 얻는 것 없이 위험만 는다.
+  //     ⓑ D55-2(원재료 추론 폐기)를 되돌리면 **즉시 다시 필요해지는 안전망**이다.
+  //        되돌린 사람이 이 두 줄을 다시 쓸 것이라 기대하면 안 된다 — 그때는 강등 버그가 난다.
+  //     ⓒ 지워서 얻는 실익이 없다(2줄·성능 무관). 죽은 코드의 비용은 «혼동»인데,
+  //        그 혼동은 이 주석이 없앤다.
+  //   ★ 즉 이건 「정리 안 함」이 아니라 «주석으로 정리»한 것이다. 4단계 대상에서 내린다.
   for (const a of contains) { mayContain.delete(a); inferred.delete(a); }
   for (const a of inferred) { mayContain.delete(a); }
   return {

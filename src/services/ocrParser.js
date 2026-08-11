@@ -1433,6 +1433,24 @@ const EXPLICIT_MARKERS = [
 const INGREDIENT_MARKERS = [/원재료명/, /원재료/, /성분명/, /배합비/];
 
 /**
+ * ★★★★ 세션62 `U61-6` — 「알레르기 «표시란»을 가리키는 레이블」만 따로 모은 목록.
+ *
+ * 왜 `EXPLICIT_MARKERS` 와 나눠야 하나
+ *   `EXPLICIT_MARKERS` 는 「이 세그먼트를 읽어야 하는가」를 정한다(넓어야 한다 — 좁히면 과소경고).
+ *   여기는 「**선언란을 봤다고 말해도 되는가**」를 정한다(좁아야 한다 — 넓히면 거짓 안심).
+ *   두 질문은 방향이 반대다. 같은 목록으로 답하면 한쪽이 반드시 틀린다.
+ *
+ * 무엇이 들어오나 — «홍보 문구에 섞여 들어올 수 없는» 레이블만.
+ *   ⚠ `함유` 는 들어오지 않는다. 실물 반례가 넘친다:
+ *     `배퓨레 함유`(053) · `중지방산을 함유하고 있습니다`(008) · `(카레분 9.5% 함유)`(017)
+ *   ⚠ `포함` 계열도 들어오지 않는다 — `홍합 포함` 처럼 «정의»로 쓰인다(세션44 `030` 오탐).
+ *     진짜 선언이면 법정명이 같이 있으므로 `found.size > 0` 으로 살아난다.
+ */
+const DECLARATION_LABEL_MARKERS = [
+  /알레르기유발물질/, /알레르기유발성분/, /알레르기정보/, /알러지/,
+];
+
+/**
  * ★★★ 세션59 `U59-1` — 「선언으로서의 `함유`」를 가려내는 토큰 목록.
  *
  * 무엇이 문제였나 (실측: `IP/U58-4_실측_2026-08-09_세션59.md` §5)
@@ -1731,6 +1749,66 @@ function _classifySegment(seg) {
 }
 
 /**
+ * ★★★★ 세션62 `U61-6` — 이 세그먼트를 「**법정 선언란을 봤다**」의 근거로 써도 되는가.
+ *
+ * ── 무엇이 문제였나 (실측 `.tmp/s62/u61_6_probe.js` · 재과금 0)
+ *   `declarationFound` 는 종전에 `kind === 'contains' || kind === 'mayContain'` 만 봤다.
+ *   그런데 `contains` 는 맨몸 `함유` 하나로 성립한다. 실물 67건에서 **3건**이
+ *   「선언은 하나도 못 읽었는데 available = true」로 나갔다:
+ *     · `053`  「배퓨레 함유」                     ← 홍보 문구
+ *     · `008`  「중지방산을 함유하고 있습니다」      ← 영양 설명 (GT 의 `우유 함유` 는 OCR 이 못 읽었다)
+ *     · `017`  「(카레분 9.5% 함유)」·「1일 함유」   ← 함량 표기 + `밀`→`1일` 오독
+ *
+ * ── ⚠ 지금은 «화면이» 안전하다. 그래서 더 위험하다
+ *   `web/src/domain/meokseon/allergens.ts:74` 가 「세 배열이 전부 비면 uncollected」로
+ *   뒤에서 받아 준다. 즉 **계약은 틀렸는데 화면이 가려 주고 있다.**
+ *   고지 조건 ②(㉡ 「확인했고 19종 없어요」)를 만드는 순간 그 가림막이 사라지고
+ *   이 3건이 곧바로 **「확인했고 없어요」라는 거짓 안심**이 된다.
+ *   ⇒ 조건 ② 착수 «전»에 닫아야 하는 이유가 이것이다(인수인계 세션61 순위 4).
+ *
+ * ── 무엇을 근거로 인정하나. 셋 중 하나면 된다
+ *   ⓐ `found.size > 0`   — **법정 19종 이름을 실제로 읽었다.** 가장 강한 근거다.
+ *   ⓑ 선언란 레이블      — `알레르기 유발물질:` 처럼 표시란 자체를 가리키는 말.
+ *      ★ 이것이 **㉡ 의 생명줄**이다. 「알레르기 유발물질: 해당 없음」은 이름이 0개지만
+ *        **선언란을 본 것이 맞다.** ⓐ 만 쓰면 ㉡ 을 영영 관측할 수 없어 조건 ② 가 불가능해진다.
+ *
+ * ── ⚠ 「선언형 `함유` 앵커(`_declaredNameBeforeHayu`)」는 **일부러 근거로 쓰지 않았다**
+ *   처음에 ⓒ 로 넣었다가 평가 셋 `S-N4`(`비타민C를 풍부하게 함유`)가 빨간불을 냈다.
+ *   원인 — 그 앵커는 `head.endsWith(법정명)` 이라 **경계 규칙이 없다.**
+ *     `…풍부하게` 가 1글자 법정명 **`게`**(갑각류)로 끝난다 → 선언으로 읽힌다.
+ *   ★ 더 근본적으로: 앵커가 맞는데 `_matchSet`(ⓐ)이 못 찾는 경우란
+ *     **`_matchSet` 의 경계 가드를 앵커가 무시했을 때뿐**이다. 즉 ⓒ 가 ⓐ 보다 더 잡는 것은
+ *     구조적으로 «가드 위반분»이다. 근거로 쓰면 오탐만 는다.
+ *   ⚠ 그렇다고 앵커 쪽에 경계를 «추가하지» 말 것 — 앵커는 compact 문자열에서 돈다.
+ *     compact 는 쉼표·공백을 지우므로(`_compact`) `우유, 밀 함유` → `우유밀함유` 가 되고,
+ *     좌측 경계를 요구하면 `밀` 앞이 `유` 라서 **진짜 선언을 놓친다**(과소경고).
+ *     앵커의 이 성질은 별도 축이다 — 인수인계 `U62-1` 참조.
+ *
+ * ── ⚠ 이 판정이 «알레르겐을 지우는 일은 없다»
+ *   `_matchSet` 결과(`found`)와 세그먼트 분류는 한 글자도 건드리지 않는다.
+ *   이 함수는 **`declarationFound` 라는 «메타 신호» 하나만** 좌우한다.
+ *   그리고 끄는 방향은 `found.size === 0` 일 때뿐이므로 — 즉 «어차피 아무것도 안 나온» 자리다 —
+ *   `contains`·`mayContain`·`inferred` 는 구조적으로 변할 수 없다. 실물 67건 차분이 이를 확인한다.
+ *
+ * ── ⚠ 정규식을 새로 «만들지» 않았다 (세션42·43 ReDoS 2회 전력).
+ *   기존 리터럴 목록을 `test` 로 훑을 뿐이고 역추적이 생길 구조가 없다.
+ *
+ * @param {string} c     compact 된 세그먼트
+ * @param {string} kind  `_classifySegment` 결과 (`contains` | `mayContain`)
+ * @param {Set<string>} found  이 세그먼트에서 읽어낸 법정 19종
+ */
+function _isDeclarationEvidence(c, kind, found) {
+  if (found && found.size > 0) return true;                          // ⓐ
+  if (DECLARATION_LABEL_MARKERS.some(re => re.test(c))) return true; // ⓑ
+  // ⚠ 혼입 신호(`같은제조시설` 등)만 있고 **이름이 하나도 없는** 경우는 인정하지 않는다.
+  //   보여 줄 것이 없으므로 ㉡ 으로 세도 얻는 것이 없고, 「확인했다」만 거짓이 된다.
+  //   ★ 세션56 이 혼입을 `declarationFound` 에 포함시킨 근거(혼입만 있는 라벨 9건)는
+  //     **그 9건이 전부 `mayContain` 에 이름을 갖고 있다**는 것이다 ⇒ ⓐ 로 그대로 살아난다.
+  //     회귀 R-M11(실물 063 · 10종) · R-M12(실물 006)가 이 방향을 못 박는다.
+  return false;
+}
+
+/**
  * ★★ 세션44 (서브에이전트 검증 중대5) — 한 세그먼트에 **함유 선언과 혼입 문구가 같이** 있으면
  *   `_classifySegment` 가 혼입을 먼저 보고 세그먼트 전체를 mayContain 으로 강등한다.
  *   → 실제로 함유된 알레르겐이 화면에서 「직접 들어 있다는 뜻은 아니지만」 문구로 감싸진다.
@@ -1843,7 +1921,6 @@ function detectAllergensV2(text) {
   for (const seg of segs) {
     const kind = _classifySegment(seg);
     if (kind === 'other') continue;                 // 전체 텍스트 fallback contains 금지
-    if (kind === 'contains' || kind === 'mayContain') declarationFound = true;
     // ★★★ 세션58 2단계 — 원재료 세그먼트를 **읽지 않는다.** 제이 결정 D55-2.
     //   종전: `kind === 'ingredients'` 이면 `ALLERGEN_KEYWORDS`(원재료 형태 표)로 매칭해
     //         `inferred`(원재료 추정) 구획에 넣었다. 그 구획이 «추론»이었다.
@@ -1853,6 +1930,15 @@ function detectAllergensV2(text) {
     //   ⚠ `declarationFound` 는 위에서 이미 세워졌다 — 원재료 세그먼트는 애초에 그 신호가 아니다.
     if (kind === 'ingredients') continue;
     const found = _matchSet(seg, ALLERGEN_NAMES);
+    // ★★★★ 세션62 `U61-6` — 「선언란을 봤다」는 **근거가 있을 때만** 세운다.
+    //   종전에는 이 자리가 위쪽(`kind` 판정 직후)에 있었고 맨몸 `함유` 하나로 켜졌다.
+    //   근거·실측·「무엇을 인정하나」는 `_isDeclarationEvidence` 주석에 있다.
+    //   ⚠ `found` 를 봐야 하므로 `_matchSet` **뒤로** 내려왔다. 순서를 되돌리지 말 것.
+    //   ⚠ 아래 `if (!found.size) continue;` 보다는 **앞**이어야 한다 —
+    //     ㉡(선언란은 봤고 19종 0)이 바로 그 `found.size === 0` 자리에서 관측된다.
+    if (!declarationFound && _isDeclarationEvidence(_compact(seg), kind, found)) {
+      declarationFound = true;
+    }
     if (!found.size) continue;
     const bucket = kind === 'mayContain' ? mayContain : contains;
     const level = kind;

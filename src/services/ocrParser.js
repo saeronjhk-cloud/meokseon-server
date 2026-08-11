@@ -1462,15 +1462,80 @@ const DECLARED_NAME_TOKENS = Object.freeze(
 );
 
 /**
+ * ★★★ 세션61 `U61-5` — 문자열 끝에 붙은 «짝 맞는» 괄호 묶음을 벗긴다.
+ *
+ * 왜 필요한가 (실측 `005`, IP/U61-4_침묵률_실측_2026-08-11_세션61.md §3)
+ *   법정 선언은 «19종 단독 명칭 바로 뒤»에 `함유` 가 온다 — 그래서 `_declaredNameBeforeHayu`
+ *   가 `before.endsWith(19종명)` 을 본다. 그런데 식약처 표시기준의 법정 표기는
+ *     `조개류(굴, 전복, 홍합 포함) 함유`
+ *   처럼 **괄호로 끝난다.** compact 후 `…조개류(홍합포함)` 은 `)` 로 끝나므로
+ *   어떤 법정명으로도 `endsWith` 가 성립하지 않는다 → `null` → 그 줄이 `ingredients` 로
+ *   떨어지고 → D55-2(원재료 추론 폐기)가 **통째로 스킵**한다.
+ *   실물 `005` 에서 **알레르겐 7종이 전량 소실**됐다(Vision 은 완벽히 읽었다).
+ *
+ *   ⚠ 「조개류」는 19종 중 거의 항상 괄호를 달고 나온다. **드문 표기가 아니라 구조적이다.**
+ *
+ * ★ `U58-2`(세션60)와 **같은 뿌리·같은 해법**이다 — 「`)` 는 «경계»로 쓰되 «소비»하지 않는다」.
+ *
+ * ⚠⚠ **정규식을 쓰지 않는다.** 이 파일은 세션42·43 에 ReDoS 를 두 번 겪었다.
+ *   뒤에서 앞으로 «깊이»를 세는 선형 스캔이고, 벗기는 횟수에 상한(`_PEEL_MAX`)이 있다.
+ *   최악도 O(_PEEL_MAX × n) 이라 적대적 입력에 폭발하지 않는다.
+ *
+ * ⚠ **짝이 안 맞으면 벗기지 «않는다»** — OCR 잔해(`조개류(홍합 함유`, `대두))))`)에서
+ *   엉뚱한 지점을 자르면 그게 곧 오탐이다. 확신이 없으면 원본을 그대로 돌려준다.
+ *
+ * @param {string} s
+ * @returns {string} 벗긴 결과. 벗길 것이 없으면 `s` 를 «그대로»(동일 참조) 돌려준다.
+ */
+const _PEEL_MAX = 8;   // `대두(A)(B)` 처럼 여러 겹. 상한은 적대적 입력 방어를 겸한다.
+const _PEEL_PAIRS = Object.freeze({ ')': '(', ']': '[', '}': '{' });
+function _peelTrailingBrackets(s) {
+  let end = s.length;
+  for (let guard = 0; guard < _PEEL_MAX; guard++) {
+    if (end === 0) break;
+    const close = s[end - 1];
+    const open = _PEEL_PAIRS[close];
+    if (!open) break;                    // 괄호로 끝나지 않는다 → 벗길 것 없음
+    let depth = 0, i = end - 1;
+    for (; i >= 0; i--) {
+      const ch = s[i];
+      if (ch === close) depth++;
+      else if (ch === open) { depth--; if (depth === 0) break; }
+    }
+    if (i < 0) break;                    // ⚠ 짝 없음 → 벗기지 않는다
+    end = i;                             // 여는 괄호 «앞»까지 잘라낸다
+  }
+  return end === s.length ? s : s.slice(0, end);
+}
+
+/**
+ * ★ 세션61 `U61-5` — `head` 가 19종 법정명으로 끝나는가. 끝의 괄호 묶음은 «건너뛰고» 본다.
+ *   ⚠ 괄호를 벗긴 뒤에도 «법정명 그 자체»로 끝나야 한다.
+ *     `밀가루(국내산)` → `밀가루` → `밀` 로 끝나지 «않는다» ⇒ 잡히지 않는다.
+ *     그래야 D55-2(원재료 형태 추론 폐기)가 유지된다. 회귀 N6·N7 이 이 방향을 못 박는다.
+ * @returns {string|null} 매칭된 법정명, 없으면 null
+ */
+function _declaredNameAtEnd(head) {
+  for (const n of DECLARED_NAME_TOKENS) {
+    if (head.endsWith(n)) return n;
+  }
+  const peeled = _peelTrailingBrackets(head);
+  if (peeled === head) return null;
+  for (const n of DECLARED_NAME_TOKENS) {
+    if (peeled.endsWith(n)) return n;
+  }
+  return null;
+}
+
+/**
  * compact 문자열에서 「선언으로서의 `함유`」를 찾는다. 없으면 null.
  * @returns {{name: string, at: number} | null}  at = compact 기준 `함유` 시작 위치
  */
 function _declaredNameBeforeHayu(c) {
   for (let i = c.indexOf('함유'); i !== -1; i = c.indexOf('함유', i + 1)) {
-    const before = c.slice(0, i);
-    for (const n of DECLARED_NAME_TOKENS) {
-      if (before.endsWith(n)) return { name: n, at: i };
-    }
+    // ★ 세션61 U61-5 — 끝의 괄호 묶음을 건너뛰고 본다. `조개류(홍합포함)함유`
+    const n = _declaredNameAtEnd(c.slice(0, i));
+    if (n) return { name: n, at: i };
   }
   return null;
 }
@@ -1511,10 +1576,9 @@ function _cutDeclarationTail(line) {
   for (let i = line.indexOf('함유'); i !== -1; i = line.indexOf('함유', i + 1)) {
     const head = line.slice(0, i);
     const compactHead = _compact(head);
-    let matched = null;
-    for (const n of DECLARED_NAME_TOKENS) {
-      if (compactHead.endsWith(n)) { matched = n; break; }
-    }
+    // ★ 세션61 U61-5 — 판정(_declaredNameBeforeHayu)과 «같은 규칙»으로 찾아야 한다.
+    //   여기만 옛 규칙이면 「contains 로는 올라갔는데 자르지는 못하는」 어긋남이 생긴다.
+    const matched = _declaredNameAtEnd(compactHead);
     if (!matched) continue;
     const start = head.lastIndexOf(matched);
     if (start !== -1) idx = start;
@@ -1536,7 +1600,57 @@ function _cutDeclarationTail(line) {
   return parts.length === 2 ? parts : null;
 }
 
+/**
+ * ★★★★ 세션61 `U61-7` — 줄바꿈이 갈라 놓은 법정 선언을 «다시 붙인다».
+ *
+ * 무엇이 문제였나 (실측 `005` · IP/U61-4_침묵률_실측_2026-08-11_세션61.md)
+ *   라벨에 선언이 길면 **두 줄로 감긴다.** Vision 은 그대로 `\n` 을 넣어 준다:
+ *       `계란, 대두, 밀, 새우, 쇠고기, 오징어, 조개류(홍합 포함)`
+ *       `함유`
+ *   `_splitSegments` 는 `\n` 으로 쪼개므로 둘이 **다른 세그먼트**가 된다:
+ *     · 앞 줄 → 마커도 `함유` 도 없다 → `'other'` → **버려진다**
+ *     · 뒷 줄 → `'contains'` 이지만 **이름이 하나도 없다** → 아무것도 안 나온다
+ *   ⇒ 실물 `005` 에서 **알레르겐 7종이 전량 소실**됐다. Vision 은 «완벽히» 읽었는데도.
+ *
+ *   ⚠⚠ 세션61 이 처음에 이걸 **괄호 문제로 오진했다.** 손타이핑한 «한 줄» 케이스로
+ *     재현하려 했기 때문이다. 실측이 갈랐다:
+ *       개행만 제거 → 7종 «전부» 잡힘        괄호만 제거 → 여전히 0종
+ *     ⇒ **실물 텍스트로 재현하지 않은 진단은 진단이 아니다.**
+ *
+ * 왜 이렇게 «좁게» 붙이나 — 조건 둘을 «모두» 만족할 때만 붙인다
+ *   ① 다음 줄이 `함유` 로 «시작»한다
+ *   ② 앞 줄이 **19종 법정명**으로 끝난다 (끝의 괄호 묶음은 건너뛰고 본다 = `U61-5`)
+ *
+ *   ⚠ ② 가 없으면 실물 `063`(`아스파탐(감미료, 페닐알라닌` ⏎ `함유)`)이 붙어서
+ *     **U59-1 이 그대로 되살아난다.** 회귀 W3 이 이 방향을 못 박는다.
+ *   ⚠ ② 는 «법정명 그 자체»를 요구한다. `밀가루`·`대두유` 로 끝나는 줄은 붙이지 않는다 —
+ *     그래야 D55-2(원재료 형태 추론 폐기)가 유지된다. 회귀 W5·W6.
+ *
+ * ★ `U61-5` 의 괄호 벗기기가 여기서 «실제로» 값을 한다 —
+ *   실물 `005` 의 앞 줄은 `…조개류(홍합 포함)` 이라 벗기지 않으면 ② 가 성립하지 않는다.
+ *
+ * ⚠ 정규식은 `^\s*함유` 하나뿐이다(선형·역추적 없음). ReDoS 위험 없음.
+ */
+function _joinWrappedDeclaration(text) {
+  if (!text || text.indexOf('함유') === -1) return text;
+  const lines = text.split('\n');
+  if (lines.length < 2) return text;
+  const out = [lines[0]];
+  for (let k = 1; k < lines.length; k++) {
+    const cur = lines[k];
+    const prev = out[out.length - 1];
+    if (/^\s*함유/.test(cur) && _declaredNameAtEnd(_compact(prev))) {
+      out[out.length - 1] = prev.replace(/\s+$/, '') + ' ' + cur.replace(/^\s+/, '');
+    } else {
+      out.push(cur);
+    }
+  }
+  return out.join('\n');
+}
+
 function _splitSegments(text) {
+  // ★ 세션61 U61-7 — 쪼개기 «전»에, 줄바꿈이 갈라 놓은 선언을 되붙인다.
+  text = _joinWrappedDeclaration(text);
   // 라벨 키워드 앞에 개행 삽입 → 문장부호·개행으로 분리
   const t = (text || '').replace(
     /(원재료명|원재료|성분명|알레르기\s*유발\s*물질|알레르기\s*유발\s*성분|알레르기\s*정보|영양정보|영양성분|제품명|내용량)/g,

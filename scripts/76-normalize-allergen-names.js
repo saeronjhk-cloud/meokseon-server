@@ -285,6 +285,21 @@ async function main() {
   console.log(`  UPDATE (대표행)      : ${plan.updates.length}   (이름변경 ${plan.stats.renamed} · 등급변경 ${plan.stats.levelChanged})`);
   console.log(`  DELETE (중복병합)    : ${plan.deletes.length}`);
   console.log(`  INSERT (1행→2알레르겐): ${plan.inserts.length}`);
+  // ★★★ 세션60 추가 — INSERT 내역을 «전부» 찍는다.
+  //   왜: 「대두 밀 → 대두」·「계란.토마토 → 토마토」 처럼 rename 표에는 «한쪽»만 보인다.
+  //   나머지 한쪽은 여기 INSERT 로 살아나는데, 개수만 찍으면 **알레르겐이 소실된 것처럼 보인다.**
+  //   실제로 세션60 검토에서 이 표기 때문에 「과소경고 아닌가」를 의심했다.
+  //   ⇒ 개수가 아니라 «무엇이» 살아나는지를 보여야 apply 를 납득하고 누를 수 있다.
+  if (plan.inserts.length) {
+    console.log('     ── INSERT 상세 (원본 1행이 2종으로 갈라진 나머지 쪽) ──');
+    for (const ins of plan.inserts) {
+      const src = allRows.find((r) => r.id === ins.fromId);
+      console.log(`       product ${ins.product_id} · row ${ins.fromId}`
+        + `  "${src ? src.allergen_name : '?'}"  →  «${ins.name}» 를 새 행으로 살린다`
+        + `  [${ins.level}${ins.via ? ' · ' + ins.via : ''}]`);
+    }
+    console.log('     ⇒ 이 행들이 없으면 그 알레르겐은 «사라진다». 과소경고 방지의 핵심이다.');
+  }
   console.log(`  ⚠ 정규화 불가(보존)  : ${plan.unresolved.length}  ← 삭제하지 않는다. CSV 리포트 참조`);
   console.log(`  ★ 공적 출처 승계     : detected_via→'${PUBLIC_DETECTED_VIA}' ${plan.stats.viaPromoted}행`
     + ` · status 승격 ${plan.stats.statusPromoted}행`);

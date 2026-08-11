@@ -146,11 +146,42 @@ async function callVisionAPI(base64Image) {
       let fullText = fullTextAnnotation.text || '';
 
       // fallback: TEXT_DETECTION
+      //
+      // ★★★ 세션61 `U60-1` 계측 — 이 두 줄은 «비용 결정을 위한 저울»이다. 지우지 말 것.
+      //
+      //   위 features 배열에 TEXT_DETECTION 과 DOCUMENT_TEXT_DETECTION 이 «같이» 들어간다.
+      //   Google Vision 은 feature 단위로 과금하므로 **이미지 1장 = 2 unit** 이다.
+      //   그런데 평시에는 DOCUMENT 쪽(`fullTextAnnotation`)만 쓰고, TEXT 쪽은 아래 fallback
+      //   에서만 쓰인다. ⇒ fallback 이 거의 안 뜬다면 절반이 순수 낭비다.
+      //
+      //   ⚠ 그렇다고 TEXT_DETECTION 을 «그냥» 빼면 안 된다. 빼는 순간 이 fallback 이 사라지고,
+      //     그건 「읽을 수 있었던 라벨을 못 읽게 되는」 **과소경고 방향**이다.
+      //     세션60 인수인계가 「재기 «전»에 빼지 말 것」이라고 못 박은 이유가 이것이다.
+      //
+      //   왜 지금까지 못 쟀나 (세션61 실측)
+      //     · 이 구간에 로그가 «한 줄도» 없었다 → 과거 Railway 로그로 셀 수 없다.
+      //     · DB 우회로도 없다 — fallback 이 뜨면 blocks 가 비어 `avg_confidence = 0` 이 되고,
+      //       `crowdsourceService.js` 의 `MIN_CONFIDENCE = 0.7` 게이트가 **예외 없이 거부**한다.
+      //       즉 fallback 으로 살아난 스캔은 DB 에 단 한 건도 없다.
+      //   ⇒ 세는 방법은 로그를 남기는 것뿐이다. 그래서 남긴다.
+      //
+      //   세는 법:  railway logs | grep -c OCR_FALLBACK_TEXT_DETECTION
+      //            railway logs | grep -c OCR_BOTH_EMPTY
+      //   판정선(숫자 보기 «전»에 고정 · 세션61):
+      //     fallback 발현률 < 0.5%  → TEXT_DETECTION 제거. 비용 절반, 손실 무시 가능
+      //     0.5% ~ 2%              → 보류. 무엇이 fallback 을 타는지 표본을 먼저 볼 것
+      //     > 2%                   → 유지. 2 unit 은 그 값을 한다
+      //   ⚠ 결과를 본 뒤 이 선을 옮기지 말 것. 옮긴다면 인수인계에 「기준을 옮겼다」고 적을 것.
       if (!fullText) {
         const textAnnotations = response.textAnnotations || [];
         if (textAnnotations.length > 0) {
           fullText = textAnnotations[0].description || '';
         }
+        // ⚠ 「배열이 있다」가 아니라 「실제로 글자를 건졌다」로 가른다.
+        //   `textAnnotations: [{description: ''}]` 는 배열은 있지만 건진 게 없다.
+        //   그걸 fallback 성공으로 세면 «제거 시 손실»을 과대평가한다(= 비싼 쪽으로 틀린다).
+        if (fullText) logger.warn('OCR_FALLBACK_TEXT_DETECTION', { chars: fullText.length });
+        else logger.warn('OCR_BOTH_EMPTY', { annotations: textAnnotations.length });
       }
 
       // 블록별 텍스트 + 신뢰도

@@ -1261,6 +1261,16 @@ async function main() {
   //   건조식품(김·김자반·육포)은 100 g 당 열량이 자연히 높은데, 신호등은 면제하고 저장만 거부했다.
   //   = 「화면은 통과 · 등록은 반려」. tests/ 어디에도 이 서비스를 부르는 줄이 없어 회귀망 밖이었다.
   //   ⚠ 이 절이 고정하는 것은 **방향**이다. 건조식품은 통과하고, 비건조 이상치는 그대로 반려된다.
+  //
+  // ★★★ 세션64b — 「반려」의 «단위»가 바뀌었다. 방향은 그대로다.
+  //   외부 검토 2명 결론: **저장 ≠ 표시 ≠ 검증**. 영양 이상치 때문에 같은 사진의
+  //   원재료·알레르기 원증거까지 버리는 것은 손해가 크다(알레르기는 안전 직결 축이다).
+  //   → 이제 이상치는 `saved:false`(제보 전체 반려)가 아니라
+  //     `nutrition_status:'incomplete'`(영양만 반려)다.
+  //   ⚠ **게이트가 헐거워진 것이 아니다.** 아래 단정이 그것을 증명한다:
+  //     이상치 영양값은 `nutrition_data` 에 **행이 생기지 않고**, `verification` 도
+  //     `partial` 로 올라가지 않는다. 즉 소비자가 보는 것은 종전과 **완전히 같다.**
+  //     달라진 것은 버려지던 원재료·알레르기가 살아남는다는 것뿐이다.
   {
     const crowdsource = require('../src/services/crowdsourceService');
     const gateNutrition = {
@@ -1275,18 +1285,36 @@ async function main() {
       avgConfidence: 0.95,
     });
 
-    await t('★★★ 대조군 — 비건조 이상치는 여전히 반려된다 (게이트가 헐거워지지 않았다)', async () => {
+    await t('★★★ 대조군 — 비건조 이상치의 «영양»은 여전히 반려된다 (게이트가 헐거워지지 않았다)', async () => {
       const r = await crowdsource.saveOcrContribution(gateParams('과자', '오리온 초코파이'));
-      assert.strictEqual(r.saved, false, '1,100 kcal/100g 비건조 제품이 저장됐다 — 게이트가 죽었다');
-      assert.ok(/이상치/.test(r.rejectReason || ''), `반려 사유가 sanity 가 아니다: ${r.rejectReason}`);
+      assert.strictEqual(r.nutrition_status, 'incomplete',
+        '1,100 kcal/100g 비건조 제품의 영양이 저장됐다 — 게이트가 죽었다');
+      assert.strictEqual(r.nutrition_reject_code, 'SANITY_OUTLIER',
+        `영양 반려 사유가 sanity 가 아니다: ${r.nutrition_reject_code} / ${r.nutrition_reject_reason}`);
+      assert.ok(/이상치/.test(r.nutrition_reject_reason || ''),
+        `사용자에게 보여줄 사유가 sanity 얘기가 아니다: ${r.nutrition_reject_reason}`);
+
+      // ★★★ 「소비자가 보는 것은 종전과 같다」를 **DB 로** 단정한다.
+      //   응답 키만 보면 서비스가 문자열만 바꿔도 초록이 된다(세션48 4차 검증의 교훈).
+      const nut = await db.query(
+        'SELECT nutrition_id FROM nutrition_data WHERE product_id = $1', [r.productId]);
+      assert.strictEqual(nut.rows.length, 0,
+        '이상치 영양값이 nutrition_data 에 박혔다 — 그 바코드를 조회하는 전원이 거짓 판정을 받는다');
+      assert.strictEqual(r.verification, 'unverified',
+        '영양을 하나도 확보 못 했는데 partial(부분 확인됨)로 승격됐다');
     });
 
     await t('★★★ M6 — 건조식품 이상치는 부당하게 반려되지 않는다 (화면과 저장이 같은 답)', async () => {
       const r = await crowdsource.saveOcrContribution(gateParams('김자반', '바다 김자반'));
-      assert.ok(!/이상치/.test(r.rejectReason || ''),
-        `건조식품이 sanity 로 반려됐다: ${r.rejectReason}\n`
+      assert.strictEqual(r.nutrition_status, 'ok',
+        `건조식품이 sanity 로 반려됐다: ${r.nutrition_reject_code} / ${r.nutrition_reject_reason}\n`
         + '      → crowdsourceService 의 isDried 하드코딩 false 가 살아 있다. '
         + '신호등은 면제하는데 등록만 거부하는 상태다.');
+      assert.strictEqual(r.saved, true, `건조식품 제보가 저장되지 않았다: ${r.rejectReason}`);
+      const nut = await db.query(
+        'SELECT calories FROM nutrition_data WHERE product_id = $1', [r.productId]);
+      assert.strictEqual(nut.rows.length, 1, '건조식품 영양이 저장되지 않았다');
+      assert.strictEqual(Number(nut.rows[0].calories), 1100);
     });
   }
 

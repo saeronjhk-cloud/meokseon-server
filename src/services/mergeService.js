@@ -485,7 +485,21 @@ async function mergeAndApply(productId) {
     const canOverwriteNutrition = existingNut.rows.length === 0
       || !String(existingNut.rows[0].data_source || '').startsWith('public_');
 
-    if (canOverwriteNutrition) {
+    // ★★★ 세션64b — 「병합 결과에 영양값이 **하나도 없으면** 쓰지 않는다.」
+    //   왜 지금 생겼나 — 세션64b 부터 `crowdsourceService` 가 **영양 미확보 제보도 저장**한다
+    //   (기준 판별 실패·이상치·공공데이터 보호). 그런 기여의 `parsed_nutrition` 은 null 이라
+    //   `mergeContributions` 의 median 이 전 항목 null 을 낸다.
+    //   그런데 아래 UPSERT 는 `calories = EXCLUDED.calories` 처럼 **COALESCE 없이 통째로 덮는다.**
+    //   → 영양 미확보 제보 3건이 모이면, 이미 잘 들어 있던 `nutrition_data` 행이
+    //     **전부 NULL 로 지워진다.** 「모름」이 기존 「앎」을 파괴하는 방향이다.
+    //   ⚠ 종전에는 이 경로가 불가능했다(게이트를 통과한 기여만 저장됐으므로 항상 값이 있었다).
+    //     즉 이 가드가 없으면 세션64b 가 **새 결함을 만든다.**
+    //   ⚠ 부분 null(칼로리만 있고 나트륨 없음)은 종전에도 가능했다 — 여기서 다루지 않는다.
+    //     범위를 넓히지 않고, 이번 변경이 «새로» 여는 구멍만 닫는다.
+    const mergedNutrientCount = NUTRIENT_FIELDS
+      .reduce((n, f) => n + (nutrition[f] === null || nutrition[f] === undefined ? 0 : 1), 0);
+
+    if (canOverwriteNutrition && mergedNutrientCount > 0) {
       // production 스키마 정렬:
       // - per_serving 컬럼 없음 (TRUE 만 INSERT 라 무의미)
       // - data_source enum 에 'ocr_crowdsource_merged' 값 없음 → 'ocr_crowdsource' 로 통일.

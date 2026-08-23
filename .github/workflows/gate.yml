@@ -80,6 +80,7 @@ jobs:
             src/services/productService.js \
             src/services/allergenName.js \
             src/services/crowdsourceService.js \
+            src/services/analysisCache.js \
             src/services/foodTypeMatch.js \
             src/services/nutritionTrafficLight.js \
             src/services/pulseConsentService.js \
@@ -97,7 +98,8 @@ jobs:
             tests/test_parse_allergy.js \
             tests/test_path_parity.js \
             tests/test_allergen_contract.js \
-            tests/test_schema_constraints.js
+            tests/test_schema_constraints.js \
+            tests/test_ocr_confirm.js
           do
             node --check "$f"
           done
@@ -149,6 +151,19 @@ jobs:
 
       - name: "test: ocr"
         run: npm run test:ocr
+
+      # 세션64 — 제품명 확정 축(analysis_token · /confirm · 첫 원재료명 폴백 폐기).
+      # ★ 별도 스텝인 이유: `test:ocr` 뒤에 && 로 이으면 어느 것이 빨강인지 안 보인다(위 「하지 말 것」).
+      - name: "test: ocr-confirm (제품명 확정 · 세션64)"
+        run: npm run test:ocr-confirm
+
+      # 세션64b — 영양 미확보 «부분 저장» 축.
+      #   영양 실패가 원재료·알레르기 저장까지 데려가지 않는가 / 영양 0개가 incomplete 인가 /
+      #   미확보 제품에 신호등이 안 나가는가 / 알레르기 계약이 안 바뀌었는가 /
+      #   개수가 관측으로만 쓰이는가 / 병합이 「모름」으로 기존 「앎」을 지우지 않는가.
+      # ★ 별도 스텝인 이유: 위와 같다 — && 로 이으면 어느 것이 빨강인지 안 보인다.
+      - name: "test: partial-save (영양 미확보 부분 저장 · 세션64b)"
+        run: npm run test:partial-save
 
       - name: "test: serving"
         run: npm run test:serving

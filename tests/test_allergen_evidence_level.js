@@ -846,9 +846,22 @@ async function main() {
     //   ⚠ 이 파일에서 세션54 에 같은 이유로 고친 검사가 이것으로 두 번째다(§10 도 교체됐다).
     //     「소스 문자열로 배선을 보는 검사」는 이 저장소에서 반복적으로 족쇄가 됐다 —
     //     새로 쓸 때는 실호출을 우선할 것.
-    // /analyze 응답 · /multi-photo 응답 · /multi-photo 저장(user_input) 3곳 + 정의 1.
+    // ★ 세션64 — 사용처가 3 → 4 가 됐다. `POST /api/ocr/confirm` 이 저장 직전에
+    //   같은 헬퍼로 flat 을 만든다(사용자가 제품명을 확정하는 2단계 경로).
+    //   **개수가 는 것 자체는 위반이 아니다** — 위반은 「헬퍼를 «안» 거치는 지점이 생기는 것」이다.
+    //   그 진짜 불변식은 바로 아래 `flattenAllergensV2` 검사가 본다(개수와 무관하게 지킨다).
+    // 사용처: /analyze 응답 · /multi-photo 응답 · /multi-photo 저장(user_input) · /confirm 저장 + 정의 1.
     const n = (src.match(/buildAllergenKeys\(/g) || []).length;
-    assert.strictEqual(n, 4, `flat 을 만드는 지점이 정의1+사용3 이어야 한다 (현재 ${n}곳)`);
+    assert.strictEqual(n, 5, `flat 을 만드는 지점이 정의1+사용4 이어야 한다 (현재 ${n}곳)`);
+
+    // ★★★ 세션64 — 여기가 «진짜» 불변식이다: **flat 은 오직 헬퍼 안에서만 만들어진다.**
+    //   위 개수 단정은 새 라우트가 생길 때마다 숫자를 올려야 해서 이 파일에서 이미 두 번 족쇄가 됐다
+    //   (세션54 주석 참조). 숫자를 올리는 의식이 반복되면, 언젠가 「헬퍼를 안 거치는 새 지점」이
+    //   생겼을 때도 그냥 숫자만 올리고 넘어간다. 그것을 막는 것이 이 한 줄이다.
+    const rawFlat = (src.match(/flattenAllergensV2\(/g) || []).length;
+    assert.strictEqual(rawFlat, 1,
+      `ocrRoutes 에서 flattenAllergensV2 는 buildAllergenKeys 안에서 «한 번»만 불려야 한다 (현재 ${rawFlat}곳)`
+      + ' — 헬퍼를 거치지 않고 flat 을 만드는 지점이 생겼다.');
     // ★ 그 헬퍼가 실제로 flat 규칙(혼입 제외)을 적용하는지 실호출로 본다 — 개수만 맞추면 통과하는 것 방지.
     const { buildAllergenKeys } = require('../src/routes/ocrRoutes');
     const out = buildAllergenKeys([], { contains: ['밀'], mayContain: ['대두'], inferred: [], evidence: [] });

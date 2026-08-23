@@ -18,6 +18,12 @@ const { getRaccPolicy } = require('../services/raccPolicy');
 const { normalizeAllergenNames } = require('../services/allergenName');
 const { ValidationError } = require('../middleware/errorHandler');
 const { saveOcrContribution, reportError } = require('../services/crowdsourceService');
+// ★ 세션64 — 분석과 저장을 두 번의 왕복으로 가른다. 그 사이를 이 캐시가 잇는다.
+//   사진을 다시 보내지 않으므로 Vision 은 «한 번만» 호출된다(비용 축 U60-1).
+const { putAnalysis, getAnalysis } = require('../services/analysisCache');
+// ★ 세션64 — `/confirm` 의 바코드 불일치 경고에 쓴다. 이 파일의 나머지는 console.log 관용구지만,
+//   이건 **공격 신호일 수 있는 사건**이라 날짜별 로그 파일에 남아야 한다(console 은 재배포하면 사라진다).
+const logger = require('../config/logger');
 
 const router = express.Router();
 
@@ -215,6 +221,43 @@ function buildAllergenKeys(flat, v2raw) {
     //   `false` 는 「flat 이 전부가 아니다」라는 «판정» 인데, 판정 자체가 없으면 그렇게 말할 수 없다.
     allergens_flat_complete: available ? v2.mayContain.length === 0 : null,
   };
+}
+
+/**
+ * ★★★ 세션64 — `/multi-photo` 의 `product_meta` 병합. **세션44 치명B 와 같은 결함이었다.**
+ *
+ * 무엇이 결함이었나
+ *   종전: `product_meta: labelAnalysis?.product_meta || nutritionAnalysis?.product_meta || {}`
+ *   `analyzeText` 는 `product_meta` 를 **항상 객체로** 반환한다(`ocrParser.js:2360, 2376`).
+ *   빈 객체 `{}` 도 truthy 이므로, 라벨 사진에서 제품명·식품유형을 하나도 못 읽으면
+ *   **영양성분표 사진의 메타는 영원히 평가되지 않는다.**
+ *   → 바로 아래 `allergens_v2` 가 세션44 에 「치명B」로 고친 것과 **문자 단위로 같은 함정**이다.
+ *     그 패턴을 그대로 따른다: 키 단위 합집합.
+ *
+ * ★ 왜 이게 이 축(제품명 확보)의 핵심인가 —
+ *   제품명·식품유형은 라벨 사진에 있다고 «가정»했지만, 실물에서는 영양성분표 쪽 컷에
+ *   제품명 줄이 함께 찍히는 경우가 흔하다(법정 알레르기 표기가 그렇듯이).
+ *   그 값을 버리면 앱의 «자동채움»이 비고, 사용자가 전부 타이핑해야 한다.
+ *
+ * ★ 승자 규칙: **라벨이 이긴다.** 라벨 컷이 제품 앞면·표시사항이라 메타의 1차 출처다.
+ *   단 「값이 있을 때」만 이긴다 — 빈 문자열·null 은 값이 아니다(그것이 이 결함의 본질이다).
+ *
+ * @param {Object|null} labelMeta      라벨 사진 분석의 product_meta
+ * @param {Object|null} nutritionMeta  영양성분표 사진 분석의 product_meta
+ * @returns {Object} 병합된 메타 (항상 객체)
+ */
+function mergeProductMeta(labelMeta, nutritionMeta) {
+  const hasValue = (v) => v !== undefined && v !== null
+    && !(typeof v === 'string' && v.trim() === '');
+  const out = {};
+  // 영양표를 먼저 깔고 라벨로 덮는다 → 「라벨이 이긴다」가 순서 하나로 표현된다.
+  for (const src of [nutritionMeta, labelMeta]) {
+    if (!src || typeof src !== 'object') continue;
+    for (const [k, v] of Object.entries(src)) {
+      if (hasValue(v)) out[k] = v;
+    }
+  }
+  return out;
 }
 
 function judgeNutrition({ productData, nutrition, labelText, explicitServingSize = null }) {
@@ -571,7 +614,10 @@ router.post(
     // 라벨 사진 → 메타·원재료·첨가물·알레르기 우선
     // 영양표 사진 → 영양정보 우선
     const merged = {
-      product_meta: labelAnalysis?.product_meta || nutritionAnalysis?.product_meta || {},
+      // ★★★ 세션64 — 종전 `labelAnalysis?.product_meta || nutritionAnalysis?.product_meta || {}`
+      //   는 아래 allergens_v2 치명B 와 **같은 결함**이었다(빈 객체도 truthy).
+      //   설명은 `mergeProductMeta` 주석 참조. 새 방식을 발명하지 않고 그 패턴을 따랐다.
+      product_meta: mergeProductMeta(labelAnalysis?.product_meta, nutritionAnalysis?.product_meta),
       ingredients: labelAnalysis?.ingredients || [],
       ingredient_count: labelAnalysis?.ingredient_count || 0,
       additives: labelAnalysis?.additives || [],
@@ -657,7 +703,36 @@ router.post(
 
     // ─── 5. 등록 (선택) ───
     let saveResult = null;
+    let analysisToken = null;
     const shouldSave = req.body.save === true || req.body.save === 'true';
+
+    // ★★★ 세션64 1단계 — 저장하지 않는 요청에는 «분석 토큰»을 발급한다.
+    //   앱은 이 토큰을 들고 `POST /api/ocr/confirm` 로 **사용자가 타이핑한 제품명**을 보낸다.
+    //   그때 서버는 사진을 다시 안 읽는다 = **Vision 이 한 번만 호출된다**(비용 축 U60-1).
+    //   ⚠ `save=true` 로 오는 기존 경로는 손대지 않았다. 하위 호환은 그대로다 —
+    //     구버전 앱은 토큰을 모르고, 알 필요도 없다.
+    //   ⚠ 담는 것은 **서버가 만든 값만**이다(merged + barcode + OCR 텍스트 + 신뢰도).
+    //     확정 요청이 보내는 분석값으로 이것을 덮지 않는다(analysisCache.js 머리말 참조).
+    if (!shouldSave) {
+      analysisToken = putAnalysis({
+        analysis: merged,
+        barcode: productInfo?.barcode || req.body.barcode || null,
+        ocrResult: {
+          corrected_text: [
+            labelAnalysis?._corrected_text,
+            nutritionAnalysis?._corrected_text,
+          ].filter(Boolean).join('\n---LABEL/NUTRITION SPLIT---\n'),
+          corrections: [
+            ...(labelAnalysis?._corrections || []),
+            ...(nutritionAnalysis?._corrections || []),
+          ],
+        },
+        avgConfidence: Math.max(
+          labelAnalysis?._avg_confidence || 0,
+          nutritionAnalysis?._avg_confidence || 0,
+        ),
+      });
+    }
 
     if (shouldSave) {
       // 사용자 입력 + 메타 병합 → productInfo 로 saveOcrContribution 에 전달
@@ -727,6 +802,9 @@ router.post(
         // ⚠ deprecated (세션50 D2) — `traffic_light.sanity_warnings` 와 **같은 배열**이다. null = 검사 못 함.
         sanity_warnings: sanityWarnings,
         save_result: saveResult,
+        // ★ 세션64 — `save=false` 일 때만 채워진다. `save=true` 면 null 이다(이미 저장했으므로).
+        //   TTL 10분. 앱은 이 토큰으로 `POST /api/ocr/confirm` 을 부른다.
+        analysis_token: analysisToken,
         corrected_text: {
           label: labelAnalysis?._corrected_text || null,
           nutrition: nutritionAnalysis?._corrected_text || null,
@@ -735,6 +813,148 @@ router.post(
     });
   }
 );
+
+// ============================================================
+// POST /api/ocr/confirm — 사용자가 제품명을 확정하고 등록한다 (세션64 신설)
+// ============================================================
+/**
+ * 왜 이 엔드포인트가 생겼나 — 실물 라벨 67건 실측
+ *   라벨 텍스트에 「제품명/상품명」 문자열이 인쇄돼 있음        40/67 (59.7%)
+ *   OCR 이 뽑은 값 중 **제품명으로 쓸 수 있는 것**            33/67 (49.3%)
+ *   목표선(`IP/label_ocr_pipeline_v1.md:104`)                 95%
+ *   → 반이 빈다. 종전에는 그 빈자리를 **첫 원재료명**이 채웠다("정제수" 6건 등).
+ *     제이 결정: 제품명은 **사용자가 타이핑**하고, 없으면 **저장하지 않는다.**
+ *
+ * 계약 (앱 담당과 «동일». 임의로 바꾸지 말 것)
+ *   요청 : { analysis_token, product_info: { product_name, manufacturer?, brand?,
+ *            food_type?, serving_size?, ... } }
+ *   응답 : { success, data: { save_result } }   ← `save_result` 는 기존과 **같은 모양**이다.
+ *          앱이 `saved` 로 판정하기 때문에 모양을 바꾸면 조용히 깨진다.
+ *   400  : product_name 이 비었거나 공백뿐
+ *   410  : 토큰이 없거나 만료 (앱이 재촬영을 안내한다)
+ *
+ * ★★ 바코드는 «토큰에 담긴 것»만 쓴다 (제이 확정 2026-08-21). 본문 최상위 `barcode` 와
+ *    `product_info.barcode` 는 **무시**하고, 토큰 값과 다르면 경고 로그를 남긴다.
+ *    자세한 근거는 아래 ③ 블록 주석 참조.
+ *
+ * ★★ Vision 을 다시 부르지 않는다. 이 경로의 존재 이유가 그것이다.
+ * ★★ 원재료·알레르기·영양·첨가물은 **캐시된 서버 값**을 쓴다.
+ *    클라이언트가 정본인 것은 `product_info` 의 사용자 입력 메타뿐이다.
+ *    (클라이언트 분석값이 서버 값을 덮는 사고는 세션44 치명B·세션48 과소경고로 이미 두 번 났다.)
+ */
+router.post('/confirm', async (req, res) => {
+  const token = typeof req.body?.analysis_token === 'string' ? req.body.analysis_token : '';
+
+  let productInfo = req.body?.product_info;
+  if (typeof productInfo === 'string') {
+    try { productInfo = JSON.parse(productInfo); } catch { productInfo = null; }
+  }
+  if (!productInfo || typeof productInfo !== 'object') productInfo = {};
+
+  // ── ① 제품명 (토큰보다 **먼저** 본다) ────────────────────────────────────
+  // ★ 순서가 의미다. 토큰을 먼저 보면, 제품명이 빈 채로 10분이 지난 요청에
+  //   410(「사진을 다시 읽어 주세요」)이 나가고 앱이 **Vision 을 또 부른다.**
+  //   제품명 누락은 사용자가 그 자리에서 고칠 수 있는 사유다 — 그것을 먼저 말한다.
+  const productName = typeof productInfo.product_name === 'string'
+    ? productInfo.product_name.trim() : '';
+  if (!productName) {
+    return res.status(400).json({
+      success: false,
+      error: {
+        code: 'PRODUCT_NAME_REQUIRED',
+        // ⚠ 앱이 사용자에게 **그대로 보여줄** 문장이다. 기술 용어를 넣지 말 것.
+        message: '제품명을 입력해 주세요. 제품명 없이는 등록할 수 없어요.',
+      },
+    });
+  }
+
+  // ── ② 토큰 ──────────────────────────────────────────────────────────────
+  const cached = getAnalysis(token);
+  if (!cached) {
+    // 410 Gone — 「있었지만 지금은 없다」. 404 가 아닌 이유는 앱이 두 상태를 구분해야 해서다:
+    //   404 = 엔드포인트/경로가 틀렸다(개발 실수) · 410 = 시간이 지났다(사용자 안내 대상)
+    return res.status(410).json({
+      success: false,
+      error: {
+        code: 'ANALYSIS_EXPIRED',
+        message: '분석 결과가 만료됐어요. 사진을 다시 읽어 주세요.',
+      },
+    });
+  }
+
+  // ── ③ 바코드는 «토큰이 정본»이다 (제이 확정 2026-08-21) ──────────────────
+  // ★★★ 왜 클라이언트 값을 안 쓰는가
+  //   `products` 는 **바코드 단위 공용 마스터**다. 확정 요청이 보낸 바코드를 그대로 믿으면,
+  //   A 제품 사진을 읽어놓고 확정할 때 B 제품 바코드를 적어 보내는 것만으로
+  //   **B 를 조회하는 전원에게 A 의 원재료·영양·알레르기가 간다.** 알레르기 축에서는
+  //   이것이 곧 오경보/과소경고다 — 제품명 오염(정제수)보다 나쁘다.
+  //   토큰은 **서버가 발급했고 추측 불가**하므로, 거기 담긴 바코드는 서버가 그 사진과
+  //   함께 받은 값임이 보증된다. 그래서 토큰 값만 쓴다.
+  //
+  // ⚠ 앱은 본문 최상위(`body.barcode`)에도 방어적으로 같은 값을 싣는다
+  //   (`web/src/lib/meokseon.ts:403`). 실측 확인: 앱은 1단계에서도
+  //   `fd.append('barcode', barcode)` 로 보내고(같은 파일 :337), `/multi-photo` 가 그것을
+  //   `req.body.barcode` 로 읽어 토큰에 담는다(위 putAnalysis 호출).
+  //   → 「토큰만 쓴다」로 잃는 바코드는 **없다.** 최상위 값은 조용히 버린다.
+  //
+  // ★ 불일치를 **거부하지 않고 경고만** 하는 이유 (제이 판단 요청 항목 · 근거)
+  //   ① 무시하는 순간 오염 경로는 이미 완전히 닫힌다 — 그 값은 DB 근처에도 못 간다.
+  //      거부는 보안을 **더** 주지 않는다(토큰을 위조 못 하므로 공격자가 얻는 게 없다).
+  //   ② 거부는 새 실패 모드를 만든다: 사용자가 읽어보기 후 다른 바코드를 다시 스캔한 뒤
+  //      확정하면 하드 에러가 나고, 복구하려면 **재촬영 = Vision 2배**다.
+  //      이 경로가 존재하는 이유(비용 축 U60-1)를 그대로 무너뜨린다.
+  //   ③ 불일치는 공격의 «증거»가 아니라 «신호»다. 로그로 관찰만 하고, 실제로 쌓이면
+  //      그때 제이가 거부로 올리면 된다. 반대 방향(거부→허용)은 되돌리기 어렵다.
+  const clientBarcode = (typeof req.body?.barcode === 'string' && req.body.barcode.trim())
+    || (typeof productInfo.barcode === 'string' && productInfo.barcode.trim())
+    || null;
+  const barcode = cached.barcode || null;
+  if (clientBarcode && clientBarcode !== barcode) {
+    logger.warn('[OCR/confirm] 바코드 불일치 — 클라이언트 값을 버리고 토큰 값을 쓴다', {
+      token_barcode: barcode,
+      client_barcode: clientBarcode,
+      device_id: req.body?.device_id || null,
+      // 공격 신호일 수 있다. 쌓이면 제이가 거부 정책으로 올릴 판단 근거가 된다.
+      reason: 'CLIENT_BARCODE_IGNORED',
+    });
+  }
+
+  // ── ④ 저장 ──────────────────────────────────────────────────────────────
+  // 자동채움 기반값(라벨에서 읽은 메타) 위에 **사용자 입력을 덮는다.**
+  // ★ `...cached.analysis.product_meta` 를 먼저 깔고 `...productInfo` 를 나중에 —
+  //   `/multi-photo` 의 `save=true` 경로(mergedProductInfo)와 **같은 순서**다.
+  //   두 경로가 갈라지면 한쪽만 고쳐지는 사고가 난다(세션44·세션47 이 그 유형이었다).
+  const analysis = cached.analysis || {};
+  const mergedProductInfo = {
+    ...(analysis.product_meta || {}),
+    ...productInfo,
+    // ★ 사용자가 타이핑한 이름이 정본이다. trim 된 값으로 못 박는다 —
+    //   위에서 검사한 값과 저장되는 값이 다르면 검사가 무의미해진다.
+    product_name: productName,
+    // ★ 위 ③ 참조 — `...productInfo` 가 깔아둔 클라이언트 바코드를 **여기서 덮어 없앤다.**
+    //   전개 순서에만 기대면, 나중에 누가 키를 하나 옮기는 순간 조용히 뚫린다.
+    barcode: barcode ?? undefined,
+    nutrition: analysis.nutrition || {},
+    // ★ 세션54 D4 — 응답·저장이 «같은 함수»로 알레르기를 만든다.
+    allergens: buildAllergenKeys(analysis.allergens, analysis.allergens_v2).allergens,
+  };
+
+  const saveResult = await saveOcrContribution({
+    // ★★ 토큰 값만. 클라이언트가 보낸 바코드는 위 ③ 에서 버렸다.
+    barcode,
+    productInfo: mergedProductInfo,
+    ocrResult: cached.ocrResult || { corrected_text: '', corrections: [] },
+    // ★★ 서버 값 그대로. 클라이언트가 보낸 분석값은 **쓰지 않는다.**
+    analysis,
+    avgConfidence: cached.avgConfidence,
+    userId: req.body?.user_id || null,
+    deviceId: req.body?.device_id || null,
+  });
+
+  // ★ 토큰은 **소모하지 않는다.** 이유는 `analysisCache.getAnalysis` 주석 참조
+  //   (400 뒤의 재시도가 410 이 되면 앱이 재촬영 → Vision 2배가 된다).
+  res.json({ success: true, data: { save_result: saveResult } });
+});
 
 // ============================================================
 // POST /api/ocr/report — 제품 오류 신고
@@ -794,3 +1014,7 @@ module.exports.buildAllergenKeys = buildAllergenKeys;
 //   노출하지 않으면 테스트가 이 함수의 **로직을 재현**하게 된다 —
 //   그러면 정작 이 함수가 바뀌었을 때 회귀가 못 잡는다(세션45 주석과 같은 사고).
 module.exports.sanitizeUserAllergens = sanitizeUserAllergens;
+// ★ 세션64: 같은 이유로 노출한다. `/multi-photo` 의 product_meta 병합 회귀
+//   (`tests/test_ocr_confirm.js` §2)가 **실동작**을 검사해야 한다 —
+//   소스 문자열 정규식은 리터럴이 헬퍼로 바뀌면 깨지고(세션54), 본문 오염으로 뚫린다(세션48 4차).
+module.exports.mergeProductMeta = mergeProductMeta;

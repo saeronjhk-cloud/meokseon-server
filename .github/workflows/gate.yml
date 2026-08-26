@@ -81,6 +81,11 @@ jobs:
             src/services/allergenName.js \
             src/services/crowdsourceService.js \
             src/services/analysisCache.js \
+            src/services/authUserService.js \
+            src/config/supabaseJwks.js \
+            src/middleware/supabaseAuth.js \
+            src/routes/contributionRoutes.js \
+            src/routes/scanRoutes.js \
             src/services/foodTypeMatch.js \
             src/services/nutritionTrafficLight.js \
             src/services/pulseConsentService.js \

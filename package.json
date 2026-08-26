@@ -39,7 +39,7 @@
     "test:parity": "cross-env NODE_ENV=test node tests/test_parser_parity.js",
     "test:serving": "npm run test:racc-table && npm run test:serving-resolver && npm run test:official-source && npm run test:per-total && npm run test:withheld-client",
     "probe:basis-unknown": "cross-env NODE_ENV=test node scripts/74-probe-basis-unknown.js",
-    "migrate": "psql $DATABASE_URL -v ON_ERROR_STOP=1 -f scripts/migrations/000_baseline.sql && psql $DATABASE_URL -v ON_ERROR_STOP=1 -f scripts/migrations/000b_seed_config.sql",
+    "migrate": "psql $DATABASE_URL -v ON_ERROR_STOP=1 -f scripts/migrations/000_baseline.sql && psql $DATABASE_URL -v ON_ERROR_STOP=1 -f scripts/migrations/000b_seed_config.sql && psql $DATABASE_URL -v ON_ERROR_STOP=1 -f scripts/migrations/021_supabase_auth.sql",
     "_note:migrate": "★ 세션47 — 체인을 baseline 기반으로 바꿨다. 근거: (1) 001 은 운영을 재현할 수 없다 — users.user_id 가 UUID 인데 운영은 bigint 라 007 의 FK 가 깨진다. (2) 011 이 nutrition_data.serving_size 를 참조하는데 그 컬럼을 만드는 마이그레이션이 없어 011~019 가 연쇄 붕괴한다. (3) products.image_url · additives.e_number 처럼 운영에만 있고 마이그레이션에 없는 컬럼이 다수다. 001~020 은 역사로 남기고 실행하지 않는다. 000_baseline.sql 하나가 운영 덤프(IP/production_schema_2026-07-31.txt) 기준 정본이다. 성립 증명: npm run verify:fresh-schema",
     "_note:migrate2": "★ psql 호출에는 반드시 -v ON_ERROR_STOP=1 을 넣을 것. 없으면 마이그레이션이 실패해도 && 가 이어져 「거짓 초록」이 된다(세션46 §5-4). 새 마이그레이션(021+)은 이 체인 뒤에 같은 형식으로 이어 붙인다.",
     "test:parity-paths": "cross-env NODE_ENV=test node tests/test_path_parity.js",

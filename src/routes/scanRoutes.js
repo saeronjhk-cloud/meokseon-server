@@ -10,12 +10,15 @@
  *   스캔 시점의 users.pulse_consent_version 을 BOOLEAN 으로 박아 scan_history.pulse_eligible 에 INSERT.
  *   이후 동의 상태가 바뀌어도 과거 row 의 pulse_eligible 은 불변 (이벤트 소싱 = 스냅샷 정책).
  *
- * 인증: 모든 엔드포인트 firebaseAuth 필수 (게스트 접근 불가).
+ * 인증: 모든 엔드포인트 supabaseAuth 필수 (게스트 접근 불가). ★ 세션64c 전환
  * 트랜잭션: 단순 SELECT + INSERT 만 (FOR UPDATE 없음) 라 트랜잭션 불필요.
  */
 
 const express = require('express');
-const { firebaseAuth } = require('../middleware/firebaseAuth');
+// ★★ 세션64c — Firebase → Supabase 인증 전환(제이 확정 2026-08-24).
+//   ⚠ `firebaseAuth.js` 는 «지우지 않았다» — 전환 기간에 공존한다. 여기서는 참조만 바꾼다.
+const { supabaseAuth } = require('../middleware/supabaseAuth');
+const { handleStoreNotReady } = require('../services/authUserService');
 const db = require('../config/database');
 
 const router = express.Router();
@@ -27,7 +30,7 @@ const DEFAULT_LIMIT = 50;
 // ============================================================
 // POST /api/scans — 스캔 기록 (★ pulse_eligible 스냅샷 박는 지점)
 // ============================================================
-router.post('/', firebaseAuth, async (req, res, next) => {
+router.post('/', supabaseAuth, async (req, res, next) => {
   const { product_id, scan_type } = req.body || {};
 
   // 입력 검증
@@ -53,8 +56,8 @@ router.post('/', firebaseAuth, async (req, res, next) => {
   try {
     // 1) user_id + 동의 상태 한 번에 조회 (round-trip 절약).
     const userResult = await db.query(
-      'SELECT user_id, pulse_consent_version FROM users WHERE firebase_uid = $1',
-      [req.firebase.uid]
+      'SELECT user_id, pulse_consent_version FROM users WHERE supabase_uid = $1',
+      [req.auth.supabaseUid]
     );
     if (userResult.rows.length === 0) {
       return res.status(404).json({
@@ -83,6 +86,8 @@ router.post('/', firebaseAuth, async (req, res, next) => {
       data: result.rows[0],
     });
   } catch (err) {
+    // ★ 021 미적용(users.supabase_uid 없음)이면 500 스택이 아니라 503 + 원인 코드.
+    if (handleStoreNotReady(err, res)) return;
     next(err);
   }
 });
@@ -90,15 +95,15 @@ router.post('/', firebaseAuth, async (req, res, next) => {
 // ============================================================
 // GET /api/scans — 본인 스캔 이력 (DESC 정렬 + pagination)
 // ============================================================
-// IDOR 방지: req.firebase.uid 만 사용. body·query 의 user_id 무시.
-router.get('/', firebaseAuth, async (req, res, next) => {
+// IDOR 방지: req.auth.supabaseUid 만 사용. body·query 의 user_id 무시.
+router.get('/', supabaseAuth, async (req, res, next) => {
   const limit = Math.min(parseInt(req.query.limit, 10) || DEFAULT_LIMIT, MAX_LIMIT);
   const offset = Math.max(parseInt(req.query.offset, 10) || 0, 0);
 
   try {
     const userResult = await db.query(
-      'SELECT user_id FROM users WHERE firebase_uid = $1',
-      [req.firebase.uid]
+      'SELECT user_id FROM users WHERE supabase_uid = $1',
+      [req.auth.supabaseUid]
     );
     if (userResult.rows.length === 0) {
       return res.status(404).json({
@@ -123,6 +128,8 @@ router.get('/', firebaseAuth, async (req, res, next) => {
       meta: { limit, offset, count: result.rows.length },
     });
   } catch (err) {
+    // ★ 021 미적용(users.supabase_uid 없음)이면 500 스택이 아니라 503 + 원인 코드.
+    if (handleStoreNotReady(err, res)) return;
     next(err);
   }
 });

@@ -24,8 +24,33 @@ const { putAnalysis, getAnalysis } = require('../services/analysisCache');
 // ★ 세션64 — `/confirm` 의 바코드 불일치 경고에 쓴다. 이 파일의 나머지는 console.log 관용구지만,
 //   이건 **공격 신호일 수 있는 사건**이라 날짜별 로그 파일에 남아야 한다(console 은 재배포하면 사라진다).
 const logger = require('../config/logger');
+// ★★ 세션64c — 제보는 «로그인 필수»가 됐다(제이 확정 2026-08-24: 「제보도 로그인 필수」).
+//   종전에는 `req.body.user_id` 를 그대로 믿었다 — 클라이언트가 아무 숫자나 적으면
+//   **남의 계정 이름으로 제보가 저장되는** 경로였다(IDOR). 그 줄을 전부 걷어냈다.
+const { supabaseAuth, supabaseAuthOptional } = require('../middleware/supabaseAuth');
+const { getOrCreateUserId, handleStoreNotReady } = require('../services/authUserService');
 
 const router = express.Router();
+
+/**
+ * 토큰의 신원 → 먹선 내부 `user_id`(BIGINT).
+ *
+ * ★★★ `supabase_uid`(UUID 문자열)를 `contributions.user_id` 에 **직접 넣지 않는다.**
+ *   그 컬럼은 `BIGINT REFERENCES users(user_id)` 다. 변환은 authUserService 한 곳에서만 한다.
+ * ★ 실패(021 마이그레이션 미적용)를 **500 이 아니라 503 + 원인 코드**로 내린다.
+ *   배포 순서는 「마이그레이션 → 환경변수 → 코드」지만, 어긋나도 원인이 보여야 한다.
+ *
+ * @returns {Promise<{ ok: boolean, userId?: number|null }>} ok=false 면 **이미 응답을 보냈다**
+ */
+async function resolveUserId(req, res) {
+  if (!req.auth) return { ok: true, userId: null };   // 선택 인증 라우트의 게스트
+  try {
+    return { ok: true, userId: await getOrCreateUserId(req.auth) };
+  } catch (err) {
+    if (handleStoreNotReady(err, res)) return { ok: false };
+    throw err;
+  }
+}
 
 // multer 설정: 메모리 스토리지, 10MB 제한
 const upload = multer({
@@ -362,7 +387,11 @@ function extractBase64Image(req) {
 // JSON: { image: "base64...", product_info: {...} }
 // ============================================================
 
-router.post('/analyze', upload.single('image'), async (req, res) => {
+// ★ 인증 **선택**이다 — 제이 지시(「제보도 로그인 필수」)의 대상은 앱이 실제로 쓰는
+//   2단계 경로(`/multi-photo` → `/confirm`)다. `/analyze` 는 계약에 없어 필수로 올리지 않았다.
+//   ⚠ 다만 `req.body.user_id` 를 믿던 줄은 걷어냈다(IDOR). 토큰이 없으면 user_id 는 null 이다.
+// ★ 인증을 multer «앞»에 둔다. 뒤에 두면 401 을 줄 요청의 10MB 이미지를 먼저 메모리에 받는다.
+router.post('/analyze', supabaseAuthOptional, upload.single('image'), async (req, res) => {
   const base64Image = extractBase64Image(req);
 
   if (base64Image.length < 100) {
@@ -501,13 +530,16 @@ router.post('/analyze', upload.single('image'), async (req, res) => {
   const shouldSave = req.body.save === true || req.body.save === 'true';
 
   if (shouldSave) {
+    // ★★ 세션64c — `req.body.user_id` 를 «쓰지 않는다». 토큰이 정본이다(바코드·기기와 같은 원칙).
+    const u = await resolveUserId(req, res);
+    if (!u.ok) return;
     saveResult = await saveOcrContribution({
       barcode: productInfo?.barcode || req.body.barcode || null,
       productInfo: productInfo || {},
       ocrResult: { corrected_text: corrected, corrections },
       analysis,
       avgConfidence: ocrResult.avg_confidence,
-      userId: req.body.user_id || null,
+      userId: u.userId,
       deviceId: req.body.device_id || null,
     });
   }
@@ -560,6 +592,12 @@ router.post('/analyze', upload.single('image'), async (req, res) => {
 
 router.post(
   '/multi-photo',
+  // ★★★ 세션64c — **로그인 필수**(제이 확정 2026-08-24: 「제보도 로그인 필수」).
+  //   ⚠ 인증을 multer «앞»에 둔다. 뒤에 두면 401 을 줄 요청의 사진 2장(최대 20MB)을
+  //     먼저 메모리에 받는다 — 인증 없는 대량 업로드로 서버를 밀어버릴 수 있다.
+  //   ⚠ 이 라우트는 무인증 «제품 조회»가 아니라 «제보»다. 노션 §6·§9 의
+  //     「무료·무인증 스캔 = 획득 훅」은 `GET /api/products/*` 축이고 그쪽은 손대지 않았다.
+  supabaseAuth,
   upload.fields([
     { name: 'label_image', maxCount: 1 },
     { name: 'nutrition_image', maxCount: 1 },
@@ -717,6 +755,9 @@ router.post(
       analysisToken = putAnalysis({
         analysis: merged,
         barcode: productInfo?.barcode || req.body.barcode || null,
+        // ★★ 세션64c — 기기 식별자를 **여기서** 못 박는다. 2단계(`/confirm`)는 이 값만 쓴다.
+        //   `multipart/form-data` 라 `req.body.device_id` 는 문자열이다(multer 가 텍스트 필드로 넘긴다).
+        deviceId: (typeof req.body.device_id === 'string' && req.body.device_id.trim()) || null,
         ocrResult: {
           corrected_text: [
             labelAnalysis?._corrected_text,
@@ -735,6 +776,10 @@ router.post(
     }
 
     if (shouldSave) {
+      // ★★ 세션64c — 토큰의 신원 → 내부 user_id(BIGINT). `req.body.user_id` 는 안 읽는다.
+      const mpu = await resolveUserId(req, res);
+      if (!mpu.ok) return;
+      const mpUserId = mpu.userId;
       // 사용자 입력 + 메타 병합 → productInfo 로 saveOcrContribution 에 전달
       const mergedProductInfo = {
         ...merged.product_meta,
@@ -764,7 +809,8 @@ router.post(
           labelAnalysis?._avg_confidence || 0,
           nutritionAnalysis?._avg_confidence || 0,
         ),
-        userId: req.body.user_id || null,
+        // ★★ 세션64c — 토큰이 정본. `req.body.user_id` 는 더 이상 읽지 않는다.
+        userId: mpUserId,
         deviceId: req.body.device_id || null,
       });
     }
@@ -842,7 +888,10 @@ router.post(
  *    클라이언트가 정본인 것은 `product_info` 의 사용자 입력 메타뿐이다.
  *    (클라이언트 분석값이 서버 값을 덮는 사고는 세션44 치명B·세션48 과소경고로 이미 두 번 났다.)
  */
-router.post('/confirm', async (req, res) => {
+// ★★★ 세션64c — **로그인 필수**(제이 확정 2026-08-24: 「제보도 로그인 필수」).
+//   여기가 제보가 실제로 DB 에 박히는 지점이다. 1단계(`/multi-photo`)만 막고 여기를 열어 두면
+//   토큰만 하나 얻어 두면 그 뒤로 무제한 저장이 되므로, **두 단계 모두** 필수다.
+router.post('/confirm', supabaseAuth, async (req, res) => {
   const token = typeof req.body?.analysis_token === 'string' ? req.body.analysis_token : '';
 
   let productInfo = req.body?.product_info;
@@ -919,6 +968,32 @@ router.post('/confirm', async (req, res) => {
     });
   }
 
+  // ── ③b 기기 식별자도 «토큰이 정본»이다 (세션64c · 바코드와 같은 원칙) ────────
+  // ★★★ 왜 클라이언트 값을 안 쓰는가 — `device_id` 는 장식이 아니라 **세 개의 판정 열쇠**다:
+  //   ① 24시간 중복 제출 게이트(`crowdsourceService.js`) — 남의 값을 적으면 그대로 우회된다.
+  //   ② 자동 verified 승격(같은 제품에 distinct device_id 3개) — 한 기기가 세 기기인 척하면
+  //      **혼자서 마스터를 verified 로 올린다.** 알레르기·영양이 걸린 축이다.
+  //   ③ `GET /api/contributions/mine`(내 제보 이력) — 남의 이력에 내 제보를 끼워넣게 된다.
+  //   1단계 값은 서버가 사진과 함께 받았고 토큰은 추측 불가하므로, 거기 담긴 값만 쓴다.
+  //
+  // ★ 바코드와 **똑같이** 거부하지 않고 경고만 남긴다(위 ③ 의 ①~③ 과 같은 이유).
+  //   무시하는 순간 우회 경로는 이미 닫히고, 거부는 새 실패 모드(재촬영 = Vision 2배)만 만든다.
+  //
+  // ⚠ 토큰에 기기 식별자가 없으면 **없는 채로 저장된다.** 본문 값으로 메우지 않는다 —
+  //   그것을 허용하는 순간 위 ①~③ 이 전부 「본문 값을 믿는다」로 되돌아간다.
+  //   앱은 1단계에도 `device_id` 를 싣는 것이 계약이다(세션64c 앱↔서버 확정 계약 §1).
+  //   토큰이 비어 있다면 그건 앱이 1단계에 안 실었다는 뜻이고, 서버가 아니라 앱을 고쳐야 한다.
+  const clientDeviceId = (typeof req.body?.device_id === 'string' && req.body.device_id.trim()) || null;
+  const deviceId = cached.deviceId || null;
+  if (clientDeviceId && clientDeviceId !== deviceId) {
+    logger.warn('[OCR/confirm] 기기 식별자 불일치 — 클라이언트 값을 버리고 토큰 값을 쓴다', {
+      token_device_id: deviceId,
+      client_device_id: clientDeviceId,
+      token_barcode: barcode,
+      reason: 'CLIENT_DEVICE_ID_IGNORED',
+    });
+  }
+
   // ── ④ 저장 ──────────────────────────────────────────────────────────────
   // 자동채움 기반값(라벨에서 읽은 메타) 위에 **사용자 입력을 덮는다.**
   // ★ `...cached.analysis.product_meta` 를 먼저 깔고 `...productInfo` 를 나중에 —
@@ -939,6 +1014,14 @@ router.post('/confirm', async (req, res) => {
     allergens: buildAllergenKeys(analysis.allergens, analysis.allergens_v2).allergens,
   };
 
+  // ── ③c 사용자도 «토큰이 정본»이다 (세션64c) ─────────────────────────────
+  // ★★★ 종전에는 `req.body.user_id` 를 그대로 `contributions.user_id` 에 넣었다.
+  //   그 컬럼은 `BIGINT REFERENCES users(user_id)` 다 — 아무 숫자나 적으면
+  //   **남의 계정 이름으로 제보가 저장된다**(IDOR). 그 줄을 걷어냈다.
+  //   Supabase uid(UUID 문자열)를 그대로 넣지 «않는다»: 타입이 다르다. 변환은 authUserService.
+  const cu = await resolveUserId(req, res);
+  if (!cu.ok) return;
+
   const saveResult = await saveOcrContribution({
     // ★★ 토큰 값만. 클라이언트가 보낸 바코드는 위 ③ 에서 버렸다.
     barcode,
@@ -947,8 +1030,10 @@ router.post('/confirm', async (req, res) => {
     // ★★ 서버 값 그대로. 클라이언트가 보낸 분석값은 **쓰지 않는다.**
     analysis,
     avgConfidence: cached.avgConfidence,
-    userId: req.body?.user_id || null,
-    deviceId: req.body?.device_id || null,
+    // ★★ 토큰 값만. 본문의 `user_id` 는 더 이상 읽지 않는다.
+    userId: cu.userId,
+    // ★★ 토큰 값만. 클라이언트가 보낸 기기 식별자는 위 ③b 에서 버렸다.
+    deviceId,
   });
 
   // ★ 토큰은 **소모하지 않는다.** 이유는 `analysisCache.getAnalysis` 주석 참조
@@ -960,14 +1045,20 @@ router.post('/confirm', async (req, res) => {
 // POST /api/ocr/report — 제품 오류 신고
 // ============================================================
 
-router.post('/report', async (req, res) => {
-  const { product_id, user_id, reason } = req.body;
+// ★ 인증 **선택**. 계약(세션64c)에 없어 필수로 올리지 않았다.
+//   ⚠ 다만 `req.body.user_id` 는 더 이상 읽지 않는다 — `contributions.user_id` 는
+//     `BIGINT REFERENCES users(user_id)` 라 아무 숫자나 적으면 남의 계정에 붙는다(IDOR).
+router.post('/report', supabaseAuthOptional, async (req, res) => {
+  const { product_id, reason } = req.body;
 
   if (!product_id || !reason) {
     throw new ValidationError('product_id와 reason이 필요합니다.');
   }
 
-  const result = await reportError(product_id, user_id, reason);
+  const u = await resolveUserId(req, res);
+  if (!u.ok) return;
+
+  const result = await reportError(product_id, u.userId, reason);
   res.json({ success: true, data: result });
 });
 

@@ -18,7 +18,9 @@
  *   → 서버가 «자기 분석 결과»를 토큰과 함께 들고 있다가, 확정 요청 때 그것을 쓴다.
  *
  * 무엇을 담는가 — **서버가 만든 값만**이다.
- *   `analysis`(merged 전체) · `barcode` · `ocrResult` · `avgConfidence`.
+ *   `analysis`(merged 전체) · `barcode` · `deviceId` · `ocrResult` · `avgConfidence`.
+ *   (`barcode` · `deviceId` 는 서버가 «만든» 값은 아니지만 **1단계 요청과 함께 받은** 값이다 —
+ *    2단계에서 바꿔치기되면 안 되는 것들이라 토큰에 못 박는다. 세션64c)
  *   클라이언트가 정본인 것은 확정 요청의 `product_info`(사용자 입력 메타)뿐이며,
  *   원재료·알레르기·영양·첨가물은 **여기 담긴 서버 값을 쓴다.**
  *   (클라이언트가 보낸 분석값으로 덮어쓰면 라벨을 읽은 근거가 사라진다 —
@@ -81,6 +83,7 @@ if (typeof sweepTimer.unref === 'function') sweepTimer.unref();
  * @param {Object} payload
  * @param {Object} payload.analysis      merged 분석 결과 전체(서버가 만든 값)
  * @param {string|null} [payload.barcode]
+ * @param {string|null} [payload.deviceId] 1단계에서 앱이 보낸 기기 식별자 (세션64c)
  * @param {Object} [payload.ocrResult]   { corrected_text, corrections }
  * @param {number} [payload.avgConfidence]
  * @param {number} [now]
@@ -103,6 +106,13 @@ function putAnalysis(payload, now = Date.now()) {
   store.set(token, {
     analysis: payload.analysis,
     barcode: payload.barcode ?? null,
+    // ★★ 세션64c — 기기 식별자도 **1단계 값이 정본**이다(바코드와 같은 원칙, 제이 확정 2026-08-21).
+    //   `contributions.device_id` 는 ① 24시간 중복 게이트 ② 자동 verified 판정(distinct 3기기)
+    //   ③ `GET /api/contributions/mine`(내 제보 이력)의 **유일한 열쇠**다.
+    //   2단계 본문 값만 믿으면 남의 기기 식별자를 적어 보내는 것만으로 그 세 가지가 전부 왜곡된다
+    //   (중복 게이트 우회 · 1기기가 3기기인 척해 자동 승격 · 남의 이력에 내 제보 끼워넣기).
+    //   토큰은 서버가 발급했고 추측 불가하므로 거기 담긴 값만 쓴다.
+    deviceId: payload.deviceId ?? null,
     ocrResult: payload.ocrResult || null,
     avgConfidence: typeof payload.avgConfidence === 'number' ? payload.avgConfidence : 0,
     createdAt: now,

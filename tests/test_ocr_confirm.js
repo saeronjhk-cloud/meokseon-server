@@ -28,9 +28,26 @@ const assert = require('assert');
 const fs = require('fs');
 const http = require('http');
 const path = require('path');
+const jwt = require('jsonwebtoken');
 
 const SRV = path.join(__dirname, '..');
 const BASELINE = path.join(SRV, 'scripts', 'migrations', '000_baseline.sql');
+// ★★ 세션64c — `/api/ocr/multi-photo` · `/api/ocr/confirm` 이 **로그인 필수**가 됐다
+//   (제이 확정 2026-08-24: 「제보도 로그인 필수」). 이 파일이 지키는 축은 «제품명 확정»이지
+//   «인증»이 아니므로, 모든 요청에 정상 토큰을 실어 종전 계약을 그대로 검증한다.
+//   ⚠ 인증 자체의 회귀(401·위조·만료·anon key·IDOR)는 `tests/test_supabase_auth.js` 가 전담한다.
+const MIG_021 = path.join(SRV, 'scripts', 'migrations', '021_supabase_auth.sql');
+const SECRET = 'test-supabase-jwt-secret-0123456789';
+process.env.SUPABASE_JWT_SECRET = SECRET;
+const TEST_TOKEN = (() => {
+  const now = Math.floor(Date.now() / 1000);
+  return jwt.sign({
+    iss: 'https://lrnuqhpgyuizfggxgxpl.supabase.co/auth/v1',
+    sub: '3f1c2a5e-9b47-4d81-a2f3-6c0e5d8b1a24', aud: 'authenticated',
+    role: 'authenticated', aal: 'aal1', session_id: 'ffffffff-1111-4222-8333-444444444444',
+    email: 'confirm-test@example.com', iat: now, exp: now + 3600,
+  }, SECRET, { algorithm: 'HS256', noTimestamp: true });
+})();
 
 // ══════════════════════════════════════════════════════════════════════════
 // 0. 출력 (기존 테스트 파일들과 같은 형식)
@@ -137,6 +154,7 @@ async function main() {
   const db = new PGlite();
   try {
     await db.exec(fs.readFileSync(BASELINE, 'utf8'));
+    await db.exec(fs.readFileSync(MIG_021, 'utf8'));   // ★ 세션64c — users.supabase_uid
   } catch (e) {
     console.error(`000_baseline.sql 적용 실패 — 픽스처가 아니라 정본 SQL 문제다: ${e.message}`);
     process.exit(1);
@@ -204,7 +222,8 @@ async function main() {
 
   function request(method, urlPath, { headers = {}, body = null } = {}) {
     return new Promise((resolve, reject) => {
-      const h = { ...headers };
+      // ★ 기본으로 정상 토큰을 싣는다(위 머리말 참조). 호출부가 명시하면 그것이 이긴다.
+      const h = { authorization: `Bearer ${TEST_TOKEN}`, ...headers };
       let payload = null;
       if (Buffer.isBuffer(body)) {
         payload = body;

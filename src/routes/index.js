@@ -16,6 +16,9 @@ const ocrRoutes = require('./ocrRoutes');
 const adminRoutes = require('./adminRoutes');
 const userRoutes = require('./userRoutes');
 const scanRoutes = require('./scanRoutes');
+// 세션64c — 「내 제보 이력」. 종전엔 제보 조회가 관리자용 하나뿐이라
+//   소비자가 자기 제보 결과를 볼 방법이 «없었다»(앱은 알려주겠다고 약속만 했다).
+const contributionRoutes = require('./contributionRoutes');
 
 const router = express.Router();
 
@@ -25,5 +28,6 @@ router.use('/ocr', ocrRoutes);
 router.use('/admin', adminRoutes);
 router.use('/users', userRoutes);
 router.use('/scans', scanRoutes);
+router.use('/contributions', contributionRoutes);
 
 module.exports = router;

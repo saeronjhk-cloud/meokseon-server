@@ -3,47 +3,57 @@
 //         + IP/pulse/cursor_prompts/03_user_routes.md §4
 //
 // 실행: cross-env NODE_ENV=test node tests/test_user_routes.js
-// 방식: minimal express app + http 모듈 + mock pg(require.cache inject) + firebase-admin v12 monkey-patch.
+// 방식: minimal express app + http 모듈 + mock pg(require.cache inject) + **진짜 Supabase JWT**.
+//
+// ★★ 세션64c — Firebase → Supabase 인증 전환(제이 확정 2026-08-24).
+//   종전에는 `admin.auth().verifyIdToken` 을 monkey-patch 했다. 이제는 목업이 «필요 없다» —
+//   HS256 서명은 비밀만 있으면 테스트에서 진짜로 만들 수 있고, 그러면
+//   **검증이 실제로 도는지**까지 함께 확인된다(목업은 그걸 못 본다).
+//   · 정상 토큰  = SUPABASE_JWT_SECRET 으로 서명
+//   · 무효 토큰  = 다른 비밀로 서명   · 만료 토큰 = exp 를 과거로
+//   · 오류 코드  = AUTH_REQUIRED → **AUTH_REQUIRED** · AUTH_INVALID → **AUTH_INVALID**
 
 const assert = require('assert');
 const http = require('http');
 const path = require('path');
 
 // ============================================================
-// 1. firebase-admin v12 monkey-patch (01번 학습 — Object.defineProperty 필요)
+// 1. Supabase JWT — 목업이 아니라 «진짜 토큰»을 만든다
 // ============================================================
-const admin = require('firebase-admin');
+const jwt = require('jsonwebtoken');
 
-let mockDecoded = null;
-let mockShouldThrow = false;
-let mockShouldDeleteUserThrow = false;
-const deleteUserCalls = [];
+const SB_SECRET = 'test-supabase-jwt-secret-0123456789';
+const SB_WRONG_SECRET = 'someone-elses-secret-9876543210';
+process.env.SUPABASE_JWT_SECRET = SB_SECRET;
 
-Object.defineProperty(admin, 'auth', {
-    value: function () {
-        return {
-            verifyIdToken: async (_token) => {
-                if (mockShouldThrow) throw new Error('mock invalid token');
-                return mockDecoded;
-            },
-            deleteUser: async (uid) => {
-                deleteUserCalls.push(uid);
-                if (mockShouldDeleteUserThrow) throw new Error('mock firebase delete failure');
-            },
-        };
-    },
-    writable: true,
-    configurable: true,
-});
+/** 지금 로그인한 사람. Firebase 판의 `mockDecoded` 자리를 대신한다. */
+let currentIdentity = null;
+/** 'invalid'(다른 비밀로 서명) | 'expired'(exp 과거) | null(정상) */
+let tokenDefect = null;
 
-// ============================================================
-// 2. NODE_ENV=test 분기 + initFirebase
-// ============================================================
-process.env.FIREBASE_SERVICE_ACCOUNT_JSON = JSON.stringify({
-    type: 'service_account',
-    project_id: 'test',
-});
-require('../src/config/firebase').initFirebase();
+/**
+ * 실제 Supabase access token 과 같은 클레임 구조로 서명한다.
+ * 근거: `@supabase/auth-js` types.d.ts:1622 RequiredClaims
+ *       { iss, sub, aud, exp, iat, role, aal, session_id } — **`sub` 가 user id** 이고
+ *       `email` 은 «선택» 클레임이다(:1641).
+ */
+function mintToken() {
+    const now = Math.floor(Date.now() / 1000);
+    const id = currentIdentity || { uid: 'unknown', email: null };
+    const expired = tokenDefect === 'expired';
+    return jwt.sign({
+        iss: 'https://lrnuqhpgyuizfggxgxpl.supabase.co/auth/v1',
+        sub: id.uid,
+        aud: 'authenticated',
+        role: 'authenticated',
+        aal: 'aal1',
+        session_id: 'ffffffff-1111-4222-8333-444444444444',
+        email: id.email || undefined,
+        iat: expired ? now - 7200 : now,
+        exp: expired ? now - 3600 : now + 3600,
+    }, tokenDefect === 'invalid' ? SB_WRONG_SECRET : SB_SECRET,
+    { algorithm: 'HS256', noTimestamp: true });
+}
 
 // ============================================================
 // 3. Mock pg client + database 모듈 — require.cache inject
@@ -63,7 +73,6 @@ function resetState() {
     state.usersById.clear();
     state.pulseConsents.length = 0;
     state.nextUserId = 1;
-    deleteUserCalls.length = 0;
 }
 
 async function executeMockQuery(sql, params = []) {
@@ -74,7 +83,7 @@ async function executeMockQuery(sql, params = []) {
     if (/^COMMIT/i.test(normalized)) return { rows: [] };
     if (/^ROLLBACK/i.test(normalized)) return { rows: [] };
 
-    // POST /me UPSERT: INSERT INTO users ... ON CONFLICT (firebase_uid) DO NOTHING RETURNING user_id
+    // POST /me UPSERT: INSERT INTO users ... ON CONFLICT (supabase_uid) DO NOTHING RETURNING user_id
     if (/INSERT INTO users.*ON CONFLICT/i.test(normalized)) {
         const [uid, email, display_name, profile_type] = params;
         if (state.usersByUid.has(uid)) {
@@ -83,7 +92,7 @@ async function executeMockQuery(sql, params = []) {
         const userId = state.nextUserId++;
         const row = {
             user_id: userId,
-            firebase_uid: uid,
+            supabase_uid: uid,
             email: email || null,
             display_name: display_name || null,
             profile_type: profile_type || 'adult',
@@ -101,15 +110,15 @@ async function executeMockQuery(sql, params = []) {
         return { rows: row ? [{ user_id: row.user_id }] : [] };
     }
 
-    // SELECT user_id FROM users WHERE firebase_uid = $1 (ON CONFLICT 폴백 / grant·revoke 핸들러)
-    if (/SELECT user_id FROM users WHERE firebase_uid/i.test(normalized)) {
+    // SELECT user_id FROM users WHERE supabase_uid = $1 (ON CONFLICT 폴백 / grant·revoke 핸들러)
+    if (/SELECT user_id FROM users WHERE supabase_uid/i.test(normalized)) {
         const uid = params[0];
         const row = state.usersByUid.get(uid);
         return { rows: row ? [{ user_id: row.user_id }] : [] };
     }
 
-    // SELECT * FROM users WHERE firebase_uid = $1 (GET /me)
-    if (/SELECT \* FROM users WHERE firebase_uid/i.test(normalized)) {
+    // SELECT * FROM users WHERE supabase_uid = $1 (GET /me)
+    if (/SELECT \* FROM users WHERE supabase_uid/i.test(normalized)) {
         const uid = params[0];
         const row = state.usersByUid.get(uid);
         return { rows: row ? [row] : [] };
@@ -132,8 +141,8 @@ async function executeMockQuery(sql, params = []) {
         return { rows: [] };
     }
 
-    // PATCH /me — UPDATE users SET ... WHERE firebase_uid = $N RETURNING *
-    if (/UPDATE users SET .* WHERE firebase_uid/i.test(normalized) && /RETURNING/i.test(normalized)) {
+    // PATCH /me — UPDATE users SET ... WHERE supabase_uid = $N RETURNING *
+    if (/UPDATE users SET .* WHERE supabase_uid/i.test(normalized) && /RETURNING/i.test(normalized)) {
         const uid = params[params.length - 1];
         const row = state.usersByUid.get(uid);
         if (!row) return { rows: [] };
@@ -172,7 +181,7 @@ async function executeMockQuery(sql, params = []) {
         const row = state.usersById.get(userId);
         if (row) {
             state.usersById.delete(userId);
-            state.usersByUid.delete(row.firebase_uid);
+            state.usersByUid.delete(row.supabase_uid);
         }
         return { rows: [] };
     }
@@ -244,6 +253,12 @@ function request(method, urlPath, headers = {}, body = null) {
     return new Promise((resolve, reject) => {
         const port = server.address().port;
         const reqHeaders = { ...headers };
+        // ★ 테스트가 적어 둔 `Bearer <아무거나>` 를 **실제 서명 토큰**으로 갈아 넣는다.
+        //   (현재 신원 currentIdentity + 결함 tokenDefect 로 매번 새로 서명한다.)
+        //   `authorization` 키가 아예 «없는» 케이스는 그대로 둔다 — 그게 401 AUTH_REQUIRED 축이다.
+        if (typeof reqHeaders.authorization === 'string') {
+            reqHeaders.authorization = `Bearer ${mintToken()}`;
+        }
         let bodyStr = null;
         if (body !== null) {
             bodyStr = JSON.stringify(body);
@@ -298,8 +313,8 @@ async function run() {
     // AUTH-001: POST /me, 신규, 동의 없음 → 201 created
     await record('[1/7] AUTH-001 POST /me, 신규, 동의 안 함 → 201 + meta.created=true', async () => {
         resetState();
-        mockShouldThrow = false;
-        mockDecoded = { uid: 'uid_001', email: 'a@b.com', name: '제이' };
+        tokenDefect = null;
+        currentIdentity = { uid: 'uid_001', email: 'a@b.com' };
 
         const res = await request(
             'POST',
@@ -311,7 +326,7 @@ async function run() {
         assert.strictEqual(res.status, 201, `status should be 201, got ${res.status}`);
         assert.strictEqual(res.body.success, true);
         assert.strictEqual(res.body.meta.created, true);
-        assert.strictEqual(res.body.data.firebase_uid, 'uid_001');
+        assert.strictEqual(res.body.data.supabase_uid, 'uid_001');
         assert.strictEqual(state.usersByUid.size, 1);
         assert.strictEqual(state.pulseConsents.length, 0, 'no consent recorded');
     });
@@ -319,8 +334,8 @@ async function run() {
     // AUTH-002: POST /me, 신규, v2 동의 → 201 + pulse_consents 1건(grant)
     await record('[2/7] AUTH-002 POST /me, 신규, v2 동의 → 201 + grant 1건', async () => {
         resetState();
-        mockShouldThrow = false;
-        mockDecoded = { uid: 'uid_002', email: 'b@c.com', name: '비' };
+        tokenDefect = null;
+        currentIdentity = { uid: 'uid_002', email: 'b@c.com' };
 
         const res = await request(
             'POST',
@@ -343,8 +358,8 @@ async function run() {
     // AUTH-003: 기존 사용자 재호출 → 200 + meta.created=false
     await record('[3/7] AUTH-003 POST /me, 기존 사용자 재호출 → 200 + created=false', async () => {
         resetState();
-        mockShouldThrow = false;
-        mockDecoded = { uid: 'uid_003', email: 'c@d.com', name: '씨' };
+        tokenDefect = null;
+        currentIdentity = { uid: 'uid_003', email: 'c@d.com' };
 
         const res1 = await request(
             'POST',
@@ -369,8 +384,8 @@ async function run() {
     // AUTH-004: 동시 호출 (Promise.all) → ON CONFLICT 로 1건만 INSERT, 양쪽 모두 200/201
     await record('[4/7] AUTH-004 POST /me, 동시 호출 (race) → users 1건, 양쪽 정상', async () => {
         resetState();
-        mockShouldThrow = false;
-        mockDecoded = { uid: 'uid_004', email: 'd@e.com', name: '디' };
+        tokenDefect = null;
+        currentIdentity = { uid: 'uid_004', email: 'd@e.com' };
 
         const [res1, res2] = await Promise.all([
             request('POST', '/api/users/me', { authorization: 'Bearer t1' }, {}),
@@ -393,20 +408,20 @@ async function run() {
         assert.strictEqual(state.usersByUid.size, 1);
     });
 
-    // AUTH-005: 토큰 없음 → 401 NO_TOKEN
-    await record('[5/7] AUTH-005 POST /me, Authorization 헤더 없음 → 401 NO_TOKEN', async () => {
+    // AUTH-005: 토큰 없음 → 401 AUTH_REQUIRED
+    await record('[5/7] AUTH-005 POST /me, Authorization 헤더 없음 → 401 AUTH_REQUIRED', async () => {
         resetState();
         const res = await request('POST', '/api/users/me', {}, {});
         assert.strictEqual(res.status, 401);
         assert.strictEqual(res.body.success, false);
-        assert.strictEqual(res.body.error.code, 'NO_TOKEN');
+        assert.strictEqual(res.body.error.code, 'AUTH_REQUIRED');
         assert.strictEqual(state.usersByUid.size, 0, 'no user created on auth failure');
     });
 
-    // AUTH-006: 무효 토큰 (verifyIdToken throw) → 401 INVALID_TOKEN
-    await record('[6/7] AUTH-006 POST /me, 무효 토큰 → 401 INVALID_TOKEN', async () => {
+    // AUTH-006: 무효 토큰 (verifyIdToken throw) → 401 AUTH_INVALID
+    await record('[6/7] AUTH-006 POST /me, 무효 토큰 → 401 AUTH_INVALID', async () => {
         resetState();
-        mockShouldThrow = true;
+        tokenDefect = 'invalid';
 
         const res = await request(
             'POST',
@@ -416,17 +431,20 @@ async function run() {
         );
 
         assert.strictEqual(res.status, 401);
-        assert.strictEqual(res.body.error.code, 'INVALID_TOKEN');
+        assert.strictEqual(res.body.error.code, 'AUTH_INVALID');
         assert.strictEqual(state.usersByUid.size, 0);
 
-        mockShouldThrow = false;
+        tokenDefect = null;
     });
 
-    // AUTH-007: 만료 토큰 (verifyIdToken throw, 시나리오상 만료) → 401 INVALID_TOKEN
-    //           Firebase Admin SDK는 만료/무효 모두 verifyIdToken throw로 처리하므로 동일 분기.
-    await record('[7/7] AUTH-007 POST /me, 만료 토큰 → 401 INVALID_TOKEN', async () => {
+    // AUTH-007: 만료 토큰 → 401 AUTH_INVALID
+    // ★ 세션64c — Firebase 판에서는 만료를 «표현할 수 없어» 무효 토큰으로 대신했다
+    //   (Admin SDK 가 둘 다 throw 로 처리했다). 이제는 exp 를 과거로 두어 **진짜 만료 토큰**을
+    //   보낸다. 즉 이 테스트가 「exp 검증이 켜져 있는가」를 실제로 본다.
+    await record('[7/7] AUTH-007 POST /me, 만료 토큰 → 401 AUTH_INVALID', async () => {
         resetState();
-        mockShouldThrow = true;
+        currentIdentity = { uid: 'uid_007', email: 'g@h.com' };
+        tokenDefect = 'expired';
 
         const res = await request(
             'POST',
@@ -435,10 +453,11 @@ async function run() {
             {}
         );
 
-        assert.strictEqual(res.status, 401);
-        assert.strictEqual(res.body.error.code, 'INVALID_TOKEN');
+        assert.strictEqual(res.status, 401, `만료 토큰이 통과했다 — exp 검증이 꺼졌다: ${res.status}`);
+        assert.strictEqual(res.body.error.code, 'AUTH_INVALID');
+        assert.strictEqual(state.usersByUid.size, 0, '401 인데 users 행이 생겼다');
 
-        mockShouldThrow = false;
+        tokenDefect = null;
     });
 
     console.log(`\n결과: ${passed}/${passed + failed} 통과, ${failed} 실패`);

@@ -3,7 +3,11 @@
 //         + IP/pulse/cursor_prompts/04_scan_routes.md §4
 //
 // 실행: cross-env NODE_ENV=test node tests/test_scan_routes.js
-// 방식: 03번 패턴 재사용 — minimal express app + http + mock pg(require.cache inject) + firebase-admin v12 monkey-patch.
+// 방식: 03번 패턴 재사용 — minimal express app + http + mock pg(require.cache inject) + **진짜 Supabase JWT**.
+//
+// ★★ 세션64c — Firebase → Supabase 인증 전환(제이 확정 2026-08-24).
+//   목업(verifyIdToken 갈아끼우기)을 걷어냈다. HS256 서명은 비밀만 있으면 테스트에서
+//   진짜로 만들 수 있어서, 「검증이 실제로 도는가」까지 함께 확인된다.
 //
 // 핵심 검증: pulse_eligible 스냅샷 정책 (스캔 시점 동의 상태가 BOOLEAN 으로 박힘, 이후 동의 변경에 불변).
 
@@ -12,41 +16,42 @@ const http = require('http');
 const path = require('path');
 
 // ============================================================
-// 1. firebase-admin v12 monkey-patch (01번 학습)
+// 1. Supabase JWT — 목업이 아니라 «진짜 토큰»을 만든다
 // ============================================================
-const admin = require('firebase-admin');
+const jwt = require('jsonwebtoken');
 
-let mockDecoded = null;
-let mockShouldThrow = false;
+const SB_SECRET = 'test-supabase-jwt-secret-0123456789';
+process.env.SUPABASE_JWT_SECRET = SB_SECRET;
 
-Object.defineProperty(admin, 'auth', {
-    value: function () {
-        return {
-            verifyIdToken: async (_token) => {
-                if (mockShouldThrow) throw new Error('mock invalid token');
-                return mockDecoded;
-            },
-        };
-    },
-    writable: true,
-    configurable: true,
-});
+/** 지금 로그인한 사람. Firebase 판의 `mockDecoded` 자리를 대신한다. */
+let currentIdentity = null;
 
-// ============================================================
-// 2. NODE_ENV=test 분기 + initFirebase
-// ============================================================
-process.env.FIREBASE_SERVICE_ACCOUNT_JSON = JSON.stringify({
-    type: 'service_account',
-    project_id: 'test',
-});
-require('../src/config/firebase').initFirebase();
+/**
+ * 실제 Supabase access token 과 같은 클레임 구조로 서명한다.
+ * 근거: `@supabase/auth-js` types.d.ts:1622 RequiredClaims — **`sub` 가 user id** 다.
+ */
+function mintToken() {
+    const now = Math.floor(Date.now() / 1000);
+    const id = currentIdentity || { uid: 'unknown', email: null };
+    return jwt.sign({
+        iss: 'https://lrnuqhpgyuizfggxgxpl.supabase.co/auth/v1',
+        sub: id.uid,
+        aud: 'authenticated',
+        role: 'authenticated',
+        aal: 'aal1',
+        session_id: 'ffffffff-1111-4222-8333-444444444444',
+        email: id.email || undefined,
+        iat: now,
+        exp: now + 3600,
+    }, SB_SECRET, { algorithm: 'HS256', noTimestamp: true });
+}
 
 // ============================================================
 // 3. Mock pg client + database 모듈 — require.cache inject (03번 패턴)
 // ============================================================
 const state = {
     calls: [],
-    // firebase_uid → { user_id, pulse_consent_version }
+    // supabase_uid → { user_id, pulse_consent_version }
     usersByUid: new Map(),
     // scan_history rows (INSERT 순서대로)
     scans: [],
@@ -64,8 +69,8 @@ async function executeMockQuery(sql, params = []) {
     const normalized = sql.trim().replace(/\s+/g, ' ');
     state.calls.push({ sql: normalized, params: params || [] });
 
-    // POST /scans 1) SELECT user_id, pulse_consent_version FROM users WHERE firebase_uid
-    if (/SELECT user_id, pulse_consent_version FROM users WHERE firebase_uid/i.test(normalized)) {
+    // POST /scans 1) SELECT user_id, pulse_consent_version FROM users WHERE supabase_uid
+    if (/SELECT user_id, pulse_consent_version FROM users WHERE supabase_uid/i.test(normalized)) {
         const uid = params[0];
         const user = state.usersByUid.get(uid);
         if (!user) return { rows: [] };
@@ -77,8 +82,8 @@ async function executeMockQuery(sql, params = []) {
         };
     }
 
-    // GET /scans 1) SELECT user_id FROM users WHERE firebase_uid
-    if (/SELECT user_id FROM users WHERE firebase_uid/i.test(normalized)) {
+    // GET /scans 1) SELECT user_id FROM users WHERE supabase_uid
+    if (/SELECT user_id FROM users WHERE supabase_uid/i.test(normalized)) {
         const uid = params[0];
         const user = state.usersByUid.get(uid);
         return { rows: user ? [{ user_id: user.user_id }] : [] };
@@ -189,6 +194,11 @@ function request(method, urlPath, headers = {}, body = null) {
     return new Promise((resolve, reject) => {
         const port = server.address().port;
         const reqHeaders = { ...headers };
+        // ★ 테스트가 적어 둔 `Bearer <아무거나>` 를 **실제 서명 토큰**으로 갈아 넣는다.
+        //   `authorization` 키가 아예 «없는» 케이스는 그대로 둔다(401 축).
+        if (typeof reqHeaders.authorization === 'string') {
+            reqHeaders.authorization = `Bearer ${mintToken()}`;
+        }
         let bodyStr = null;
         if (body !== null) {
             bodyStr = JSON.stringify(body);
@@ -248,8 +258,7 @@ async function run() {
     // SCAN-001: 동의 사용자(v2) 스캔 → pulse_eligible=TRUE
     await record('[1/4] SCAN-001 동의 사용자(v2) 스캔 → pulse_eligible=TRUE, 201', async () => {
         resetState();
-        mockShouldThrow = false;
-        mockDecoded = { uid: 'uid_001', email: 'a@b.com', name: '동의자' };
+        currentIdentity = { uid: 'uid_001', email: 'a@b.com' };
         seedUser('uid_001', 1, 'v2');
 
         const res = await request(
@@ -272,8 +281,7 @@ async function run() {
     // SCAN-002: 미동의 사용자(NULL) 스캔 → pulse_eligible=FALSE
     await record('[2/4] SCAN-002 미동의 사용자(NULL) 스캔 → pulse_eligible=FALSE, 201', async () => {
         resetState();
-        mockShouldThrow = false;
-        mockDecoded = { uid: 'uid_002', email: 'b@c.com', name: '미동의자' };
+        currentIdentity = { uid: 'uid_002', email: 'b@c.com' };
         seedUser('uid_002', 2, null);
 
         const res = await request(
@@ -292,8 +300,7 @@ async function run() {
     // SCAN-003: 동의→스캔(TRUE)→철회→스캔(FALSE), 첫 스캔은 그대로 TRUE (★ 스냅샷 정책)
     await record('[3/4] SCAN-003 동의→스캔→철회→스캔, 스냅샷 불변', async () => {
         resetState();
-        mockShouldThrow = false;
-        mockDecoded = { uid: 'uid_003', email: 'c@d.com', name: '토글러' };
+        currentIdentity = { uid: 'uid_003', email: 'c@d.com' };
 
         // 1) 동의 상태로 스캔
         seedUser('uid_003', 3, 'v2');
@@ -333,8 +340,7 @@ async function run() {
     // SCAN-004: users 테이블에 사용자 row 없음 → 404 USER_NOT_FOUND
     await record('[4/4] SCAN-004 users row 없음 → 404 USER_NOT_FOUND', async () => {
         resetState();
-        mockShouldThrow = false;
-        mockDecoded = { uid: 'uid_orphan', email: 'x@y.com', name: '미가입' };
+        currentIdentity = { uid: 'uid_orphan', email: 'x@y.com' };
         // seedUser 호출 안 함 → DB 에 users row 없음
 
         const res = await request(

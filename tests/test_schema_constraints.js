@@ -179,6 +179,8 @@ async function main() {
   await db.query('SELECT 1');
   await db.exec(fs.readFileSync(path.join(MIG, '000_baseline.sql'), 'utf8'));
   await db.exec(fs.readFileSync(path.join(MIG, '000b_seed_config.sql'), 'utf8'));
+  // ★ 세션64c — 인증 전환 마이그레이션. userRoutes 가 users.supabase_uid 를 쓴다.
+  await db.exec(fs.readFileSync(path.join(MIG, '021_supabase_auth.sql'), 'utf8'));
   console.log(`pglite 부팅 + baseline 적용 ${Date.now() - t0}ms`);
 
   PID = (await db.query(
@@ -440,9 +442,16 @@ async function main() {
   //   EXPLAIN 은 이 문장들을 「계획은 선다」로만 확인했다. NOT NULL·DEFAULT 부재·타입은
   //   실제로 실행해야만 드러난다.
   const DML = [
-    ['userRoutes:36 users upsert',
-      `INSERT INTO users (firebase_uid, email, display_name, profile_type)
-       VALUES ('dml-uid','a@b.c','n','adult') ON CONFLICT (firebase_uid) DO NOTHING RETURNING user_id`, []],
+    // ★ 세션64c — Firebase → Supabase 전환으로 이 문장이 바뀌었다(같은 파일, 같은 자리).
+    ['userRoutes users upsert (supabase_uid)',
+      `INSERT INTO users (supabase_uid, email, display_name, profile_type)
+       VALUES ('dml-uid','a@b.c','n','adult') ON CONFLICT (supabase_uid) DO NOTHING RETURNING user_id`, []],
+    // ★ authUserService.getOrCreateUserId — 제보 경로가 매 요청 부르는 UPSERT.
+    //   `DO UPDATE` 는 `DO NOTHING` 과 달리 **충돌해도 RETURNING 이 행을 준다**. 그 성립을 못 박는다.
+    ['authUserService getOrCreateUserId upsert',
+      `INSERT INTO users (supabase_uid, email) VALUES ('dml-uid2','x@y.z')
+       ON CONFLICT (supabase_uid) DO UPDATE SET email = COALESCE(EXCLUDED.email, users.email)
+       RETURNING user_id`, []],
     ['crowdsourceService:263 products insert',
       `INSERT INTO products (barcode, product_name, manufacturer, brand, food_type, serving_size, serving_unit,
                              total_content, content_unit, servings_per_container, data_source, verification, verify_count)
@@ -605,18 +614,22 @@ async function main() {
   // ★ pulse_consents INSERT 가 회원가입과 **같은 트랜잭션** 안이라는 구조는 그대로다.
   //   그래서 「UA 를 잘랐는가」가 곧 「가입이 되는가」다.
   {
-    const admin = require('firebase-admin');
-    let CURRENT_UID = 'ua-test-uid';
-    Object.defineProperty(admin, 'auth', {
-      value: () => ({
-        verifyIdToken: async () => ({ uid: CURRENT_UID, email: `${CURRENT_UID}@t.c`, name: 'UA' }),
-      }),
-      writable: true,
-      configurable: true,
-    });
-    process.env.FIREBASE_SERVICE_ACCOUNT_JSON = process.env.FIREBASE_SERVICE_ACCOUNT_JSON
-      || JSON.stringify({ type: 'service_account', project_id: 'test' });
-    require(path.join(ROOT, 'src', 'config', 'firebase')).initFirebase();
+    // ★★ 세션64c — Firebase 목업을 걷어내고 **진짜 Supabase 토큰**을 만들어 보낸다.
+    //   목업(verifyIdToken 을 갈아끼우는 것)은 「검증이 실제로 도는가」를 못 본다.
+    //   HS256 서명은 비밀만 있으면 테스트에서 진짜로 만들 수 있으므로 목업이 필요 없다.
+    const jwt = require('jsonwebtoken');
+    const SB_SECRET = 'test-supabase-jwt-secret-0123456789';
+    process.env.SUPABASE_JWT_SECRET = SB_SECRET;
+    /** uid 별 실제 access token. `sub` 가 user id 다(@supabase/auth-js types.d.ts:1622). */
+    const tokenFor = (uid) => {
+      const now = Math.floor(Date.now() / 1000);
+      return jwt.sign({
+        iss: 'https://lrnuqhpgyuizfggxgxpl.supabase.co/auth/v1',
+        sub: uid, aud: 'authenticated', role: 'authenticated', aal: 'aal1',
+        session_id: 'ffffffff-1111-4222-8333-444444444444',
+        email: `${uid}@t.c`, iat: now, exp: now + 3600,
+      }, SB_SECRET, { algorithm: 'HS256', noTimestamp: true });
+    };
 
     const app = require(path.join(ROOT, 'src', 'app.js'));
     const server = http.createServer(app);
@@ -624,14 +637,13 @@ async function main() {
     const port = server.address().port;
 
     const post = (uid, body, ua) => new Promise((resolve) => {
-      CURRENT_UID = uid;
       const payload = JSON.stringify(body);
       const req = http.request({
         host: '127.0.0.1', port, path: '/api/users/me', method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Content-Length': Buffer.byteLength(payload),
-          Authorization: 'Bearer faketoken',
+          Authorization: `Bearer ${tokenFor(uid)}`,
           'User-Agent': ua,
         },
       }, (res) => {
@@ -642,9 +654,9 @@ async function main() {
       req.end(payload);
     });
 
-    /** firebase_uid 로 커밋된 users / pulse_consents 실상태를 읽는다. */
+    /** supabase_uid 로 커밋된 users / pulse_consents 실상태를 읽는다. */
     async function stateOf(uid) {
-      const u = (await db.query('SELECT user_id, pulse_consent_version FROM users WHERE firebase_uid = $1', [uid])).rows;
+      const u = (await db.query('SELECT user_id, pulse_consent_version FROM users WHERE supabase_uid = $1', [uid])).rows;
       if (u.length === 0) return { user: null, consents: [] };
       const c = (await db.query(
         `SELECT consent_version, event_type, user_agent, length(user_agent) AS ua_len

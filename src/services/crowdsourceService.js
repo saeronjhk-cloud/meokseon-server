@@ -22,6 +22,11 @@ const { resolveServings, totalToServingDivisor } = require('./servingResolver');
 const { mergeAndApply, AUTO_VERIFY_DISTINCT_DEVICES } = require('./mergeService');
 // ★ 세션46 중대4 — 저장 경계도 응답과 **같은 함수**로 3분리를 만든다. 규칙을 두 번 적지 않는다.
 const { reconcileAllergens, flattenAllergensV2 } = require('./ocrParser');
+// ★ 세션65 C1(`U64-3`) — 첨가물 저장집합(합집합) 규칙은 **한 파일**에만 있다.
+//   경로 ②(`mergeService`)가 같은 함수를 부른다. 한쪽만 고치면 경로 간 결과가 갈린다.
+const { upsertProductAdditives, countDetected } = require('./additiveResolver');
+// ★ 세션65 C2-a — 022(`products.additive_detected_count`) 배포순서 방어 판정에만 쓴다.
+const productModel = require('../models/productModel');
 
 // 최소 OCR 신뢰도 (Gemini 피드백: 0.5→0.7 상향)
 const MIN_CONFIDENCE = 0.7;
@@ -385,6 +390,17 @@ async function saveOcrContribution(params) {
     }
   }
 
+  // ★★ 세션65 C2-a — 022 미적용 DB 방어. **반드시 트랜잭션 «밖»**에서 판정한다.
+  //   `hasAdditiveDetectedCountColumn()` 은 내부에서 `db.query`(= `pool.query`)를 쓴다.
+  //   트랜잭션 client 를 쥔 채 부르면 저장 1건이 순간적으로 **커넥션 2개**를 점유하고,
+  //   풀이 얕으면 전원이 두 번째 커넥션을 기다리다 동시에 실패한다(세션47 중대3 과 동일).
+  const canWriteDetectedCount = await productModel.hasAdditiveDetectedCountColumn();
+
+  // ★★★ 세션65 C2-a — 「검출 총 개수」는 **마스터 조인 «전»** 의 수다.
+  //   `analysis.additives` = `identifyAdditives` 결과 = 제보 직후 «화면에 보인» 첨가물.
+  //   배열이 아니면(구버전 호출부) `null` = 「모른다」. 0 으로 대체하지 않는다.
+  const additiveDetectedTotal = countDetected(analysis.additives);
+
   // ── DB 저장 (트랜잭션) ──
   return await db.transaction(async (client) => {
     // 사용자 입력 → DB 컬럼 정리
@@ -505,28 +521,46 @@ async function saveOcrContribution(params) {
           JSON.stringify(ingredientNames),  // production 은 jsonb 라 JSON 문자열로
         ]
       );
+    }
 
-      // ── 첨가물 자동 매칭 (additives 사전과 비교) ──
-      // 원재료 이름이 additives 사전의 name_ko 와 정확히 일치하면 매칭.
-      // production additives 에 is_active 컬럼 없음 (MFRAS v1.0 스키마라 비활성 개념 부재).
-      // detected_name·confidence 는 006 마이그레이션으로 추가됨.
-      if (ingredientNames.length > 0) {
-        const matchResult = await client.query(
-          `SELECT additive_id, name_ko
-           FROM additives
-           WHERE name_ko = ANY($1::text[])`,
-          [ingredientNames]
-        );
+    // ── 첨가물 자동 매칭 (additives 마스터와 비교) ──
+    //
+    // ★★★ 세션65 C1 (`U64-3`) — 종전 코드는 여기서 `ingredientNames` **하나만**
+    //   `= ANY()` 완전일치로 조인했다. 실측 소실률 **66.1%**(189 중 125).
+    //     · `identifyAdditives`(= `analysis.additives`)는 부분매칭 + `detail` 스캔까지 해서
+    //       「산도조절제(인산나트륨)」에서 `인산나트륨` 을 뽑는데,
+    //       저장은 그 결과를 **한 번도 쓰지 않고** `산도조절제` 를 완전일치로 찾았다.
+    //     · 사라진 이름 47종 중 **37종(78.7%)이 마스터에 이미 있었다.**
+    //       별칭 사전을 아무리 보강해도 안 풀리는 구조 결함이었다.
+    //   → 저장집합을 **두 축의 합집합**으로 넓힌다(계약 C1). 규칙 본문은
+    //     `additiveResolver.js` 한 곳에 있고 `mergeService` 가 같은 함수를 부른다.
+    //
+    // ★ 위 `if (ingredientNames.length > 0 || productInfo.ingredients_text)` **밖**으로 뺐다.
+    //   종전에는 원재료 INSERT 가 일어날 때만 첨가물 매칭이 돌았다. 합집합에서는
+    //   `analysis.additives` 만 있고 `ingredients` 가 비는 입력도 저장 대상이다.
+    //   (`ingredientNames` 가 있으면 위 조건도 참이므로 기존 경로는 그대로다.)
+    //
+    // ⚠ `detected_name` 에는 **마스터 이름이 아니라 라벨 원문**이 들어간다(계약 C1).
+    // ⚠ `ON CONFLICT (product_id, additive_id) DO NOTHING` 은 유지한다(계약 C1).
+    await upsertProductAdditives(client, productId, {
+      detectedAdditives: analysis.additives,
+      ingredientNames,
+      confidence: Math.round(avgConfidence * 100),
+    });
 
-        for (const row of matchResult.rows) {
-          await client.query(
-            `INSERT INTO product_additives (product_id, additive_id, detected_name, confidence)
-             VALUES ($1, $2, $3, $4)
-             ON CONFLICT (product_id, additive_id) DO NOTHING`,
-            [productId, row.additive_id, row.name_ko, Math.round(avgConfidence * 100)]
-          );
-        }
-      }
+    // ── 검출 총 개수 기록 (`U65-2` · 계약 C2-a) ──
+    //   ★ `GREATEST` 로 **내려가지 않게** 한다. 같은 바코드에 두 번째 제보가 흐린 사진이라
+    //     검출이 3종밖에 안 됐다고 해서, 첫 제보가 남긴 11종을 3으로 덮으면
+    //     `unlisted` 가 줄어든다 = **경고를 지우는 방향**이다.
+    //     (Postgres 의 GREATEST 는 NULL 을 무시하지만, COALESCE 로 명시해 둔다.)
+    //   ★ 컬럼이 없으면(022 미적용) 아무것도 하지 않는다 — 위에서 판정했다.
+    if (canWriteDetectedCount && additiveDetectedTotal !== null) {
+      await client.query(
+        `UPDATE products
+            SET additive_detected_count = GREATEST(COALESCE(additive_detected_count, 0), $2)
+          WHERE product_id = $1`,
+        [productId, additiveDetectedTotal]
+      );
     }
 
     // 검증 상태 결정
@@ -546,11 +580,31 @@ async function saveOcrContribution(params) {
     }
 
     // verify_count 증가 + 크라우드소싱 검증
+    //
+    // ★★★ 세션65 C3 (`U64-4`) — **경로 ①은 `partial` 까지만 올린다.**
+    //   지웠던 줄(원문):
+    //     WHEN verification = 'partial' AND verify_count >= 1 THEN 'verified'::verification_status
+    //
+    //   왜 지웠나 — 이 줄에는 **기기 구분이 없다.**
+    //     · 24시간 중복 게이트는 `if (deviceId && productId)` 인데, **신규 제품의 첫 저장은
+    //       `productId` 가 null** 이라 애초에 걸리지 않는다.
+    //     · 앱은 `device_id` 를 아예 보내지 않는다(`U64-5`) — 웹 경로에서는 그 게이트가
+    //       **절대** 발동하지 않는다.
+    //   ⇒ 한 사람이 한 기기로 25시간 간격 사진 2장을 올리면
+    //     `unverified → partial → verified` 다. 「다른 사용자가 확인했다」는 배지가
+    //     **혼자서** 달린다. 「검증됨」은 소비자가 가장 강하게 믿는 신호다.
+    //
+    //   ⇒ `verified` 로의 전이는 **`mergeService.mergeAndApply` 한 곳**만 한다.
+    //     그쪽은 `distinctDeviceCount >= AUTO_VERIFY_DISTINCT_DEVICES(3)` 로
+    //     **서로 다른 기기 수**를 실제로 센다.
+    //
+    //   ⚠ 되살리려는 사람에게 — 되살리기 전에 ① 앱이 `device_id` 를 보내는지,
+    //     ② 24시간 게이트가 신규 제품 첫 저장에도 걸리는지 **둘 다** 실측할 것.
+    //     둘 중 하나라도 아니면 이 줄은 자작 승격 통로다.
     await client.query(
       `UPDATE products SET
          verification = CASE
            WHEN verification = 'unverified' THEN $2::verification_status
-           WHEN verification = 'partial' AND verify_count >= 1 THEN 'verified'::verification_status
            ELSE verification
          END,
          verify_count = verify_count + 1,

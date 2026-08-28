@@ -80,6 +80,7 @@ jobs:
             src/services/productService.js \
             src/services/allergenName.js \
             src/services/crowdsourceService.js \
+            src/services/additiveResolver.js \
             src/services/analysisCache.js \
             src/services/authUserService.js \
             src/config/supabaseJwks.js \
@@ -104,7 +105,10 @@ jobs:
             tests/test_path_parity.js \
             tests/test_allergen_contract.js \
             tests/test_schema_constraints.js \
-            tests/test_ocr_confirm.js
+            tests/test_ocr_confirm.js \
+            tests/test_additive_union_save.js \
+            tests/test_additive_unlisted.js \
+            tests/test_promotion_rules.js
           do
             node --check "$f"
           done
@@ -188,6 +192,30 @@ jobs:
       # ★ 별도 스텝인 이유: && 로 이으면 어느 것이 빨강인지 안 보인다.
       - name: "test: supabase-auth (인증 통합 · 세션64c)"
         run: npm run test:supabase-auth
+
+      # 세션65 C1 — `U64-3` 첨가물 «합집합» 저장(실측 소실 66.1% · 189 중 125).
+      #   축 A(identifyAdditives)에만 있는 것이 저장되는가 / 축 B(원재료명 완전일치)가 살아 있는가 /
+      #   `detected_name` 이 **라벨 원문**인가(마스터 이름이 아니라) /
+      #   마스터에 없는 검출이 안 들어가는가 / `analysis.additives` 없음·빈배열에서 회귀 없는가 /
+      #   `ON CONFLICT DO NOTHING` 이 유지되는가 / **경로 ②(mergeService)도 같은 합집합인가**.
+      # ★ 별도 스텝인 이유: && 로 이으면 어느 것이 빨강인지 안 보인다.
+      - name: "test: additive-union (첨가물 합집합 저장 · 세션65 C1)"
+        run: npm run test:additive-union
+
+      # 세션65 C2 — `U65-2` 「불러오지 못한 N종」(마이그레이션 022).
+      #   ★ 022 가 `npm run migrate` 체인에 «이어져» 있는가(세션64c gate #19 재현 방지) /
+      #   검출 총 개수가 **마스터 조인 «전»** 인가 / 재제보가 그 값을 깎지 않는가(GREATEST) /
+      #   `unlisted` 를 서버가 계산하는가 / null 인 기존 제품이 0 으로 나가 회귀가 없는가 /
+      #   022 «미적용» DB 에서 500 이 아니라 null·0 인가 / 0 과 null 이 다른 뜻인가.
+      - name: "test: additive-unlisted (불러오지 못한 N종 · 세션65 C2)"
+        run: npm run test:additive-unlisted
+
+      # 세션65 C3 — `U64-4`(자작 verified) · `U64-12`(영양 0개 verified) 승격 규칙.
+      #   경로 ①이 partial 에서 멈추는가 / partial 승격 자체는 살아 있는가 /
+      #   verify_count 가 계속 오르는가 / 경로 ②만 verified 로 가는가 /
+      #   **영양 0개로는 verified 에 못 가는가** / 이상치 disputed · admin_verified 보호.
+      - name: "test: promotion (승격 규칙 단일화 · 세션65 C3)"
+        run: npm run test:promotion
 
       # ⚠ Firebase 미들웨어는 «남겨 두었다» — health-pick 앱의 사용 여부 미확인.
       #   이 스텝이 빨강이면 누군가 firebaseAuth.js 를 지웠거나 깨뜨린 것이다.

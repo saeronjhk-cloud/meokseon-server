@@ -457,6 +457,22 @@ async function getProductAdditives(barcode) {
 
   const additives = await productModel.getAdditives(product.product_id);
 
+  // ★★★ 세션65 C2-b (`U65-2`) — 「불러오지 못한 N종」을 서버가 «계산해서» 내려준다.
+  //
+  //   무엇이 문제였나 (`.tmp/s65/U64-3_재측정_판정.md` §4):
+  //     `total` 은 **저장되어 조회된 개수**다. 즉 서버 응답에는 「원래 몇 개였는지」가
+  //     **아예 들어 있지 않았다.** 앱의 `Math.max(serverTotal, items.length)` 는
+  //     그 값으로는 구조적으로 항상 0 이 되고, 「N종은 상세 정보를 불러오지 못했어요」는
+  //     한 번도 뜬 적이 없다. 66.1% 가 사라지는데 화면은 **저장된 것이 전부인 것처럼** 보였다.
+  //
+  //   ⚠ `total` 의 **이름도 의미도 바꾸지 않는다.** 배포된 앱이 그 키를 읽고 있다.
+  //     새 필드 2개를 «추가»만 한다.
+  //   ⚠ 빼기를 **서버가** 한다. 앱이 다시 계산하지 않는다(계약 C2-b) —
+  //     두 곳에서 같은 규칙을 쓰면 다음 수정 때 한쪽만 고친다.
+  //   ★ `detected_total` 이 null 인 기존 제품(대다수)은 `unlisted = 0` 이라
+  //     화면이 지금과 **완전히 같다.** 회귀가 없다.
+  const detectedTotal = await productModel.getAdditiveDetectedCount(product.product_id);
+
   // 색상 우선순위: v2 mfras_grade > v1 risk_color
   const colorOf = (a) => a.mfras_grade || a.risk_color;
 
@@ -466,6 +482,10 @@ async function getProductAdditives(barcode) {
     additives,
     risk_summary: {
       total: additives.length,
+      // ★신설 = products.additive_detected_count. 모르면 null (0 과 다른 뜻이다).
+      detected_total: detectedTotal,
+      // ★신설 = max(0, detected_total - total). detected_total 이 null 이면 0.
+      unlisted: detectedTotal === null ? 0 : Math.max(0, detectedTotal - additives.length),
       by_color: {
         green: additives.filter(a => colorOf(a) === 'green').length,
         yellow: additives.filter(a => colorOf(a) === 'yellow').length,

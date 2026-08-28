@@ -348,6 +348,70 @@ async function hasEvidenceLevelColumn() {
 /** 테스트에서 캐시를 비운다(마이그레이션 전/후를 한 프로세스에서 검사하기 위함). */
 function _resetEvidenceLevelCache() { _hasEvidenceLevel = null; }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// ★★ 세션65 C2-a — `products.additive_detected_count`(마이그레이션 022) 배포순서 방어
+//
+//   위 `hasEvidenceLevelColumn` 과 **같은 규칙**을 쓴다. 규칙을 다시 발명하지 않는다:
+//     · 성공만 캐싱한다(실패는 null 로 두어 다음 요청에 재판정).
+//     · 컬럼이 없으면 이 컬럼을 **읽지도 쓰지도 않는다.**
+//
+//   ★ 없을 때의 대체값은 `null`(= 모름)이다. `0` 이 아니다.
+//     `0` 으로 대체하면 `unlisted` 가 「검출 0종」으로 계산돼
+//     「사라진 것이 없다」고 **단정**하게 된다 — 그것이 이 축이 고치려는 결함 그 자체다.
+// ─────────────────────────────────────────────────────────────────────────────
+let _hasAdditiveDetectedCount = null;   // null=미확인/재판정필요 · true/false=확인됨
+
+async function hasAdditiveDetectedCountColumn() {
+  if (_hasAdditiveDetectedCount !== null) return _hasAdditiveDetectedCount;
+  try {
+    const r = await db.query(
+      `SELECT 1 FROM information_schema.columns
+       WHERE table_name = 'products' AND column_name = 'additive_detected_count'
+       LIMIT 1`,
+    );
+    _hasAdditiveDetectedCount = r.rows.length > 0;   // ★ 성공했을 때만 캐싱한다
+    return _hasAdditiveDetectedCount;
+  } catch (_) {
+    return false;   // ★ 실패는 캐싱하지 않는다. 이번 요청만 보수적으로 "없다".
+  }
+}
+
+/** 테스트에서 캐시를 비운다(022 전/후를 한 프로세스에서 검사하기 위함). */
+function _resetAdditiveDetectedCountCache() { _hasAdditiveDetectedCount = null; }
+
+/**
+ * 제보 당시 라벨에서 «검출»된 첨가물 총 개수(마스터 조인 «전»). 모르면 null.
+ *
+ * ★ 왜 `findByBarcode` 의 SELECT 에 컬럼을 끼우지 않았나 —
+ *   `findByBarcode` 는 앱에서 **가장 뜨거운 경로**이고, 022 미적용 DB 에서
+ *   그 SELECT 가 42703 을 던지면 **바코드 조회 전건이 500** 이 된다(세션45 치명1 과 같은 형태).
+ *   `/additives` 한 엔드포인트만 쓰는 값이라 그 엔드포인트에서만 1회 더 읽는다.
+ *
+ * @param {number} productId
+ * @returns {Promise<number|null>}
+ */
+async function getAdditiveDetectedCount(productId) {
+  if (!(await hasAdditiveDetectedCountColumn())) return null;
+  try {
+    const r = await db.query(
+      `SELECT additive_detected_count FROM products WHERE product_id = $1`,
+      [productId],
+    );
+    const v = r.rows[0] && r.rows[0].additive_detected_count;
+    if (v === null || v === undefined) return null;
+    const n = Number(v);
+    return Number.isFinite(n) ? n : null;
+  } catch (e) {
+    // 캐시가 true 인데 컬럼이 사라진 경우(022 롤백) — 캐시를 버리고 「모름」으로 낸다.
+    // ★ 여기서 throw 하면 `/additives` 전건이 500 이 된다. 「모름」이 500 보다 낫다.
+    if (e && e.code === UNDEFINED_COLUMN) {
+      _hasAdditiveDetectedCount = null;
+      return null;
+    }
+    throw e;
+  }
+}
+
 function buildAllergenQuery(hasLevel) {
   const levelExpr = hasLevel ? 'evidence_level' : `'contains'::text AS evidence_level`;
   const orderExpr = hasLevel
@@ -587,6 +651,9 @@ module.exports = {
   getAllergensRaw,              // 세션47 — 정규화 전 원본(감사·백필용)
   hasEvidenceLevelColumn,       // 세션45 — 배포 순서 방어(치명1)
   _resetEvidenceLevelCache,     // 테스트 전용
+  hasAdditiveDetectedCountColumn,  // 세션65 C2-a — 022 배포 순서 방어
+  getAdditiveDetectedCount,        // 세션65 C2-b — risk_summary.detected_total
+  _resetAdditiveDetectedCountCache, // 테스트 전용
   getTrafficLight,
   upsertTrafficLight,
   getRecent,

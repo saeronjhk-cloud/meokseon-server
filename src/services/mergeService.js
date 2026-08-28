@@ -25,6 +25,9 @@ const logger = require('../config/logger');
 const { hasEvidenceLevelColumn } = require('../models/productModel');
 // ★★★ 세션55 — 쓰기 경로 정규화. 아래 `canonicalizeAllergenName` 주석에 근거를 적었다.
 const { normalizeAllergenNames } = require('./allergenName');
+// ★ 세션65 C1(`U64-3`) — 첨가물 저장집합(합집합) 규칙은 **한 파일**에만 있다.
+//   경로 ①(`crowdsourceService`)이 같은 함수를 부른다. 한쪽만 고치면 경로 간 결과가 갈린다.
+const { upsertProductAdditives } = require('./additiveResolver');
 
 // ====================================================================
 // 1. 필드별 병합 알고리즘 (순수 함수 — 테스트 가능)
@@ -420,10 +423,34 @@ async function mergeAndApply(productId) {
   const merged = mergeContributions(result.rows);
   const { sourceCount, distinctDeviceCount, meta, nutrition, ingredients, allergens, outliers } = merged;
 
+  // ★★★ 세션64b — 「병합 결과에 영양값이 하나도 없으면」 판정. 종전에는 트랜잭션 «안»에서
+  //   UPSERT 직전에 셌는데, 세션65 C3 이 이 값을 `verification` 결정에도 쓰므로
+  //   **트랜잭션 밖으로 끌어올렸다.** (순수 계산이라 위치를 옮겨도 값이 같다.)
+  const mergedNutrientCount = NUTRIENT_FIELDS
+    .reduce((n, f) => n + (nutrition[f] === null || nutrition[f] === undefined ? 0 : 1), 0);
+
   // verification 결정
+  //
+  // ★★★ 세션65 C3 (`U64-12`) — **영양 0개로는 `verified` 에 못 간다.**
+  //   종전: `distinctDeviceCount >= 3` 이면 이상치가 없는 한 무조건 `verified`.
+  //   그런데 세션64b 부터 `crowdsourceService` 가 **영양 미확보 제보도 저장**한다.
+  //   그런 기여의 `parsed_nutrition` 은 null 이라 병합 median 이 전 항목 null 이 되고,
+  //   이상치도 당연히 0건이다(값이 없으니 이탈할 것도 없다).
+  //   ⇒ **확인된 영양값이 하나도 없는 제품이 「검증됨」 배지를 단다.**
+  //     사용자는 그 배지를 「영양정보가 맞다」로 읽는다. 세션64b 가 세운
+  //     「확인한 것이 없다면 부분 확인도 아니다」의 병합판이다.
+  //
+  //   ⚠ 0개일 때 `unverified` 로 **떨어뜨리지 않는다.** 기기 2대면 이미 `partial` 인데
+  //     3대에서 더 낮아지는 것은 앞뒤가 맞지 않는다. 기기 3대가 원재료·알레르기에
+  //     동의한 것 자체는 「부분 확인」이 맞다. → `partial` 에서 멈춘다.
+  //
+  //   ★ 그리고 세션65 C3 에 따라 **`verified` 로 가는 문은 이 함수 하나뿐이다.**
+  //     경로 ①(`crowdsourceService`)의 `partial AND verify_count>=1 → verified` 는 끊었다.
+  //     여기만 `distinctDeviceCount`(= 서로 «다른» 기기 수)를 실제로 센다.
   let verification = 'unverified';
   if (distinctDeviceCount >= AUTO_VERIFY_DISTINCT_DEVICES) {
-    verification = outliers.length > 0 ? 'disputed' : 'verified';
+    if (outliers.length > 0) verification = 'disputed';
+    else verification = mergedNutrientCount > 0 ? 'verified' : 'partial';
   } else if (distinctDeviceCount >= 2) {
     verification = 'partial';
   }
@@ -496,9 +523,8 @@ async function mergeAndApply(productId) {
     //     즉 이 가드가 없으면 세션64b 가 **새 결함을 만든다.**
     //   ⚠ 부분 null(칼로리만 있고 나트륨 없음)은 종전에도 가능했다 — 여기서 다루지 않는다.
     //     범위를 넓히지 않고, 이번 변경이 «새로» 여는 구멍만 닫는다.
-    const mergedNutrientCount = NUTRIENT_FIELDS
-      .reduce((n, f) => n + (nutrition[f] === null || nutrition[f] === undefined ? 0 : 1), 0);
-
+    //   ★ 세션65 — `mergedNutrientCount` 는 이제 트랜잭션 «밖»(verification 결정 직전)에서
+    //     한 번만 센다. 같은 규칙을 두 곳에 적지 않는다.
     if (canOverwriteNutrition && mergedNutrientCount > 0) {
       // production 스키마 정렬:
       // - per_serving 컬럼 없음 (TRUE 만 INSERT 라 무의미)
@@ -546,23 +572,22 @@ async function mergeAndApply(productId) {
     }
 
     // ── 4) product_additives 자동 매칭 ──
-    // production additives 에 is_active 없음 → 조건 제거.
-    // detected_name·confidence 는 006 마이그레이션으로 추가됨.
+    //
+    // ★★★ 세션65 C1 (`U64-3`) — 종전 코드는 `ingredientNames` **하나만**
+    //   `= ANY()` 완전일치로 조인하고 `detected_name` 에 `row.name_ko`(마스터 이름)를 넣었다.
+    //   경로 ①과 **똑같은** 결함이다. 계약 C1 이 「양쪽 모두」를 대상으로 못 박은 이유가 이것이다.
+    //   → 규칙 본문은 `additiveResolver.js` 한 곳에 있다. 여기서 다시 적지 않는다.
+    //
+    // ⚠ 이 경로에는 `analysis.additives` 가 «없다». 기여에서 꺼내는 것은
+    //   `parsed_ingredients[].name` 뿐이라 `raw`·`detail`·`sub_ingredients` 가 없다.
+    //   → 리졸버가 이름으로 `identifyAdditives` 를 직접 돌린다(부분매칭은 살고, detail 스캔은 없다).
+    //   ★ 이 비대칭은 «남는다». 다만 `ON CONFLICT DO NOTHING` 이고 이 경로가
+    //     `product_additives` 를 **지우지 않으므로**, 경로 ①이 넣은 행을 깎지는 않는다.
     if (ingredients.length > 0) {
-      const ingredientNames = ingredients.map((i) => i.name);
-      const matchResult = await client.query(
-        `SELECT additive_id, name_ko FROM additives
-         WHERE name_ko = ANY($1::text[])`,
-        [ingredientNames],
-      );
-      for (const row of matchResult.rows) {
-        await client.query(
-          `INSERT INTO product_additives (product_id, additive_id, detected_name, confidence)
-           VALUES ($1, $2, $3, 100)
-           ON CONFLICT (product_id, additive_id) DO NOTHING`,
-          [productId, row.additive_id, row.name_ko],
-        );
-      }
+      await upsertProductAdditives(client, productId, {
+        ingredientNames: ingredients.map((i) => i.name),
+        confidence: 100,
+      });
     }
 
     // ── 5) product_allergens 갱신 ──

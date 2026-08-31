@@ -93,6 +93,7 @@ jobs:
             src/services/raccPolicy.js \
             src/services/raccTable.js \
             src/utils/foodCategory.js \
+            src/services/contributionApply.js \
             scripts/lib/allergenUpsert.js \
             scripts/19-apply-haccp.js \
             scripts/26-apply-haccp-dump.js \
@@ -108,7 +109,11 @@ jobs:
             tests/test_ocr_confirm.js \
             tests/test_additive_union_save.js \
             tests/test_additive_unlisted.js \
-            tests/test_promotion_rules.js
+            tests/test_promotion_rules.js \
+            tests/test_allergen_ingredient_no_infer.js \
+            tests/test_contribution_split_schema.js \
+            tests/test_contribution_apply.js \
+            tests/test_write_path_split.js
           do
             node --check "$f"
           done
@@ -216,6 +221,39 @@ jobs:
       #   **영양 0개로는 verified 에 못 가는가** / 이상치 disputed · admin_verified 보호.
       - name: "test: promotion (승격 규칙 단일화 · 세션65 C3)"
         run: npm run test:promotion
+
+      # 세션66 C7 — `DS-6′` 알레르겐 원칙: 원재료명으로 «판단하지 않는다».
+      #   원재료명에만 있는 이름이 contains·mayContain·inferred 어느 축으로도 안 나오는가 /
+      #   ★ 반대 케이스 — 제조사 표시란이 있으면 법정 19종 «전수»가 잡히는가
+      #     (이것이 없으면 「전부 0을 내는 파서」도 초록이다) /
+      #   혼입 축이 살아 있는가 / `inferred` «필드» 자체는 응답 계약으로 남아 있는가.
+      - name: "test: allergen-no-infer (DS-6′ 원재료 추론 금지 · 세션66 C7)"
+        run: npm run test:allergen-no-infer
+
+      # 세션66 C1~C4 — 제보 데이터 «물리 분리»(DS-7) + 뷰 7-way «논리 통합»(DS-8).
+      #   023~026 이 migrate 체인에 이어져 있는가(그리고 025 가 026 보다 앞인가) /
+      #   두 영양 테이블의 15컬럼이 이름·타입이 같은가 / 뷰가 «필드 단위»로 통합하는가 /
+      #   공공 값을 제보가 못 덮는가(U65-6 이 «영구»가 됐는가) /
+      #   제보만 있는 제품에 OFF 라이선스가 안 붙는가 /
+      #   reviewed_by 없는 approved 를 «DB 가» 거부하는가(DS-1) /
+      #   nutrition_data 에 ocr_crowdsource INSERT 를 «DB 가» 거부하는가(DS-7) /
+      #   체인이 2회차에도 서는가.
+      - name: "test: contribution-split (제보 데이터 분리 스키마 · 세션66 C1~C4)"
+        run: npm run test:contribution-split
+
+      # 세션66 C5 — 승인된 제보를 공식 데이터셋으로 옮기는 «유일한» 경로.
+      #   미승인/중복 반영 차단 · DS-9 환산(근거 없으면 «거부», 추정 금지) · 4축 분기 ·
+      #   data_inspection found_count=0(U63-6) · undo 가 남의 행을 안 건드림 ·
+      #   before/after 기록(없으면 undo 가 원리적으로 불가능) · 등급 강등 금지.
+      - name: "test: contribution-apply (승인 반영의 유일한 경로 · 세션66 C5)"
+        run: npm run test:contribution-apply
+
+      # 세션66 C6 — 제보 쓰기 경로 분리. 제보가 공식 테이블에 «쓰지 않는다»를
+      #   실제 서비스·실제 라우터 호출로 단정한다. U65-6·U65-7·U65-8 소멸 축.
+      #   ⚠ 이 스텝이 빨강이면 누군가 crowdsourceService·mergeService 에
+      #     공식 테이블 쓰기를 되살렸거나, adminRoutes 에 DELETE 를 되돌린 것이다.
+      - name: "test: write-path (제보 쓰기 경로 분리 · 세션66 C6)"
+        run: npm run test:write-path
 
       # ⚠ Firebase 미들웨어는 «남겨 두었다» — health-pick 앱의 사용 여부 미확인.
       #   이 스텝이 빨강이면 누군가 firebaseAuth.js 를 지웠거나 깨뜨린 것이다.

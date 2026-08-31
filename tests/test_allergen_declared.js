@@ -956,10 +956,22 @@ t('★ 중대F — 기여 레코드에 allergens_v2 가 저장된다 (혼입 정
   //   flat 에만 있는 이름을 mergeService 가 `contains` 로 확정해 006·046·076 이
   //   응답 inferred / DB contains 로 나뉘었다(라벨이 선언한 적 없는 「직접 함유」).
   //   → 저장돼야 한다는 원래 의도는 그대로 지키되, 값의 출처를 정확히 고정한다.
-  assert.ok(/allergens_v2:\s*reconcileAllergens\(\s*analysis\.allergens,\s*analysis\.allergens_v2\s*\)/.test(src),
+  // ★★ 세션66 C6 — 저장 경로가 `reconcileAllergens` 를 **한 번만** 부르고 그 결과를
+  //   flat·v2 에 나눠 쓴다(「알레르기 축에 내용이 있는가」를 판정해야 해서 변수로 꺼냈다).
+  //   ⇒ 인라인 리터럴 정규식은 더 이상 맞지 않는다. **지키는 규칙은 그대로다:**
+  //     저장 v2 는 reconcile 결과여야 하고, 저장 flat 은 그 v2 에서 flatten 된 값이어야 한다.
+  //     (호출이 하나라 「flat 과 v2 가 갈릴」 여지가 구조적으로 사라졌다 — 종전보다 강하다.)
+  assert.ok(/reconcileAllergens\(\s*analysis\.allergens,\s*analysis\.allergens_v2\s*\)/.test(src),
+    'crowdsourceService 가 reconcile 된 값을 만들지 않는다');
+  const v2Var = (src.match(/const\s+(\w+)\s*=\s*reconcileAllergens\(/) || [])[1];
+  assert.ok(v2Var, 'reconcile 결과를 변수에 담지 않았다');
+  assert.ok(new RegExp(`allergens_v2:\\s*${v2Var}\\b`).test(src),
     'crowdsourceService 가 reconcile 된 allergens_v2 를 저장하지 않는다');
-  assert.ok(/allergens:\s*flattenAllergensV2\(/.test(src),
-    '저장 flat 이 응답과 같은 함수를 쓰지 않는다 — 규칙이 두 곳에 생긴다');
+  const flatVar = (src.match(/const\s+(\w+)\s*=\s*flattenAllergensV2\(/) || [])[1];
+  assert.ok(flatVar && new RegExp(`flattenAllergensV2\\(\\s*${v2Var}\\b`).test(src),
+    '저장 flat 이 응답과 같은 함수를 «reconcile 결과에» 쓰지 않는다 — 규칙이 두 곳에 생긴다');
+  assert.ok(new RegExp(`allergens:\\s*${flatVar}\\b`).test(src),
+    `저장 flat 이 flattenAllergensV2 결과(${flatVar})가 아니다`);
   assert.ok(!/allergens_v2:\s*analysis\.allergens_v2\s*\|\|/.test(src),
     'raw v2 를 그대로 저장하는 경로가 남아 있다');
 });

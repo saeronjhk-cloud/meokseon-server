@@ -1014,6 +1014,20 @@ CREATE INDEX IF NOT EXISTS idx_pea_product ON product_entity_audit (product_id);
 
 -- ── 5-1. product_nutrition_resolved — 018 의 최종본 (011→012→013→015→018 누적) ──
 -- 우선순위: nutrition_data > OpenFoodFacts > 수입식품 > 엔티티 상속
+--
+-- ⛔⛔ 아래 DROP 한 줄을 지우지 말 것 (세션66 · 2026-08-30) ⛔⛔
+--   이 baseline 은 `npm run migrate` 체인의 **첫 번째**다. 그런데 체인 뒤쪽(025)이
+--   같은 뷰를 `CREATE OR REPLACE` 로 «컬럼을 끝에 추가»해서 다시 만든다.
+--   ⇒ 체인 2회차에 이 줄이 25컬럼 뷰를 24컬럼으로 되돌리려 하고,
+--     PostgreSQL 은 `CREATE OR REPLACE VIEW` 로 **컬럼을 지울 수 없어** 죽는다:
+--        ERROR: cannot drop columns from view
+--   ⇒ `real-postgres` job 의 「마이그레이션 2회차 — 멱등한가」와
+--     `npm run verify:fresh-schema`(§A 멱등성)가 **둘 다 빨강**이 된다.
+--   ★ 세션66 에이전트 B·C 가 «독립적으로» 같은 실패를 재현했고, 이 한 줄로 3회차까지 확인했다.
+--   ⚠ `CASCADE` 를 붙이지 말 것. 지금은 이 뷰에 의존하는 객체가 없지만,
+--     생기면 CASCADE 는 그것을 **조용히 지운다.** 실패하는 편이 낫다.
+--   ⚠ 025 «안»에서는 못 고친다 — baseline 이 025 보다 먼저 돌기 때문이다.
+DROP VIEW IF EXISTS product_nutrition_resolved;
 CREATE OR REPLACE VIEW product_nutrition_resolved AS
 SELECT
   p.product_id,

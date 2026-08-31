@@ -540,18 +540,27 @@ async function main() {
     assert.strictEqual(c.status, 200, JSON.stringify(c.body));
     assert.strictEqual(c.body.data.save_result.saved, true, c.body.data.save_result.rejectReason);
 
+    // ★★ 세션66 C6 — 기대값이 바뀐 지점. 제보는 이제 `nutrition_data`·`product_ingredients` 에
+    //   쓰지 않는다(설계 §3-2 — 관리자 승인 뒤 `contributionApply` 가 옮긴다).
+    //   ⚠ 이 단정이 지키던 것은 「클라이언트가 보낸 값이 서버 분석값을 덮지 않는다」이지
+    //     「어느 테이블에 들어간다」가 아니다. 그래서 **저장된 원증거**(`contributions.data`)를
+    //     본다 — 승인 시 `contributionApply` 가 읽는 것도 바로 이 값이므로, 여기가 오염되면
+    //     승인 후에도 그대로 오염된다. 대장의 지점이 «앞»으로 옮겨졌을 뿐이다.
     const nut = await db.query(
-      `SELECT n.calories FROM nutrition_data n JOIN products p ON p.product_id = n.product_id
+      `SELECT count(*)::int AS c FROM nutrition_data n JOIN products p ON p.product_id = n.product_id
        WHERE p.barcode = 'S64SERVERWINS'`);
-    assert.strictEqual(nut.rows.length, 1, 'nutrition_data 가 저장되지 않았다');
-    assert.strictEqual(Number(nut.rows[0].calories), 480,
-      '클라이언트가 보낸 영양값(1 kcal)이 서버 분석값(480)을 덮었다 — 계약 위반');
+    assert.strictEqual(nut.rows[0].c, 0,
+      '미검토 제보가 공공 영양 테이블에 들어갔다 — 026 CHECK 가 곧 이것을 거부한다');
 
-    const ing = await db.query(
-      `SELECT i.parsed_ingredients FROM product_ingredients i JOIN products p ON p.product_id = i.product_id
-       WHERE p.barcode = 'S64SERVERWINS'`);
-    const parsed = typeof ing.rows[0].parsed_ingredients === 'string'
-      ? JSON.parse(ing.rows[0].parsed_ingredients) : ing.rows[0].parsed_ingredients;
+    const c2 = await db.query(
+      `SELECT c.data FROM contributions c JOIN products p ON p.product_id = c.product_id
+       WHERE p.barcode = 'S64SERVERWINS' ORDER BY c.contribution_id DESC LIMIT 1`);
+    assert.strictEqual(c2.rows.length, 1, '제보 원본이 저장되지 않았다');
+    const data = typeof c2.rows[0].data === 'string' ? JSON.parse(c2.rows[0].data) : c2.rows[0].data;
+    assert.strictEqual(Number(data.parsed_nutrition.calories), 480,
+      '클라이언트가 보낸 영양값(1 kcal)이 서버 분석값(480)을 덮었다 — 계약 위반');
+    const parsed = (data.parsed_ingredients || [])
+      .map((i) => (typeof i === 'string' ? i : i && i.name));
     assert.ok(!parsed.includes('가짜원재료'), `클라이언트가 보낸 원재료가 저장됐다: ${JSON.stringify(parsed)}`);
     assert.ok(parsed.includes('밀가루'), `서버가 읽은 원재료가 저장되지 않았다: ${JSON.stringify(parsed)}`);
   });

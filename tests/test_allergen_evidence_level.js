@@ -303,13 +303,29 @@ async function main() {
     assert.strictEqual(byName['우유'], 'may_contain');
   });
 
-  await t('★ mergeAndApply 의 upsert CASE 식이 이 테스트의 복사본과 일치한다', () => {
+  await t('★ 승격 CASE 식이 이 테스트의 복사본과 일치한다 (규칙 본문 = contributionApply)', () => {
     // 복사본이 낡으면 §4 가 실제와 다른 SQL 을 검증하게 된다 — 조용히 무의미해지는 테스트.
-    const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'services', 'mergeService.js'), 'utf8');
+    // ★★ 세션66 C6 — 규칙 본문이 «이사»했다. `mergeService` 는 더 이상 `product_allergens` 에
+    //   쓰지 않는다(병합은 `contribution_review` candidate 만 만든다). 등급 승격 UPSERT 는
+    //   승인 시점의 `contributionApply.applyAllergensAxis` 한 곳으로 옮겼다.
+    //   ⇒ 검사 «대상 파일»만 바꾼다. 검사하는 «규칙»은 한 글자도 안 바뀌었다.
+    const src = fs.readFileSync(
+      path.join(__dirname, '..', 'src', 'services', 'contributionApply.js'), 'utf8');
     const norm = (s) => s.replace(/\s+/g, ' ').trim();
     const caseOnly = norm(UPSERT.slice(UPSERT.indexOf('evidence_level = CASE')));
     assert.ok(norm(src).includes(caseOnly),
-      'mergeService 의 ON CONFLICT CASE 식이 바뀌었다 — 이 테스트의 UPSERT 상수를 함께 갱신할 것');
+      'contributionApply 의 ON CONFLICT CASE 식이 바뀌었다 — 이 테스트의 UPSERT 상수를 함께 갱신할 것');
+    // ★ 그리고 «옛 자리»가 되살아나지 않았는지도 본다. 병합이 다시 마스터에 쓰기 시작하면
+    //   기기 3대가 사람 없이 알레르기를 확정한다(설계 §3-2 가 끊은 그 경로다).
+    // ⚠ 주석에 「지웠다」고 적어 둔 문장이 있으므로 **주석을 걷어내고** 본다.
+    //   안 걷으면 「되살아났다」를 설명하는 주석 때문에 테스트가 거짓 빨강이 된다.
+    const mergeSrc = fs.readFileSync(
+      path.join(__dirname, '..', 'src', 'services', 'mergeService.js'), 'utf8')
+      .replace(/^\s*(\/\/|\*|\/\*).*$/gm, '');
+    assert.ok(!/INSERT\s+INTO\s+product_allergens/.test(mergeSrc),
+      'mergeService 가 product_allergens 에 다시 쓴다 — 자동 반영이 되살아났다(설계 §3-2)');
+    assert.ok(!/DELETE\s+FROM\s+product_allergens/.test(mergeSrc),
+      'mergeService 가 product_allergens 를 다시 지운다 — 경고 순감 경로가 되살아났다');
   });
 
   // ════════════════════════════════════════════════════════════════════════
@@ -656,19 +672,32 @@ async function main() {
       } finally { h.restore(); }   // ★ 인스턴스는 공유 — 닫지 않는다
     });
 
-    await t('★ 크라우드 merge 가 만든 행은 다음 merge 에서 정리된다 (누적 쓰레기 방지)', async () => {
+    // ★★ 세션66 C6 — 이 절의 «기대값»이 바뀌었다. 왜인지 남긴다.
+    //   종전 규칙: 병합이 `detected_via='crowdsource_merge'` 행을 만들고,
+    //             다음 병합이 그 행을 DELETE 해서 누적 쓰레기를 막았다.
+    //   지금 규칙: 병합이 **애초에 행을 만들지 않는다**(설계 §3-2 · 전량 수동에 예외 없음).
+    //             ⇒ 「누적 쓰레기」가 원천적으로 생기지 않으므로 청소가 필요 없다.
+    //   ⚠ 이것은 「경고가 사라지지 않는다」를 지키던 단정이 **아니다**(그 축은 바로 위 치명2·
+    //     아래 경미6 이 지킨다 — 둘 다 그대로 초록이다). 이 단정은 「병합이 자기 쓰레기를
+    //     치운다」였고, 쓰레기를 만들지 않게 된 지금은 **더 강한 상태**다.
+    await t('★ 병합은 애초에 product_allergens 에 행을 만들지 않는다 (누적 쓰레기가 생기지 않는다)', async () => {
       const h = await withPgliteDb();
       try {
         await putContrib(h, 'd1', null, ['밀', '대두']);
         await h.merge.mergeAndApply(1);
         let rows = await h.model.getAllergens(1);
-        assert.strictEqual(rows.length, 2, JSON.stringify(rows));
-        // 기여를 갈아끼워 대두가 빠지면 대두 행도 빠져야 한다.
+        assert.strictEqual(rows.length, 0,
+          `병합이 알레르기를 자동 반영했다: ${JSON.stringify(rows)} — 사람 승인 없이 마스터가 됐다`);
+        // 기여를 갈아끼워 다시 돌려도 마찬가지다(만들지도, 지우지도 않는다).
         await h.db.query('DELETE FROM contributions');
         await putContrib(h, 'd2', null, ['밀']);
         await h.merge.mergeAndApply(1);
         rows = await h.model.getAllergens(1);
-        assert.deepStrictEqual(rows.map((r) => r.allergen_name), ['밀'], JSON.stringify(rows));
+        assert.strictEqual(rows.length, 0, JSON.stringify(rows));
+        // ★ 그런데 병합 «판정»은 살아 있어야 한다 — 그것이 없으면 관리자가 볼 근거가 없다.
+        const res = await h.merge.mergeAndApply(1);
+        assert.ok(res.merged.allergens.some((a) => a.name === '밀'),
+          `병합 판정에서 알레르기가 사라졌다: ${JSON.stringify(res.merged.allergens)}`);
       } finally { h.restore(); }   // ★ 인스턴스는 공유 — 닫지 않는다
     });
 
@@ -680,14 +709,20 @@ async function main() {
       // 세션45 는 조회 경로에만 컬럼 가드를 넣었다. 쓰기 경로(INSERT ... evidence_level)가
       // 예외를 던지면 **트랜잭션 전체가 롤백**되어 영양·메타·알레르기가 하나도 반영되지 않는다.
       // 게다가 crowdsourceService 가 그 예외를 삼켜 API 는 saved:true 를 반환한다(조용한 전멸).
+      // ★★ 세션66 C6 — 기대값이 바뀐 지점. 병합은 이제 `product_allergens` 에 «쓰지 않는다»
+      //   (설계 §3-2). 그래서 「적재됐는가」로는 더 이상 잴 수 없다.
+      //   ⚠ 이 단정이 «진짜로» 지키던 것은 「쓰기 경로의 컬럼/테이블 부재 예외가
+      //     트랜잭션 전체를 롤백해 영양·메타까지 통째로 날리지 않는다」다.
+      //     그 축은 `merged_at` + 판정 결과로 그대로 잴 수 있고, 아래가 그렇게 잰다.
+      //   ★ 그리고 024 «미적용» DB 라 검토 큐도 없다 — 그때도 죽지 않아야 한다(배포순서 방어).
       const h = await withPgliteDb(false);   // ← 020 미적용
       try {
         await putContrib(h, 'd1', { contains: ['밀'], inferred: [], mayContain: ['대두'] }, ['밀']);
-        await h.merge.mergeAndApply(1);      // 이전 코드는 여기서 throw
-        const rows = await h.db.query(
-          `SELECT allergen_name FROM product_allergens WHERE product_id = 1 ORDER BY allergen_name`);
-        assert.deepStrictEqual(rows.rows.map((r) => r.allergen_name), ['대두', '밀'],
-          `020 미적용 DB 에서 알레르기가 적재되지 않았다: ${JSON.stringify(rows.rows)}`);
+        const res = await h.merge.mergeAndApply(1);   // 이전 코드는 여기서 throw
+        assert.strictEqual(res.applied, true, '병합이 통째로 실패했다');
+        assert.deepStrictEqual(
+          res.merged.allergens.map((a) => a.name).sort(), ['대두', '밀'],
+          `병합 판정에서 알레르기가 사라졌다: ${JSON.stringify(res.merged.allergens)}`);
         const p = await h.db.query(`SELECT merged_at FROM products WHERE product_id = 1`);
         assert.ok(p.rows[0].merged_at, 'merged_at 이 비었다 — 트랜잭션이 롤백됐다(영양·메타도 함께 사라진다)');
       } finally { h.restore(); }   // ★ 인스턴스는 공유 — 닫지 않는다
@@ -886,11 +921,23 @@ async function main() {
       'raw v1 flat 을 그대로 저장한다 — flat-only 이름이 DB 에 contains 로 확정된다');
     assert.ok(!/allergens_v2:\s*analysis\.allergens_v2\s*\|\|/.test(src),
       'raw v2 를 그대로 저장한다 — 응답(reconcile 후)과 등급이 어긋난다');
-    assert.ok(/allergens:\s*flattenAllergensV2\(/.test(src),
-      '저장 flat 이 응답과 같은 함수를 쓰지 않는다 — 규칙이 두 곳에 생긴다');
+    // ★★ 세션66 C6 — 저장 경로가 reconcile 을 **한 번만** 부르고 그 결과를 flat·v2 에 나눠 쓴다.
+    //   종전 기대값은 「호출이 «2곳»이고 인자 짝이 서로 같다」였다. 지금은 호출이 하나라
+    //   **짝이 어긋날 여지가 구조적으로 사라졌다** — 종전보다 강한 보증이다.
+    //   ⚠ 지키는 것은 그대로다: 저장 flat 과 v2 가 «같은 reconcile 결과»에서 나온다.
     const pairs = [...src.matchAll(/reconcileAllergens\(\s*(\w+)\.allergens,\s*(\w+)\.allergens_v2\s*\)/g)];
-    assert.strictEqual(pairs.length, 2, `저장 경로의 reconcile 호출이 ${pairs.length}곳 — flat·v2 두 곳이어야 한다`);
+    assert.ok(pairs.length >= 1, '저장 경로에 reconcileAllergens 호출이 없다');
     for (const m of pairs) assert.strictEqual(m[1], m[2], `인자 짝이 어긋났다: ${m[1]} vs ${m[2]}`);
+    const v2Var = (src.match(/const\s+(\w+)\s*=\s*reconcileAllergens\(/) || [])[1];
+    assert.ok(v2Var, 'reconcile 결과를 변수에 담지 않았다 — flat 과 v2 가 갈릴 수 있다');
+    const flatVar = (src.match(/const\s+(\w+)\s*=\s*flattenAllergensV2\(/) || [])[1];
+    assert.ok(flatVar, '저장 flat 이 flattenAllergensV2 로 만들어지지 않는다 — 규칙이 두 곳에 생긴다');
+    assert.ok(new RegExp(`flattenAllergensV2\\(\\s*${v2Var}\\b`).test(src),
+      'flat 이 reconcile 결과가 «아닌» 것에서 만들어진다 — 응답과 등급이 어긋난다');
+    assert.ok(new RegExp(`allergens:\\s*${flatVar}\\b`).test(src),
+      `저장 flat 이 flattenAllergensV2 결과(${flatVar})가 아니다`);
+    assert.ok(new RegExp(`allergens_v2:\\s*${v2Var}\\b`).test(src),
+      `저장 v2 가 reconcile 결과(${v2Var})가 아니다`);
   });
 
   await t('★★★ 68건 전수 — 응답 등급과 DB 등급이 한 건도 어긋나지 않는다', () => {
@@ -1051,20 +1098,27 @@ async function main() {
   // §11 세션47 3차 검증 중대3 — 컬럼 판정을 트랜잭션 안에서 하지 않는다
   // ════════════════════════════════════════════════════════════════════════
   await t('★★★ 중대3 — mergeService 가 트랜잭션을 쥔 채 두 번째 커넥션을 잡지 않는다', async () => {
-    // `hasEvidenceLevelColumn()` 은 내부에서 `db.query`(= pool.query)를 쓴다.
+    // 스키마 판정 함수는 내부에서 `db.query`(= pool.query)를 쓴다.
     //   트랜잭션 client 를 쥔 채 부르면 merge 1건이 커넥션 2개를 점유하고,
     //   DB_POOL_MAX 만큼 동시 merge 가 열리면 전원이 connectionTimeout 으로 동시에 실패한다.
     //   그 실패는 crowdsourceService 가 삼켜서 `saved:true` 로 나간다(치명1 과 같은 침묵).
+    // ★★ 세션66 C6 — **검사 대상 함수가 바뀌었다.** 병합이 `product_allergens` 에 쓰지 않으므로
+    //   `hasEvidenceLevelColumn()` 은 더 이상 없고, 그 자리를 024 배포순서 방어인
+    //   `hasContributionReviewTable()` 이 대신한다. **지키는 규칙은 한 글자도 안 바뀌었다.**
     const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'services', 'mergeService.js'), 'utf8');
     const txStart = src.indexOf('await db.transaction(');
     assert.ok(txStart > 0, 'db.transaction 을 찾지 못했다 — 이 검사의 전제가 깨졌다');
-    const decl = src.indexOf('const canWriteLevel = await hasEvidenceLevelColumn();');
-    assert.ok(decl > 0, 'canWriteLevel 판정을 찾지 못했다');
+    const decl = src.indexOf('const canQueueReview = await hasContributionReviewTable();');
+    assert.ok(decl > 0, 'canQueueReview 판정을 찾지 못했다');
     assert.ok(decl < txStart,
-      'hasEvidenceLevelColumn() 이 트랜잭션 **안**에서 호출된다 — 풀에서 두 번째 커넥션을 잡는다');
+      'hasContributionReviewTable() 이 트랜잭션 **안**에서 호출된다 — 풀에서 두 번째 커넥션을 잡는다');
     assert.strictEqual(
-      (src.match(/await hasEvidenceLevelColumn\(\)/g) || []).length, 1,
+      (src.match(/await hasContributionReviewTable\(\)/g) || []).length, 1,
       '판정 호출이 2곳 이상이다 — 트랜잭션 안쪽에 다시 생겼을 수 있다');
+    // ★ 옛 축도 되살아나지 않았는지 본다(다른 판정 함수를 트랜잭션 안에서 부르면 같은 사고다).
+    const txBody = src.slice(txStart);
+    assert.ok(!/await\s+has[A-Z]\w*\(/.test(txBody),
+      '트랜잭션 «안»에서 스키마 판정 함수를 부른다 — 커넥션 중첩 획득(세션47 중대3)');
   });
 
   // ════════════════════════════════════════════════════════════════════════

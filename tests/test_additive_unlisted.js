@@ -35,6 +35,11 @@ const path = require('path');
 const SRV = path.join(__dirname, '..');
 const BASELINE = path.join(SRV, 'scripts', 'migrations', '000_baseline.sql');
 const M022 = path.join(SRV, 'scripts', 'migrations', '022_additive_detected_count.sql');
+// ★★ 세션66 C6 — 제보는 `product_additives` 에 «즉시» 쓰지 않는다(설계 §3-2).
+//   `risk_summary.total`(= 저장·조회된 개수)은 **승인 뒤**에 올라간다.
+//   ⇒ `unlisted = max(0, detected_total - total)` 의 뺄셈을 계속 재려면 승인 단계가 필요하다.
+const M023 = path.join(SRV, 'scripts', 'migrations', '023_data_inspection.sql');
+const M024 = path.join(SRV, 'scripts', 'migrations', '024_contribution_review.sql');
 
 let pass = 0;
 let fail = 0;
@@ -162,7 +167,34 @@ async function main() {
 
   // ── 이제 022 를 적용한다 ────────────────────────────────────────────────
   await db.exec(fs.readFileSync(M022, 'utf8'));
+  // ★ 023·024 도 함께 — 승인 단계(세션66 C6)가 이 두 테이블 위에서 돈다.
+  await db.exec(fs.readFileSync(M023, 'utf8'));
+  await db.exec(fs.readFileSync(M024, 'utf8'));
   productModel._resetAdditiveDetectedCountCache();
+  // ⚠ `hasContributionReviewTable()` 을 **테이블이 없던 시점에** 이미 판정했을 수 있다.
+  //   그 값은 캐싱되지 않지만(실패/false 는 캐싱 안 함), 모듈 캐시는 비워 준다.
+  require('../src/services/mergeService')._resetContributionReviewCache();
+  const { applyApprovedContribution } = require('../src/services/contributionApply');
+
+  /** 관리자 승인 1건을 흉내낸다 — 「제보 → (사람) → 공식 테이블」의 가운데 단계. */
+  const approveAxis = async (productId, axis) => {
+    await db.query(
+      `UPDATE contribution_review SET status = 'superseded'
+        WHERE product_id = $1 AND axis = $2 AND status = 'approved'`, [productId, axis]);
+    const r = await db.query(
+      `SELECT review_id FROM contribution_review
+        WHERE product_id = $1 AND axis = $2 AND status = 'candidate'
+        ORDER BY review_id DESC LIMIT 1`, [productId, axis]);
+    if (r.rows.length === 0) return null;
+    const reviewId = Number(r.rows[0].review_id);
+    await db.query(
+      `UPDATE contribution_review
+          SET status = 'approved', reviewed_by = 'test-admin', reviewed_at = now()
+        WHERE review_id = $1`, [reviewId]);
+    await applyApprovedContribution({ query: (t2, p2) => db.query(t2, p2 || []) }, reviewId,
+      { appliedBy: 'test-admin' });
+    return reviewId;
+  };
 
   await t('§1 022 가 products.additive_detected_count(INTEGER, NULL 허용)를 만든다', async () => {
     const r = await db.query(
@@ -233,6 +265,9 @@ async function main() {
   // ══════════════════════════════════════════════════════════════════════════
   section('§4~§8  응답 계약 (risk_summary)');
   // ══════════════════════════════════════════════════════════════════════════
+  // ★★ 세션66 C6 — 승인 «전»에는 저장된 첨가물이 0종이다. 뺄셈(§5)과 집계(§8)를 재려면
+  //   먼저 관리자가 승인해야 한다. 규칙(합집합·∩마스터·서버가 뺄셈)은 그대로다.
+  await approveAxis(saved.productId, 'additives');
   const resp = await productService.getProductAdditives('S65C2_MAIN');
 
   await t('§4 risk_summary 에 detected_total·unlisted 가 «추가»됐다', () => {

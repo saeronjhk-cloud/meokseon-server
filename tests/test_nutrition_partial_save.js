@@ -41,6 +41,16 @@ const path = require('path');
 
 const SRV = path.join(__dirname, '..');
 const BASELINE = path.join(SRV, 'scripts', 'migrations', '000_baseline.sql');
+// ★★ 세션66 C6 — 제보는 이제 공식 테이블에 «즉시» 쓰지 않는다(설계 §3-2 · 계약 §7).
+//   이 파일이 지키는 것(「영양 실패가 원재료·알레르기를 데려가지 않는다」)은 그대로다.
+//   달라진 것은 그 증거가 «어디에» 남는가다: `contributions` + `contribution_review` candidate,
+//   그리고 관리자가 승인하면 공식 테이블. 그래서 023·024·025 를 적용하고
+//   승인 단계를 픽스처에 넣는다.
+//   ⚠ 026(CHECK 제약)은 **일부러 적용하지 않는다** — §9 픽스처가 `nutrition_data` 에
+//     `ocr_crowdsource` 행을 직접 심어 「이미 들어 있던 옛 행」을 재현하기 때문이다.
+const M023 = path.join(SRV, 'scripts', 'migrations', '023_data_inspection.sql');
+const M024 = path.join(SRV, 'scripts', 'migrations', '024_contribution_review.sql');
+const M025 = path.join(SRV, 'scripts', 'migrations', '025_nutrition_data_crowd.sql');
 
 // ══════════════════════════════════════════════════════════════════════════
 // 0. 출력 (기존 테스트 파일들과 같은 형식)
@@ -85,6 +95,9 @@ async function main() {
   const db = new PGlite();
   try {
     await db.exec(fs.readFileSync(BASELINE, 'utf8'));
+    await db.exec(fs.readFileSync(M023, 'utf8'));
+    await db.exec(fs.readFileSync(M024, 'utf8'));
+    await db.exec(fs.readFileSync(M025, 'utf8'));
   } catch (e) {
     console.error(`000_baseline.sql 적용 실패 — 픽스처가 아니라 정본 SQL 문제다: ${e.message}`);
     process.exit(1);
@@ -121,6 +134,34 @@ async function main() {
   const crowdsource = require('../src/services/crowdsourceService');
   const productService = require('../src/services/productService');
   const { mergeAndApply } = require('../src/services/mergeService');
+  const { applyApprovedContribution } = require('../src/services/contributionApply');
+
+  /**
+   * ★ 관리자 승인 1건을 흉내낸다 — 「제보 → (사람) → 공식 테이블」의 가운데 단계.
+   *   ⚠ `reviewed_by` 를 채우는 것이 `cr_approve_human_chk`(DS-1 전량 수동)를 만족시키는 일이다.
+   *     코드가 스스로 채울 수 없는 값이라 **테스트가 사람 대신 채운다.**
+   */
+  const approveAxis = async (productId, axis) => {
+    await db.query(
+      `UPDATE contribution_review SET status = 'superseded'
+        WHERE product_id = $1 AND axis = $2 AND status = 'approved'`, [productId, axis]);
+    const r = await db.query(
+      `SELECT review_id FROM contribution_review
+        WHERE product_id = $1 AND axis = $2 AND status = 'candidate'
+        ORDER BY review_id DESC LIMIT 1`, [productId, axis]);
+    if (r.rows.length === 0) return null;
+    const reviewId = Number(r.rows[0].review_id);
+    await db.query(
+      `UPDATE contribution_review
+          SET status = 'approved', reviewed_by = 'test-admin', reviewed_at = now()
+        WHERE review_id = $1`, [reviewId]);
+    await applyApprovedContribution({ query: (t2, p2) => db.query(t2, p2 || []) }, reviewId,
+      { appliedBy: 'test-admin' });
+    return reviewId;
+  };
+  const axisRows = async (productId) => (await db.query(
+    `SELECT axis, status FROM contribution_review WHERE product_id = $1 ORDER BY axis`,
+    [productId])).rows;
 
   /** 제보 1건. 기본은 「멀쩡한 100g 라벨 + 원재료 + 알레르기(밀)」다. */
   const report = (over = {}) => ({
@@ -181,10 +222,25 @@ async function main() {
     basisProductId = r.productId;
   });
 
-  await t('★★★ 원재료가 실제로 DB 에 남았다 (product_ingredients)', async () => {
+  await t('★★★ 원재료가 실제로 남았다 (검토 큐 candidate + 승인하면 마스터로 간다)', async () => {
+    // ★★ 세션66 C6 — 기대값이 바뀐 지점.
+    //   종전: 제보 즉시 `product_ingredients` 에 1행. 지금: 미검토 상태에서는 0행이고
+    //   `contribution_review` 에 `ingredients` candidate 가 선다(설계 §3-2 · `U65-8`).
+    //   ⚠ 이 단정이 지키던 것은 「영양 실패가 원재료 증거를 **데려가지 않는다**」이지
+    //     「어느 테이블에 즉시 들어간다」가 아니다. 그래서 ① 증거가 남았고 ② 승인하면
+    //     마스터까지 간다는 것을 **둘 다** 잰다. 어느 한쪽만 재면 다시 뚫린다.
+    assert.strictEqual(
+      (await db.query('SELECT 1 FROM product_ingredients WHERE product_id = $1', [basisProductId]))
+        .rows.length, 0,
+      '미검토 제보가 공식 원재료 테이블에 들어갔다 — U65-8 이 되살아났다');
+    const axes = (await axisRows(basisProductId)).map((r) => r.axis);
+    assert.ok(axes.includes('ingredients'),
+      `영양 실패 때문에 원재료 축이 검토 큐에서도 사라졌다: ${JSON.stringify(axes)}`);
+
+    await approveAxis(basisProductId, 'ingredients');
     const ing = await db.query(
       'SELECT parsed_ingredients FROM product_ingredients WHERE product_id = $1', [basisProductId]);
-    assert.strictEqual(ing.rows.length, 1, '영양 실패 때문에 원재료까지 버려졌다');
+    assert.strictEqual(ing.rows.length, 1, '승인했는데 원재료가 마스터에 반영되지 않았다');
     const parsed = typeof ing.rows[0].parsed_ingredients === 'string'
       ? JSON.parse(ing.rows[0].parsed_ingredients) : ing.rows[0].parsed_ingredients;
     assert.ok(parsed.includes('밀가루'), `원재료가 온전하지 않다: ${JSON.stringify(parsed)}`);
@@ -269,15 +325,26 @@ async function main() {
     assert.strictEqual(res.product.product_name, '기준불명쿠키');
   });
 
-  await t('★ 대조군 — 영양이 온전한 제보는 신호등이 «나간다» (과하게 막지 않았다)', async () => {
+  await t('★ 대조군 — 영양이 온전한 제보는 «승인 후» 신호등이 나간다 (과하게 막지 않았다)', async () => {
+    // ★★ 세션66 C6 — 기대값이 바뀐 지점.
+    //   종전: 제보 즉시 신호등이 나갔다. 그것이 `U65-8`(미검토 제보가 즉시 노출)이었다.
+    //   지금: 미검토 상태에서는 안 나가고, 관리자가 승인하면 나간다.
+    //   ⚠ 이 단정이 지키던 것은 「게이트가 «과하게» 막지 않는다」다. 그 축은 승인 후
+    //     실제로 신호등이 나오는지로 그대로 잰다 — 오히려 경로 전체를 재게 됐다.
     const r = await crowdsource.saveOcrContribution(report({
       barcode: 'S64B_OK', deviceId: 'dev-ok-1', productName: '정상쿠키',
     }));
     assert.strictEqual(r.saved, true, r.rejectReason);
     assert.strictEqual(r.nutrition_status, 'ok');
+
+    const before = await productService.getProductWithTrafficLight('S64B_OK');
+    assert.strictEqual(before.traffic_light, null,
+      '★ 미검토 제보가 즉시 신호등으로 나갔다 — U65-8 이 되살아났다');
+
+    await approveAxis(r.productId, 'nutrition');
     const res = await productService.getProductWithTrafficLight('S64B_OK');
-    assert.ok(res.traffic_light, '정상 영양인데 신호등이 안 나갔다');
-    assert.ok(res.nutrition, '정상 영양인데 nutrition 블록이 null 이다');
+    assert.ok(res.traffic_light, '승인했는데 신호등이 안 나갔다 — 통합 뷰(DS-8)가 제보를 못 읽는다');
+    assert.ok(res.nutrition, '승인했는데 nutrition 블록이 null 이다');
     assert.strictEqual(res.nutrition.calories, 480);
   });
 
@@ -328,8 +395,15 @@ async function main() {
     assert.strictEqual(r.nutrition_status, 'ok',
       `3개짜리를 미확보로 떨어뜨렸다 — 개수 하한이 생겼다: ${r.nutrition_reject_code}`);
     assert.strictEqual(r.nutrient_count, 3);
-    const nut = await db.query('SELECT calories FROM nutrition_data WHERE product_id = $1', [r.productId]);
-    assert.strictEqual(nut.rows.length, 1, '3개짜리 영양이 저장되지 않았다');
+    // ★★ 세션66 C6 — 저장처가 `nutrition_data`(공공 전용) → `nutrition_data_crowd`(승인된 제보)로
+    //   바뀌었다(`DS-7` 물리 분리). 「3개짜리도 저장 대상으로 인정된다」는 그대로 잰다.
+    assert.strictEqual(
+      (await db.query('SELECT 1 FROM nutrition_data WHERE product_id = $1', [r.productId])).rows.length, 0,
+      '미검토 제보가 공공 영양 테이블에 들어갔다');
+    await approveAxis(r.productId, 'nutrition');
+    const nut = await db.query(
+      'SELECT calories FROM nutrition_data_crowd WHERE product_id = $1', [r.productId]);
+    assert.strictEqual(nut.rows.length, 1, '3개짜리 영양이 저장되지 않았다 — 개수 하한이 생겼다');
   });
 
   await t('★★★ 개수가 기여 레코드에 남는다 (나중에 분포를 볼 수 있다)', async () => {
@@ -368,8 +442,10 @@ async function main() {
     assert.strictEqual(r.nutrition_status, 'ok',
       `실제 라벨값 0 이 「영양 없음」으로 취급됐다: ${r.nutrition_reject_code}`);
     assert.strictEqual(r.nutrient_count, 8, '0 을 「없음」으로 세고 있다');
-    const nut = await db.query('SELECT calories, sodium FROM nutrition_data WHERE product_id = $1',
-      [r.productId]);
+    // ★★ 세션66 C6 — 저장처가 `nutrition_data_crowd` 로 바뀌었다(`DS-7`). 값 0 은 그대로 0 이다.
+    await approveAxis(r.productId, 'nutrition');
+    const nut = await db.query(
+      'SELECT calories, sodium FROM nutrition_data_crowd WHERE product_id = $1', [r.productId]);
     assert.strictEqual(nut.rows.length, 1, '제로칼로리 라벨이 통째로 저장되지 않았다');
     assert.strictEqual(Number(nut.rows[0].calories), 0);
     assert.strictEqual(Number(nut.rows[0].sodium), 0);
@@ -420,6 +496,11 @@ async function main() {
   });
 
   await t('★★★ 그런데 원재료·알레르기는 «받았다» (이것이 이번에 고친 순손실이다)', async () => {
+    // ★★ 세션66 C6 — 증거가 남는 «자리»가 검토 큐로 옮겨졌다. 「버려지지 않는다」는 그대로다.
+    const axes = (await axisRows(publicProductId)).map((r) => r.axis);
+    assert.ok(axes.includes('ingredients') && axes.includes('allergens'),
+      `공공 영양이 있다는 이유로 원재료·알레르기 축이 통째로 버려졌다: ${JSON.stringify(axes)}`);
+    await approveAxis(publicProductId, 'ingredients');
     const ing = await db.query(
       'SELECT parsed_ingredients FROM product_ingredients WHERE product_id = $1', [publicProductId]);
     assert.strictEqual(ing.rows.length, 1, '기존 제품의 원재료 제보가 버려졌다');
@@ -513,11 +594,21 @@ async function main() {
     assert.strictEqual(Number(nut.rows[0].protein), 6);
   });
 
-  await t('★ 그래도 병합은 «원재료»를 마스터에 반영했다 (증거가 헛되지 않았다)', async () => {
+  await t('★ 그래도 병합은 «원재료»를 검토 큐에 올렸다 (승인하면 마스터로 간다)', async () => {
+    // ★★ 세션66 C6 — 기대값이 바뀐 지점. 병합도 **자동 반영이 아니다**(설계 §3-2 · 예외 없음).
+    //   ⚠ 지키던 것은 「영양이 미확보여도 원재료 증거가 헛되지 않는다」이지
+    //     「병합이 즉시 마스터에 쓴다」가 아니다.
     const pid = global.__s64bMergePid;
+    assert.strictEqual(
+      (await db.query('SELECT 1 FROM product_ingredients WHERE product_id = $1', [pid])).rows.length, 0,
+      '★ 기기 3대 병합이 원재료를 자동 반영했다 — 전량 수동에 예외가 없다(설계 §3-2)');
+    const axes = (await axisRows(pid)).map((r) => r.axis);
+    assert.ok(axes.includes('ingredients'), `병합이 원재료 축을 큐에 안 올렸다: ${JSON.stringify(axes)}`);
+
+    await approveAxis(pid, 'ingredients');
     const ing = await db.query(
       'SELECT parsed_ingredients FROM product_ingredients WHERE product_id = $1 ORDER BY 1 DESC', [pid]);
-    assert.ok(ing.rows.length >= 1, '병합이 원재료를 반영하지 않았다');
+    assert.ok(ing.rows.length >= 1, '승인했는데 병합 원재료가 반영되지 않았다');
   });
 
   // ══════════════════════════════════════════════════════════════════════

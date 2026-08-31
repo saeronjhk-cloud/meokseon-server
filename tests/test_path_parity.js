@@ -1311,10 +1311,22 @@ async function main() {
         + '      → crowdsourceService 의 isDried 하드코딩 false 가 살아 있다. '
         + '신호등은 면제하는데 등록만 거부하는 상태다.');
       assert.strictEqual(r.saved, true, `건조식품 제보가 저장되지 않았다: ${r.rejectReason}`);
+      // ★★ 세션66 C6 — 기대값이 바뀐 지점.
+      //   종전: 게이트를 통과한 영양은 `nutrition_data` 에 «즉시» 박혔다.
+      //   지금: 제보는 공식 테이블에 쓰지 않는다(설계 §3-2). 승인된 뒤 `nutrition_data_crowd` 로 간다.
+      //   ⚠ 이 단정이 지키던 것은 「건조식품 이상치가 **저장 대상으로 인정된다**」이지
+      //     「어느 테이블에 들어간다」가 아니다. 그래서 «게이트를 통과한 값이 온전히 적립됐는가»를
+      //     DB 로 단정한다 — 응답 키만 보면 문자열만 바꿔도 초록이 되므로 DB 를 본다(이 절의 원칙).
       const nut = await db.query(
         'SELECT calories FROM nutrition_data WHERE product_id = $1', [r.productId]);
-      assert.strictEqual(nut.rows.length, 1, '건조식품 영양이 저장되지 않았다');
-      assert.strictEqual(Number(nut.rows[0].calories), 1100);
+      assert.strictEqual(nut.rows.length, 0,
+        '미검토 제보가 공공 영양 테이블에 들어갔다 — 026 CHECK 가 곧 이것을 거부한다');
+      const c = await db.query(
+        'SELECT data FROM contributions WHERE product_id = $1 ORDER BY contribution_id DESC LIMIT 1',
+        [r.productId]);
+      const data = typeof c.rows[0].data === 'string' ? JSON.parse(c.rows[0].data) : c.rows[0].data;
+      assert.ok(data.parsed_nutrition, '건조식품 영양이 「쓸 수 없는 값」으로 떨어졌다 — 게이트가 부당하게 반려했다');
+      assert.strictEqual(Number(data.parsed_nutrition.calories), 1100);
     });
   }
 

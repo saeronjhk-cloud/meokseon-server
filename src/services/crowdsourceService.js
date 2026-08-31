@@ -8,6 +8,24 @@
  * 3. Mass Balance 통과
  * 4. 열량 교차 검증 (경고만, 저장은 허용)
  * 5. 공공데이터 보호 (기존 영양정보 있으면 OCR 무시)
+ *
+ * ★★★★★ 세션66 C6 (2026-08-30) — **제보는 공식 테이블에 쓰지 않는다.**
+ *   종전: `nutrition_data` · `product_ingredients` · `product_additives` 에
+ *         **검토 없이 즉시** 썼다. 그래서 셋이 동시에 열려 있었다 —
+ *           `U65-6` 공공데이터 보호가 1회용 (한 번 `ocr_crowdsource` 로 덮이면 다음부터 무방비)
+ *           `U65-7` 관리자 반려가 `DELETE FROM nutrition_data` 라 공공 행까지 지웠다
+ *           `U65-8` 미검토 제보가 **즉시 전원에게** 노출됐다
+ *   지금: `contributions` 원본 적립은 **그대로** 하고, 축별로
+ *         `contribution_review` 에 `candidate` 를 만든다. 공식 테이블로 옮기는 일은
+ *         관리자 승인 시 `contributionApply.applyApprovedContribution` «한 곳»이 한다.
+ *   근거: `IP/설계_제보데이터분리_2026-08-28_세션65.md` §3-2 · §11-B · 계약 세션66 §7-1.
+ *
+ *   ★ 제보자 «본인»에게 돌려주는 응답은 **한 글자도 바꾸지 않았다**(`DS-0`).
+ *     「내가 찍은 것은 나에게 바로」가 이 앱의 획득 훅이다 — 그것을 죽이면 제보가 끊긴다.
+ *
+ *   ⚠ `products` 행 자체(생성 · `verification` · `verify_count` · `additive_detected_count`)는
+ *     **건드리지 않았다.** 「미검토 제보가 `products` 를 건드리는가」는 계약 §7-C 가
+ *     `U66-1` 로 «보류»했다. 섞으면 회귀 범위가 폭발한다.
  */
 
 const db = require('../config/database');
@@ -19,12 +37,19 @@ const { evaluateNutrition, sanityCheck, scaleNutrition } = require('./nutritionT
 const { getRaccPolicy } = require('./raccPolicy');
 // 세션42: per_total 라벨을 저장 게이트 **통과 전에** 1회분으로 환산하기 위해 사용
 const { resolveServings, totalToServingDivisor } = require('./servingResolver');
-const { mergeAndApply, AUTO_VERIFY_DISTINCT_DEVICES } = require('./mergeService');
+// ★★ 세션66 C6 — 검토 큐(`contribution_review`) 생성 규칙의 «유일한 본문»은
+//   `mergeService` 에 있다. 경로 ①(이 파일)과 경로 ②가 **같은 함수**를 부른다.
+//   ⚠ 의존 방향이 `crowdsourceService → mergeService` 한쪽이라 순환이 생기지 않는다.
+const {
+  mergeAndApply, AUTO_VERIFY_DISTINCT_DEVICES,
+  hasContributionReviewTable, insertReviewCandidate,
+} = require('./mergeService');
 // ★ 세션46 중대4 — 저장 경계도 응답과 **같은 함수**로 3분리를 만든다. 규칙을 두 번 적지 않는다.
 const { reconcileAllergens, flattenAllergensV2 } = require('./ocrParser');
-// ★ 세션65 C1(`U64-3`) — 첨가물 저장집합(합집합) 규칙은 **한 파일**에만 있다.
-//   경로 ②(`mergeService`)가 같은 함수를 부른다. 한쪽만 고치면 경로 간 결과가 갈린다.
-const { upsertProductAdditives, countDetected } = require('./additiveResolver');
+// ★ 세션65 C1(`U64-3`) — 첨가물 «검출» 규칙은 **한 파일**에만 있다.
+//   ⚠ 세션66 C6 — 이제 여기서 `upsertProductAdditives` 를 부르지 않는다(공식 테이블 쓰기).
+//     승인 시 `contributionApply` 가 그 함수를 부른다. 여기서는 「축에 내용이 있는가」만 센다.
+const { countDetected } = require('./additiveResolver');
 // ★ 세션65 C2-a — 022(`products.additive_detected_count`) 배포순서 방어 판정에만 쓴다.
 const productModel = require('../models/productModel');
 
@@ -396,6 +421,14 @@ async function saveOcrContribution(params) {
   //   풀이 얕으면 전원이 두 번째 커넥션을 기다리다 동시에 실패한다(세션47 중대3 과 동일).
   const canWriteDetectedCount = await productModel.hasAdditiveDetectedCountColumn();
 
+  // ★★ 세션66 C6 — 024(`contribution_review`) 배포순서 방어. **같은 이유로 트랜잭션 «밖»**이다.
+  //   테이블이 없으면 candidate 를 만들지 않는다 — 그래도 **제보 원본(`contributions`)은 남는다.**
+  //   ⛔ 여기서 throw 하면 024 미적용 DB 에서 제보 전건이 500 이 된다(세션45 치명1 과 같은 형태).
+  const canQueueReview = await hasContributionReviewTable();
+  if (!canQueueReview) {
+    logger.error('024 미적용 DB — 제보를 검토 큐에 넣지 못한다(원본은 contributions 에 보존된다)');
+  }
+
   // ★★★ 세션65 C2-a — 「검출 총 개수」는 **마스터 조인 «전»** 의 수다.
   //   `analysis.additives` = `identifyAdditives` 결과 = 제보 직후 «화면에 보인» 첨가물.
   //   배열이 아니면(구버전 호출부) `null` = 「모른다」. 0 으로 대체하지 않는다.
@@ -481,72 +514,38 @@ async function saveOcrContribution(params) {
     //   (0 을 채워 넣는 순간 소비자는 「나트륨 0 mg = 안전」으로 읽는다 — 그것이 이 도크트린의 반대다.)
     const storeNutrition = nutritionStatus === 'ok' && nutrientCount > 0;
     // per_total 환산본 (divisor <= 1 이면 원본 그대로 — 새 객체도 만들지 않는다)
+    // ⚠ 세션66 C6 — 더 이상 **저장값**이 아니다. 관측·증거용이다.
+    //   실제 환산은 승인 시 `contributionApply` 가 `basis_original → basis_stored` 로 하고,
+    //   그 근거(`convert_factor`·`convert_note`)를 `nutrition_data_crowd` 행에 못 박는다.
     const nutritionToStore = scaleStoredNutrition(nutrition, perTotalDivisor);
-    if (storeNutrition) {
-      await client.query(
-        `INSERT INTO nutrition_data (product_id, calories, total_fat, saturated_fat, trans_fat,
-          cholesterol, sodium, total_carbs, total_sugars, dietary_fiber, protein,
-          ocr_confidence, data_source)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'ocr_crowdsource')
-         ON CONFLICT (product_id) DO NOTHING`,
-        [
-          productId,
-          nutritionToStore.calories ?? null,
-          nutritionToStore.total_fat ?? null,
-          nutritionToStore.saturated_fat ?? null,
-          nutritionToStore.trans_fat ?? null,
-          nutritionToStore.cholesterol ?? null,
-          nutritionToStore.sodium ?? null,
-          nutritionToStore.total_carbs ?? null,
-          nutritionToStore.total_sugars ?? null,
-          nutritionToStore.dietary_fiber ?? null,
-          nutritionToStore.protein ?? null,
-          Math.round(avgConfidence * 100),
-        ]
-      );
-    }
 
-    // ── 원재료 저장 (product_ingredients) ──
+    // ⛔⛔ 세션66 C6 — `nutrition_data` INSERT 를 **지웠다.**
+    //   `nutrition_data` 는 이제 **공공 전용**이고, 026 의 `nutrition_data_no_crowd_chk` 가
+    //   `data_source='ocr_crowdsource'` INSERT 를 **DB 수준에서 거부**한다.
+    //   되살리면 마이그레이션이 적용된 DB 에서 제보 전건이 즉사한다.
+    //   승인된 제보 영양의 자리는 `nutrition_data_crowd` 이고, 그 문은
+    //   `contributionApply.applyApprovedContribution` 하나뿐이다.
+
+    // ── 원재료 (product_ingredients) ──
+    // ⛔⛔ 세션66 C6 — INSERT 를 **지웠다.** `axis='ingredients'` candidate 로 대체한다.
+    //   ★ 이름 추출 자체는 남는다 — 「축에 내용이 있는가」와 `contributions.data` 적립에 쓴다.
     const ingredientNames = (analysis.ingredients || [])
       .map((i) => (typeof i === 'string' ? i : i?.name))
       .filter((s) => s && s.trim().length > 0);
-    if (ingredientNames.length > 0 || productInfo.ingredients_text) {
-      // production 스키마: 컬럼명이 source (data_source 아님). enum 아닌 varchar 라 'ocr_crowdsource' 그대로 OK.
-      await client.query(
-        `INSERT INTO product_ingredients (product_id, raw_text, parsed_ingredients, source)
-         VALUES ($1, $2, $3, 'ocr_crowdsource')`,
-        [
-          productId,
-          productInfo.ingredients_text || ocrResult?.corrected_text || null,
-          JSON.stringify(ingredientNames),  // production 은 jsonb 라 JSON 문자열로
-        ]
-      );
-    }
+    const hasIngredientsAxis = ingredientNames.length > 0
+      || !!(typeof productInfo.ingredients_text === 'string' && productInfo.ingredients_text.trim());
 
-    // ── 첨가물 자동 매칭 (additives 마스터와 비교) ──
-    //
-    // ★★★ 세션65 C1 (`U64-3`) — 종전 코드는 여기서 `ingredientNames` **하나만**
-    //   `= ANY()` 완전일치로 조인했다. 실측 소실률 **66.1%**(189 중 125).
-    //     · `identifyAdditives`(= `analysis.additives`)는 부분매칭 + `detail` 스캔까지 해서
-    //       「산도조절제(인산나트륨)」에서 `인산나트륨` 을 뽑는데,
-    //       저장은 그 결과를 **한 번도 쓰지 않고** `산도조절제` 를 완전일치로 찾았다.
-    //     · 사라진 이름 47종 중 **37종(78.7%)이 마스터에 이미 있었다.**
-    //       별칭 사전을 아무리 보강해도 안 풀리는 구조 결함이었다.
-    //   → 저장집합을 **두 축의 합집합**으로 넓힌다(계약 C1). 규칙 본문은
-    //     `additiveResolver.js` 한 곳에 있고 `mergeService` 가 같은 함수를 부른다.
-    //
-    // ★ 위 `if (ingredientNames.length > 0 || productInfo.ingredients_text)` **밖**으로 뺐다.
-    //   종전에는 원재료 INSERT 가 일어날 때만 첨가물 매칭이 돌았다. 합집합에서는
-    //   `analysis.additives` 만 있고 `ingredients` 가 비는 입력도 저장 대상이다.
-    //   (`ingredientNames` 가 있으면 위 조건도 참이므로 기존 경로는 그대로다.)
-    //
-    // ⚠ `detected_name` 에는 **마스터 이름이 아니라 라벨 원문**이 들어간다(계약 C1).
-    // ⚠ `ON CONFLICT (product_id, additive_id) DO NOTHING` 은 유지한다(계약 C1).
-    await upsertProductAdditives(client, productId, {
-      detectedAdditives: analysis.additives,
-      ingredientNames,
-      confidence: Math.round(avgConfidence * 100),
-    });
+    // ── 첨가물 (product_additives) ──
+    // ⛔⛔ 세션66 C6 — `upsertProductAdditives` 호출을 **지웠다.**
+    //   ★ 규칙(세션65 C1 합집합 · `detected_name` = 라벨 원문 · `ON CONFLICT DO NOTHING`)은
+    //     **한 글자도 바뀌지 않았다.** 규칙 본문은 여전히 `additiveResolver.js` 한 곳이고,
+    //     이제 그 함수를 «승인 시» `contributionApply` 가 부른다. 달라진 것은 **시점**뿐이다.
+    //   ⚠ 첨가물 축의 「내용 있음」은 검출 개수만으로 판정하면 **틀린다.**
+    //     `additiveResolver` 의 저장집합은 「검출 ∪ (원재료명 ∩ 마스터)」다 —
+    //     검출이 0종이어도 원재료명 완전일치 축(예: 「설탕」)이 살아 있다.
+    //     검출 개수만 보면 그 축이 통째로 검토 큐에 안 올라간다(세션65 C1 의 소실 재현).
+    const hasAdditivesAxis = (additiveDetectedTotal !== null && additiveDetectedTotal > 0)
+      || ingredientNames.length > 0;
 
     // ── 검출 총 개수 기록 (`U65-2` · 계약 C2-a) ──
     //   ★ `GREATEST` 로 **내려가지 않게** 한다. 같은 바코드에 두 번째 제보가 흐린 사진이라
@@ -613,10 +612,28 @@ async function saveOcrContribution(params) {
       [productId, verification]
     );
 
+    // ── 알레르기 3분리 — 저장 «전»에 한 번만 만든다 ─────────────────────────
+    //   ★ 세션66 C6 — 종전에는 `JSON.stringify({...})` 안에서 직접 불렀다.
+    //     이제 「알레르기 축에 내용이 있는가」를 판정해야 해서 **밖으로 꺼냈다.**
+    //     ⚠ 값·함수·인자는 그대로다. 여기서 다시 계산하면 저장본과 판정본이 갈린다.
+    const allergensV2ForStore = reconcileAllergens(analysis.allergens, analysis.allergens_v2);
+    const allergensFlatForStore = flattenAllergensV2(allergensV2ForStore, analysis.allergens);
+    const v2Count = (v2) => (v2 && typeof v2 === 'object'
+      ? ['contains', 'inferred', 'mayContain']
+        .reduce((n, k) => n + (Array.isArray(v2[k]) ? v2[k].length : 0), 0)
+      : 0);
+    // ⚠ 「봤는데 0종」까지 candidate 로 만들지 «않는다» — 계약 §7-1:
+    //   빈 축까지 만들면 검토 큐가 쓰레기로 찬다(모든 제보가 알레르기 candidate 를 만든다).
+    //   ★ 그 대가: 경로 ①은 `data_inspection.found_count = 0`(「확인했고 없었다」·`U63-6`)을
+    //     **스스로 만들지 않는다.** 관리자가 그 축을 직접 열어 판정할 때만 기록된다.
+    //     인수인계에 올린다.
+    const hasAllergensAxis = allergensFlatForStore.length > 0 || v2Count(allergensV2ForStore) > 0;
+
     // contributions 이력 기록 — 사용자가 입력·수정한 메타정보까지 보존
-    await client.query(
+    const contributionRow = await client.query(
       `INSERT INTO contributions (user_id, product_id, contribution_type, data, status, device_id)
-       VALUES ($1, $2, $3, $4, 'pending', $5)`,
+       VALUES ($1, $2, $3, $4, 'pending', $5)
+       RETURNING contribution_id`,
       [
         userId ? parseInt(userId) : null,
         productId,
@@ -657,10 +674,7 @@ async function saveOcrContribution(params) {
           //   `ALLERGEN_LEVEL_DEFAULT='contains'` 로 확정**하기 때문이다.
           //   006 실측: 새우·조개류가 바코드 조회에서 붉은 「직접 함유」로 나갔다 — 라벨은 선언한 적이 없다.
           //   → 응답과 **같은 함수**를 태워 flat-only 이름이 `inferred` 로 저장되게 한다.
-          allergens: flattenAllergensV2(
-            reconcileAllergens(analysis.allergens, analysis.allergens_v2),
-            analysis.allergens,
-          ),
+          allergens: allergensFlatForStore,
           // ★★★ 세션44 2차 검증(중대F) — `allergens_v2` 가 **저장 경로에 전혀 없었다.**
           //   flat `allergens` 만 저장되는데, 세션44가 flat 에서 혼입 항목을 정확히 제거했기 때문에
           //   **혼입 정보가 화면에만 있고 DB 에는 남지 않는다.**
@@ -672,7 +686,14 @@ async function saveOcrContribution(params) {
           //     스키마 변경이 필요하므로 별건이다(인수인계 이월).
           //   ★ 세션46 — 여기도 reconcile 을 거친다. flat 과 v2 가 **같은 출처의 짝**이어야
           //     `unionAllergens` 가 인덱스로 맞출 때 이름과 등급이 어긋나지 않는다.
-          allergens_v2: reconcileAllergens(analysis.allergens, analysis.allergens_v2),
+          allergens_v2: allergensV2ForStore,
+          // ★★ 세션66 C6 — `analysis.additives`(= `identifyAdditives` 결과)를 «처음으로» 적립한다.
+          //   왜 — 승인 시 `contributionApply` 가 첨가물을 반영할 때, 이 키가 없으면
+          //   원재료명으로 **다시 검출**해야 한다. 재검출은 `raw`·`detail`·`sub_ingredients` 가
+          //   없어서 부분매칭만 살고 detail 스캔이 죽는다(세션65 C1 이 66.1% 소실로 실측한 그 축).
+          //   ⇒ 제보 «시점»에 화면에 보였던 것과 승인 후 저장되는 것이 갈리지 않게 원본을 남긴다.
+          //   ⚠ 배열이 아니면 `null`(= 모른다)로 남긴다. `[]`(= 봤는데 없음)와 다른 뜻이다.
+          additives: Array.isArray(analysis.additives) ? analysis.additives : null,
           user_input: {
             product_name: productInfo?.product_name || null,
             manufacturer: productInfo?.manufacturer || null,
@@ -693,6 +714,76 @@ async function saveOcrContribution(params) {
       ]
     );
 
+    const contributionId = Number(contributionRow.rows[0].contribution_id);
+
+    // ══════════════════════════════════════════════════════════════════════
+    // ★★★★★ 세션66 C6 — 검토 큐(`contribution_review`)에 축별 candidate
+    // ══════════════════════════════════════════════════════════════════════
+    //   이것이 종전 「공식 테이블 4곳에 즉시 쓰기」를 대신한다.
+    //
+    //   ★ **내용이 «있는» 축에만 만든다**(계약 §7-1). 빈 축까지 만들면 관리자 큐가
+    //     쓰레기로 차고, 그러면 사람이 큐를 안 본다 = 전량 수동 검토가 형식만 남는다.
+    //
+    //   ⚠ 여기서 만들 수 있는 상태는 `candidate` 뿐이다. `approved` 는
+    //     `cr_approve_human_chk`(024)가 `reviewed_by IS NOT NULL` 을 요구하므로
+    //     **코드가 자기 손으로 승인할 수 없다**(`DS-1` 을 DB 가 강제한다).
+    const reviewCandidates = [];
+    if (canQueueReview) {
+      const commonEvidence = {
+        origin: 'crowdsource',
+        contribution_id: contributionId,
+        device_id: deviceId || null,
+        avg_confidence: avgConfidence,
+        is_new_product: isNewProduct,
+        barcode: barcode || null,
+      };
+      const axes = [];
+      // ── 영양 ──
+      //   ★ `storeNutrition` 이 false 면 만들지 않는다. 그 값은 저장 게이트가
+      //     「쓸 수 없다」고 판정한 것이고, `contributions.data.parsed_nutrition` 도 null 이다.
+      //     candidate 를 만들면 관리자가 승인해도 `NOTHING_TO_APPLY` 로 실패하는 줄이 쌓인다.
+      if (storeNutrition) {
+        axes.push(['nutrition', {
+          nutrient_count: nutrientCount,
+          basis_detected: basisRaw,
+          per_total_divisor: perTotalDivisor,
+          // 관측용 — 승인 시의 «실제» 환산은 contributionApply 가 다시 한다.
+          preview_scaled_nutrition: nutritionToStore,
+          sanity_warnings: sanityWarnings,
+        }]);
+      }
+      if (hasIngredientsAxis) {
+        axes.push(['ingredients', {
+          ingredient_count: ingredientNames.length,
+          ingredient_names: ingredientNames,
+          has_ingredients_text: !!(productInfo.ingredients_text
+            && String(productInfo.ingredients_text).trim()),
+        }]);
+      }
+      if (hasAllergensAxis) {
+        axes.push(['allergens', {
+          allergen_count: allergensFlatForStore.length,
+          allergens: allergensFlatForStore,
+          allergens_v2: allergensV2ForStore,
+        }]);
+      }
+      if (hasAdditivesAxis) {
+        axes.push(['additives', {
+          detected_total: additiveDetectedTotal,
+          ingredient_names: ingredientNames,
+        }]);
+      }
+      for (const [axis, extra] of axes) {
+        const reviewId = await insertReviewCandidate(client, {
+          contributionId,
+          productId,
+          axis,
+          evidence: { ...commonEvidence, ...extra },
+        });
+        reviewCandidates.push({ review_id: reviewId, axis });
+      }
+    }
+
     // ★ 세션64b 3단계 — 개수·상태를 **로그에도** 남긴다.
     //   DB 는 나중에 파는 것이고, 로그는 배포 직후 바로 볼 수 있다. 둘 다 있어야
     //   「1~4개 구간이 실제로 나오는가」를 운영 첫날부터 관찰할 수 있다.
@@ -701,6 +792,8 @@ async function saveOcrContribution(params) {
       nutrient_count: nutrientCount,
       nutrition_status: nutritionStatus,
       nutrition_reject_code: nutritionRejectCode,
+      review_axes: reviewCandidates.map((c) => c.axis),
+      queued_for_review: canQueueReview,
     });
 
     // ── 자동 merge 트리거 ──
@@ -742,6 +835,13 @@ async function saveOcrContribution(params) {
       nutrition_reject_code: nutritionRejectCode, // NO_NUTRIENTS | BASIS_UNKNOWN | PER_TOTAL_UNRESOLVED | SANITY_OUTLIER | MASS_BALANCE | PUBLIC_DATA_PROTECTED
       nutrition_reject_reason: nutritionRejectReason,
       nutrient_count: nutrientCount,              // 관측 전용. 저장 판정에 쓰지 않는다.
+      // ── 세션66 C6 신설 키 ────────────────────────────────────────────────
+      //   ⚠ 기존 키는 **한 글자도 바꾸지 않았다.** 배포된 구버전 앱은 이 키들을 모른 채
+      //     `saved`·`message` 만 읽는다 — 그래서 화면이 «지금과 똑같다»(`DS-0`).
+      //   ★ `saved: true` 의 뜻이 바뀌었다: 「제보가 접수·적립됐다」이지
+      //     「다른 사용자에게 보이기 시작했다」가 아니다. 후자는 관리자 승인 뒤다(`U65-8` 소멸).
+      review_candidates: reviewCandidates,        // [{review_id, axis}] — 검토 큐에 올라간 축
+      queued_for_review: canQueueReview,          // false = 024 미적용 DB (원본은 보존됨)
       // ★ 세션64b — 영양이 미확보면 **그 사실을 사용자에게 말한다.**
       //   「등록되었습니다」만 보여주면, 영양표를 못 읽은 것을 모른 채 「등록됐으니 다 들어갔겠지」로
       //   읽는다. 「모름」을 침묵으로 감추는 것은 「모름」을 「없음」으로 바꾸는 것과 같은 실수다.

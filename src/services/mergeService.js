@@ -5,8 +5,17 @@
  * 이 파일은 사본. 알고리즘 정책·임계값을 수정하려면 OneDrive 의 원본 먼저 수정 후 여기 반영.
  *
  * 같은 제품에 대한 여러 사용자의 OCR 등록(contributions) 을 필드별 알고리즘으로
- * 병합하여 마스터 products / nutrition_data / product_ingredients / product_allergens
- * 테이블에 반영한다.
+ * 병합해 **판정**을 낸다.
+ *
+ * ★★★★★ 세션66 C6 (2026-08-30) — **더 이상 마스터 테이블에 반영하지 않는다.**
+ *   종전: 병합 결과를 `nutrition_data`·`product_ingredients`·`product_additives`·
+ *         `product_allergens` 에 **자동 반영**했다(기기 3대면 사람 없이).
+ *   지금: 병합 «판정»만 하고 그 결과를 `contribution_review` 에 `candidate` 로 넣는다.
+ *         공식 테이블에 옮기는 일은 관리자가 승인할 때
+ *         `contributionApply.applyApprovedContribution` «한 곳»이 한다.
+ *   근거: 설계 §3-2 · 제이 확인 2026-08-30 — **전량 수동에 예외가 없다.**
+ *   ⇒ `U65-6`(공공데이터 보호가 1회용) 원천 소멸. `products.verification` 갱신만 남았고
+ *      그것은 계약 §7-C 가 `U66-1` 로 «보류»한 별개 축이다.
  *
  * 핵심 정책:
  *   - 같은 제품 식별: barcode 우선, 없으면 같은 product_id (saveOcrContribution 이 이미 매칭)
@@ -17,17 +26,115 @@
  *   - 알레르기: union + source_count 기록 — 안전 우선
  *   - 첨가물: union — 자동 매칭이라 일관성 높음
  *   - 이상치 감지: median 대비 ±50% 이탈한 contribution 이 있으면 disputed 마킹
+ *
+ * ⛔ 이 파일이 «하지 않는» 것 (세션66 C6)
+ *   · `nutrition_data` · `product_ingredients` · `product_allergens` · `product_additives`
+ *     에 **한 줄도 쓰지 않는다.** 쓰려는 사람에게: 그 규칙 본문은 `contributionApply.js` 다.
+ *   · `product_allergens` 를 **지우지 않는다.** 종전의
+ *     `DELETE ... detected_via='crowdsource_merge'` 는 사라졌다(경고 순감 경로 하나가 닫혔다).
  */
 
 const db = require('../config/database');
 const logger = require('../config/logger');
-// ★ 세션46 치명1 — 쓰기 경로에도 컬럼 가드가 필요하다. 판정 로직을 두 곳에 적지 않는다.
-const { hasEvidenceLevelColumn } = require('../models/productModel');
 // ★★★ 세션55 — 쓰기 경로 정규화. 아래 `canonicalizeAllergenName` 주석에 근거를 적었다.
 const { normalizeAllergenNames } = require('./allergenName');
-// ★ 세션65 C1(`U64-3`) — 첨가물 저장집합(합집합) 규칙은 **한 파일**에만 있다.
-//   경로 ①(`crowdsourceService`)이 같은 함수를 부른다. 한쪽만 고치면 경로 간 결과가 갈린다.
-const { upsertProductAdditives } = require('./additiveResolver');
+
+// ════════════════════════════════════════════════════════════════════════════
+// 0. ★★★★★ 세션66 C6 — 제보는 «공식 테이블에 쓰지 않는다» (설계 §3-2 · 계약 §7)
+// ════════════════════════════════════════════════════════════════════════════
+// 왜 여기에 있나 —
+//   경로 ①(`crowdsourceService`)과 경로 ②(이 파일)가 **똑같이** candidate 를 만든다.
+//   규칙을 두 곳에 적으면 다음 수정 때 한쪽만 고친다(이 저장소가 4세션 연속 겪은 사고).
+//   ⚠ 새 `src/` 파일을 만들지 않은 이유: 의존 방향이 이미 `crowdsourceService → mergeService`
+//     한쪽이라 여기에 두면 순환이 생기지 않는다. 반대로 두면 순환이다.
+//
+// ★ 「제보 → 공식 테이블」 사이에 사람이 서는 것이 이 세션의 전부다.
+//   실제로 옮기는 일은 `contributionApply.applyApprovedContribution` «한 곳»만 한다.
+//   이 파일도, `crowdsourceService` 도, 이제 `nutrition_data`·`product_ingredients`·
+//   `product_allergens`·`product_additives` 에 **한 줄도 쓰지 않는다.**
+// ════════════════════════════════════════════════════════════════════════════
+
+/** `contribution_review.axis` CHECK 어휘와 «같아야» 한다(024). */
+const REVIEW_AXES = ['nutrition', 'ingredients', 'allergens', 'additives'];
+
+// ★★ 024 배포순서 방어. `hasEvidenceLevelColumn`·`hasAdditiveDetectedCountColumn` 과
+//   **같은 규칙**을 쓴다 — 규칙을 새로 발명하지 않는다:
+//     · 성공만 캐싱한다(실패는 null 로 두어 다음 요청에 재판정).
+//     · 테이블이 없으면 candidate 를 만들지 않는다. **제보 자체는 그대로 저장된다.**
+//   ⚠ 여기서 throw 하면 024 미적용 DB 에서 **제보 전건이 반려**된다. 그것이
+//     세션45 치명1(쓰기 경로에 컬럼 가드가 없어 트랜잭션 전체가 롤백)과 같은 형태의 사고다.
+let _hasContributionReview = null;
+
+async function hasContributionReviewTable() {
+  if (_hasContributionReview !== null) return _hasContributionReview;
+  try {
+    const r = await db.query(
+      `SELECT 1 FROM information_schema.tables
+        WHERE table_name = 'contribution_review' LIMIT 1`,
+    );
+    _hasContributionReview = r.rows.length > 0;   // ★ 성공했을 때만 캐싱한다
+    return _hasContributionReview;
+  } catch (_) {
+    return false;   // ★ 실패는 캐싱하지 않는다. 이번 요청만 보수적으로 "없다".
+  }
+}
+
+/** 테스트에서 캐시를 비운다(024 전/후를 한 프로세스에서 검사하기 위함). */
+function _resetContributionReviewCache() { _hasContributionReview = null; }
+
+/**
+ * 검토 큐에 candidate 1행을 만든다. **이것이 제보가 남기는 «유일한» 판정 자리다.**
+ *
+ * ⚠ `status` 를 인자로 받지 않는다. 코드가 `'approved'` 를 만들 수 있으면
+ *   `cr_approve_human_chk`(DB 가 강제하는 `DS-1` 전량 수동)를 우회할 궁리가 생긴다.
+ *   **여기서 만들 수 있는 것은 `candidate` 뿐이다.**
+ *
+ * @param {{query: Function}} client - 트랜잭션 client (BEGIN 은 호출부가 한다)
+ * @returns {Promise<number>} review_id
+ */
+async function insertReviewCandidate(client, { contributionId, productId, axis, evidence }) {
+  if (!REVIEW_AXES.includes(axis)) {
+    throw new Error(`알 수 없는 검토 축입니다: ${axis}`);
+  }
+  const r = await client.query(
+    `INSERT INTO contribution_review (contribution_id, product_id, axis, status, evidence)
+     VALUES ($1, $2, $3, 'candidate', $4::jsonb)
+     RETURNING review_id`,
+    [contributionId, productId, axis, JSON.stringify(evidence || {})],
+  );
+  return Number(r.rows[0].review_id);
+}
+
+/**
+ * ★ 병합 전용 — 같은 (제품, 축)에 **병합이 만든 candidate 는 1건만** 둔다.
+ *
+ * 왜 갱신인가 — 병합은 기여가 하나 늘 때마다 다시 돈다(3대·4대·5대…).
+ * 매번 INSERT 하면 같은 제품의 같은 축이 검토 큐에 수십 줄로 쌓인다.
+ * 판정 내용(median·이상치·기기 수)은 **가장 최근 것이 정답**이므로 갱신이 맞다.
+ * ⚠ 경로 ①(개별 제보)은 갱신하지 않는다 — 제보 1건 = 판정 1건이 그쪽의 계약이다.
+ * ⚠ `status='candidate'` 인 것만 갱신한다. 이미 사람이 approved/rejected 한 것은 건드리지 않는다.
+ */
+async function upsertMergeCandidate(client, { contributionId, productId, axis, evidence }) {
+  const existing = await client.query(
+    `SELECT review_id FROM contribution_review
+      WHERE product_id = $1 AND axis = $2 AND status = 'candidate'
+        AND evidence->>'origin' = 'merge'
+      ORDER BY review_id
+      LIMIT 1`,
+    [productId, axis],
+  );
+  if (existing.rows.length > 0) {
+    const reviewId = Number(existing.rows[0].review_id);
+    await client.query(
+      `UPDATE contribution_review
+          SET contribution_id = $2, evidence = $3::jsonb
+        WHERE review_id = $1`,
+      [reviewId, contributionId, JSON.stringify(evidence || {})],
+    );
+    return reviewId;
+  }
+  return insertReviewCandidate(client, { contributionId, productId, axis, evidence });
+}
 
 // ====================================================================
 // 1. 필드별 병합 알고리즘 (순수 함수 — 테스트 가능)
@@ -456,7 +563,7 @@ async function mergeAndApply(productId) {
   }
 
   // ★★★ 세션47 3차 검증 중대3 — 이 판정은 **반드시 트랜잭션 밖**이어야 한다.
-  //   `hasEvidenceLevelColumn()` 은 내부에서 `db.query`(= `pool.query`)를 쓴다.
+  //   `hasContributionReviewTable()` 은 내부에서 `db.query`(= `pool.query`)를 쓴다.
   //   트랜잭션 client 를 쥔 채 부르면 merge 1건이 순간적으로 **커넥션 2개**를 점유한다.
   //   DB_POOL_MAX 만큼 동시 merge 가 열리면 전원이 두 번째 커넥션을 기다리다
   //   connectionTimeoutMillis 로 **동시에 실패**하고, 그 실패는 crowdsourceService 가
@@ -465,10 +572,23 @@ async function mergeAndApply(productId) {
   //     캐시가 영원히 안 차고 **매 merge 마다** 중첩 획득이 일어난다.
   //     그 상황(풀 고갈·콜드 스타트)이 정확히 세션46 이 대비하려던 상황이다.
   //   pglite 실측: 트랜잭션 보유 중 pool 커넥션 별도 획득 1건 · pg.Pool 모델에서 교착 재현.
-  const canWriteLevel = await hasEvidenceLevelColumn();
-  if (!canWriteLevel) {
-    logger.error('020 미적용 DB — evidence_level 없이 알레르기를 적재한다', { productId });
+  const canQueueReview = await hasContributionReviewTable();
+  if (!canQueueReview) {
+    logger.error('024 미적용 DB — 병합 결과를 검토 큐에 넣지 못한다(제보 원본은 보존된다)',
+      { productId });
   }
+
+  // ★ 검토 큐 행이 매달릴 «원본 제보». 가장 최근 기여를 앵커로 쓴다
+  //   (`contribution_review.contribution_id` 는 NOT NULL 이다).
+  //   병합에 실제로 들어간 기여 전부는 `evidence.source_contribution_ids` 에 남긴다 —
+  //   관리자가 「몇 건이 무엇을 말했나」를 되짚을 수 있어야 한다.
+  const sourceContributionIds = result.rows
+    .map((r) => Number(r.contribution_id))
+    .filter((n) => Number.isFinite(n));
+  const anchorContributionId = sourceContributionIds.length
+    ? sourceContributionIds[sourceContributionIds.length - 1] : null;
+
+  const reviewIds = {};
 
   // 트랜잭션으로 마스터 갱신
   await db.transaction(async (client) => {
@@ -503,199 +623,127 @@ async function mergeAndApply(productId) {
       ],
     );
 
-    // ── 2) nutrition_data 갱신 (UPSERT) ──
-    // 기존 nutrition_data 가 ocr_crowdsource 출처면 덮어쓰기, public_ 이면 보존.
+    // ══════════════════════════════════════════════════════════════════════
+    // ── 2)~5) ★★★★★ 세션66 C6 — 공식 테이블 쓰기를 «전부» 검토 큐로 대체한다
+    // ══════════════════════════════════════════════════════════════════════
+    // 종전에는 여기서 네 곳에 직접 썼다:
+    //   `nutrition_data` UPSERT · `product_ingredients` INSERT
+    //   · `product_additives` 합집합 · `product_allergens` DELETE + UPSERT
+    //
+    // ⛔ 전부 지웠다. 설계 §3-2 · 제이 확인 2026-08-30: **전량 수동에 예외가 없다.**
+    //   「기기 3대가 일치했다」는 강한 신호지만 **사람의 승인이 아니다.**
+    //   3대가 같은 오독을 하는 라벨이 실재하고(같은 흐린 인쇄를 셋이 똑같이 읽는다),
+    //   그때 자동 반영은 「셋이 확인했다」는 배지를 달고 마스터에 들어간다.
+    //
+    // ⇒ 이 변경으로 소멸하는 것:
+    //   `U65-6` 공공데이터 보호가 1회용 — 제보가 `nutrition_data` 를 쓰는 경로 자체가 없어졌다.
+    //       (종전 `canOverwriteNutrition` 게이트는 `data_source` 가 한 번 `ocr_crowdsource` 로
+    //        덮이면 다음부터는 「공공이 아니다」가 되어 **영원히 열려 있었다.**)
+    //   병합의 `DELETE FROM product_allergens ... detected_via='crowdsource_merge'` 도 사라졌다
+    //       ⇒ 병합이 알레르기 «행을 지우는» 경로가 0 이 됐다(경고 순감 방향의 문 하나가 닫혔다).
+    //
+    // ★★ 그러나 «판정»(median·다수결·union·이상치·기기 수)은 **그대로 유지한다.**
+    //   그 결과를 `contribution_review.evidence` 에 실어 관리자가
+    //   「기기 3대가 무엇에 일치했는가」를 보고 판단할 수 있게 한다.
+    //   ⛔ 판정을 지우면 관리자에게 남는 것이 사진 3장뿐이다 — 검토가 불가능해진다.
+    //
+    // ⚠ `products` 메타·`verification` 갱신(위 1번)은 **건드리지 않았다.**
+    //   「미검토 제보가 `products` 를 건드리는가」는 계약 §7-C 가 `U66-1` 로 «보류»했다.
+    //   섞으면 회귀 범위가 폭발한다.
+    if (!canQueueReview || anchorContributionId === null) return;
+
+    // 관리자가 보게 될 «공통» 판정 근거. 축마다 자기 몫을 덧붙인다.
+    const baseEvidence = {
+      origin: 'merge',
+      merged_at: new Date().toISOString(),
+      source_count: sourceCount,
+      distinct_device_count: distinctDeviceCount,
+      auto_verify_threshold: AUTO_VERIFY_DISTINCT_DEVICES,
+      verification,
+      outliers,
+      has_significant_outliers: merged.hasSignificantOutliers,
+      source_contribution_ids: sourceContributionIds,
+    };
+
+    // ── 2') 영양 — median 판정 결과를 candidate 로 ──
+    //   ★ 「공공 영양이 이미 있는가」를 **읽어서 증거로만** 남긴다.
+    //     종전에는 이 값이 «덮어쓸지 말지»를 정하는 게이트였다. 이제는 아무것도 정하지 않는다 —
+    //     승인 시 `contributionApply` 가 그 행의 기준(basis)에 맞춰 환산할 뿐이고,
+    //     값 자체는 뷰가 `COALESCE(공공, 제보)` 로 합치므로 **공공이 언제나 이긴다**(DS-8).
     const existingNut = await client.query(
       `SELECT data_source FROM nutrition_data WHERE product_id = $1`,
       [productId],
     );
-    const canOverwriteNutrition = existingNut.rows.length === 0
-      || !String(existingNut.rows[0].data_source || '').startsWith('public_');
+    const publicNutritionSource = existingNut.rows.length
+      ? (existingNut.rows[0].data_source || null) : null;
 
-    // ★★★ 세션64b — 「병합 결과에 영양값이 **하나도 없으면** 쓰지 않는다.」
-    //   왜 지금 생겼나 — 세션64b 부터 `crowdsourceService` 가 **영양 미확보 제보도 저장**한다
-    //   (기준 판별 실패·이상치·공공데이터 보호). 그런 기여의 `parsed_nutrition` 은 null 이라
-    //   `mergeContributions` 의 median 이 전 항목 null 을 낸다.
-    //   그런데 아래 UPSERT 는 `calories = EXCLUDED.calories` 처럼 **COALESCE 없이 통째로 덮는다.**
-    //   → 영양 미확보 제보 3건이 모이면, 이미 잘 들어 있던 `nutrition_data` 행이
-    //     **전부 NULL 로 지워진다.** 「모름」이 기존 「앎」을 파괴하는 방향이다.
-    //   ⚠ 종전에는 이 경로가 불가능했다(게이트를 통과한 기여만 저장됐으므로 항상 값이 있었다).
-    //     즉 이 가드가 없으면 세션64b 가 **새 결함을 만든다.**
-    //   ⚠ 부분 null(칼로리만 있고 나트륨 없음)은 종전에도 가능했다 — 여기서 다루지 않는다.
-    //     범위를 넓히지 않고, 이번 변경이 «새로» 여는 구멍만 닫는다.
-    //   ★ 세션65 — `mergedNutrientCount` 는 이제 트랜잭션 «밖»(verification 결정 직전)에서
-    //     한 번만 센다. 같은 규칙을 두 곳에 적지 않는다.
-    if (canOverwriteNutrition && mergedNutrientCount > 0) {
-      // production 스키마 정렬:
-      // - per_serving 컬럼 없음 (TRUE 만 INSERT 라 무의미)
-      // - data_source enum 에 'ocr_crowdsource_merged' 값 없음 → 'ocr_crowdsource' 로 통일.
-      //   merge 적용 여부는 products.merged_at IS NOT NULL / merge_sources_count 로 판정.
-      // - production nutrition_data 에 updated_at 컬럼 없음 → ON CONFLICT 절에서 제거.
-      await client.query(
-        `INSERT INTO nutrition_data (
-           product_id, calories, total_fat, saturated_fat, trans_fat,
-           cholesterol, sodium, total_carbs, total_sugars, dietary_fiber, protein,
-           data_source
-         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'ocr_crowdsource')
-         ON CONFLICT (product_id) DO UPDATE SET
-           calories = EXCLUDED.calories,
-           total_fat = EXCLUDED.total_fat,
-           saturated_fat = EXCLUDED.saturated_fat,
-           trans_fat = EXCLUDED.trans_fat,
-           cholesterol = EXCLUDED.cholesterol,
-           sodium = EXCLUDED.sodium,
-           total_carbs = EXCLUDED.total_carbs,
-           total_sugars = EXCLUDED.total_sugars,
-           dietary_fiber = EXCLUDED.dietary_fiber,
-           protein = EXCLUDED.protein,
-           data_source = 'ocr_crowdsource'`,
-        [
-          productId,
-          nutrition.calories, nutrition.total_fat, nutrition.saturated_fat, nutrition.trans_fat,
-          nutrition.cholesterol, nutrition.sodium, nutrition.total_carbs, nutrition.total_sugars,
-          nutrition.dietary_fiber, nutrition.protein,
-        ],
-      );
-    }
-
-    // ── 3) product_ingredients 갱신 ──
-    // production 스키마 정렬:
-    // - 컬럼명이 source (data_source 아님). varchar 라 'ocr_crowdsource' 그대로 OK.
-    // - parsed_ingredients 가 jsonb 라 JSON.stringify 명시.
-    if (ingredients.length > 0) {
-      const ingredientNames = ingredients.map((i) => i.name);
-      await client.query(
-        `INSERT INTO product_ingredients (product_id, raw_text, parsed_ingredients, source)
-         VALUES ($1, $2, $3, 'ocr_crowdsource')`,
-        [productId, ingredientNames.join(', '), JSON.stringify(ingredientNames)],
-      );
-    }
-
-    // ── 4) product_additives 자동 매칭 ──
-    //
-    // ★★★ 세션65 C1 (`U64-3`) — 종전 코드는 `ingredientNames` **하나만**
-    //   `= ANY()` 완전일치로 조인하고 `detected_name` 에 `row.name_ko`(마스터 이름)를 넣었다.
-    //   경로 ①과 **똑같은** 결함이다. 계약 C1 이 「양쪽 모두」를 대상으로 못 박은 이유가 이것이다.
-    //   → 규칙 본문은 `additiveResolver.js` 한 곳에 있다. 여기서 다시 적지 않는다.
-    //
-    // ⚠ 이 경로에는 `analysis.additives` 가 «없다». 기여에서 꺼내는 것은
-    //   `parsed_ingredients[].name` 뿐이라 `raw`·`detail`·`sub_ingredients` 가 없다.
-    //   → 리졸버가 이름으로 `identifyAdditives` 를 직접 돌린다(부분매칭은 살고, detail 스캔은 없다).
-    //   ★ 이 비대칭은 «남는다». 다만 `ON CONFLICT DO NOTHING` 이고 이 경로가
-    //     `product_additives` 를 **지우지 않으므로**, 경로 ①이 넣은 행을 깎지는 않는다.
-    if (ingredients.length > 0) {
-      await upsertProductAdditives(client, productId, {
-        ingredientNames: ingredients.map((i) => i.name),
-        confidence: 100,
+    if (mergedNutrientCount > 0) {
+      reviewIds.nutrition = await upsertMergeCandidate(client, {
+        contributionId: anchorContributionId,
+        productId,
+        axis: 'nutrition',
+        evidence: {
+          ...baseEvidence,
+          nutrient_count: mergedNutrientCount,
+          merged_nutrition: nutrition,
+          per_nutrient_outliers: outliers,
+          existing_public_nutrition_source: publicNutritionSource,
+        },
       });
     }
 
-    // ── 5) product_allergens 갱신 ──
-    //
-    // ★★★ 세션45 1차 검증 치명2 — 이 DELETE 가 **아래 UPSERT 의 등급 보호를 통째로 우회**하고 있었다.
-    //   원래 코드: `DELETE ... WHERE product_id = $1 AND status != 'admin_verified'`
-    //
-    //   무엇이 문제였나 (pglite 로 mergeAndApply 를 실제 실행해 재현) —
-    //     ① `product_allergens.status = 'admin_verified'` 를 **세팅하는 코드가 저장소에 없다.**
-    //        `grep -rn "admin_verified" src/` 의 쓰기 구문은 전부 `products.verification` 이다.
-    //        즉 이 조건은 사실상 **무조건 전삭제**였다.
-    //     ② 전삭제 후 INSERT 하므로 `ON CONFLICT` 가 걸릴 행이 없다.
-    //        세션45 가 신중히 짠 승격/유지 CASE 는 **한 번도 실행되지 않는 죽은 코드**였다.
-    //     ③ 실측: 식약처(HACCP) 적재분 `대두·밀·우유`(직접 함유) 가 있는 제품에
-    //        사용자가 「대두 혼입」 사진 1장을 올리면 —
-    //          이전: contains 3종  →  이후: contains 0종 / mayContain 대두 1종
-    //        밀·우유는 **DB 에서 삭제**되고 대두는 강등된다. 경고 총량 순감이다.
-    //
-    //   → 이번 merge 가 만든 행(`detected_via = 'crowdsource_merge'`)만 정리한다.
-    //     ★ 식약처·명시표기 등 **다른 출처의 행은 절대 지우지 않는다.** 크라우드소싱 1건이
-    //       공적 출처를 덮어쓸 권한은 없다. 남겨두면 아래 UPSERT 가 등급을 올리기만 한다.
-    //     ★ 그리고 admin_verified 는 여전히 보호한다(향후 그 값을 쓰게 되더라도 안전하도록).
-    await client.query(
-      `DELETE FROM product_allergens
-       WHERE product_id = $1
-         AND status != 'admin_verified'
-         AND detected_via = 'crowdsource_merge'`,
-      [productId],
-    );
-    // ★★★ 세션46 2차 검증 치명1 — 세션45 는 **조회 경로에만** 컬럼 가드를 넣었다.
-    //   쓰기 경로(`INSERT ... evidence_level`)에는 없어서, 020 미적용 DB 에서
-    //   이 INSERT 가 던지는 예외로 **트랜잭션 전체가 롤백**된다.
-    //   알레르기만이 아니라 영양·메타·원재료·첨가물이 **하나도 반영되지 않는다.**
-    //
-    //   실측(정본 마이그레이션 001/004/005/006 만 적용한 pglite):
-    //     column "evidence_level" of relation "product_allergens" does not exist
-    //     → products.merged_at = null · nutrition_data = [] · product_allergens = []
-    //
-    //   ★ 이론이 아니다 — `package.json` 의 `migrate` 체인에 020 이 없다(`migrate:020` 단독 수동).
-    //     즉 `npm run migrate` 로 만든 DB 에는 020 이 영원히 없다.
-    //   ★ 그리고 조용하다 — `crowdsourceService` 가 이 예외를 catch 해서 로그만 남기고
-    //     API 는 `saved: true` 를 반환한다. `/api/health` 도 정상이다.
-    //   → 등급을 못 적더라도 **알레르기 행 자체는 남긴다.** 등급이 없는 경고와
-    //     경고가 없는 것은 심각도가 다르다(후자는 경고가 사라지는 방향이다).
-    //   ★ `canWriteLevel` 은 위(트랜잭션 **밖**)에서 이미 판정했다 — 세션47 중대3 참조.
-    //     여기서 부르면 트랜잭션을 쥔 채 풀에서 두 번째 커넥션을 잡는다.
-    for (const a of allergens) {
-      const status = a.source_count >= AUTO_VERIFY_DISTINCT_DEVICES ? 'confirmed' : 'candidate';
-      const level = ALLERGEN_LEVEL_RANK[a.evidence_level] ? a.evidence_level : ALLERGEN_LEVEL_DEFAULT;
-      if (!canWriteLevel) {
-        await client.query(
-          `INSERT INTO product_allergens
-             (product_id, allergen_name, source_count, status, detected_via)
-           VALUES ($1, $2, $3, $4, 'crowdsource_merge')
-           ON CONFLICT (product_id, allergen_name) DO UPDATE SET
-             source_count = EXCLUDED.source_count,
-             status = CASE
-               WHEN product_allergens.status = 'admin_verified' THEN 'admin_verified'
-               ELSE EXCLUDED.status
-             END,
-             updated_at = NOW()`,
-          [productId, a.name, a.source_count, status],
-        );
-        continue;
-      }
-      await client.query(
-        // ★★ 세션45: evidence_level 은 **올리기만 한다.**
-        //   `EXCLUDED.evidence_level` 을 그대로 대입하면 이번 merge 가 혼입만 읽었을 때
-        //   기존 admin_verified 가 아닌 「직접 함유」 행이 「혼입 가능」으로 **강등**된다.
-        //   화면에서 붉은 태그가 점선으로 바뀌는 것 = 경고를 지우는 방향의 변경이다.
-        //   CASE 로 서열을 비교해 강한 쪽을 남긴다(SQL 안에서 끝낸다 — 읽고-쓰기 경합을 만들지 않는다).
-        `INSERT INTO product_allergens
-           (product_id, allergen_name, source_count, status, detected_via, evidence_level)
-         VALUES ($1, $2, $3, $4, 'crowdsource_merge', $5)
-         ON CONFLICT (product_id, allergen_name) DO UPDATE SET
-           source_count = EXCLUDED.source_count,
-           -- ★★ 1차 검증 치명2-B: status 에 EXCLUDED.status 를 그대로 대입하면 admin_verified 를
-           --   candidate 로 **깎아버린다.** 그러면 다음 merge 의 DELETE 대상이 되어
-           --   관리자 검증 결과가 merge 2회 만에 사라진다(실측 재현됨).
-           --   등급 보호가 1회용이 되지 않도록 status 도 함께 지킨다.
-           status = CASE
-             WHEN product_allergens.status = 'admin_verified' THEN 'admin_verified'
-             ELSE EXCLUDED.status
-           END,
-           -- ★ detected_via 는 **아예 갱신하지 않는다**(SET 목록에서 뺐다).
-           --   세션45 는 COALESCE(product_allergens.detected_via, EXCLUDED.detected_via) 였는데,
-           --   세션46 2차 검증에서 이것이 **NULL 을 세탁한다**는 것이 실측됐다:
-           --     merge1: 게(detected_via=NULL) → 'crowdsource_merge' 로 바뀜
-           --     merge2: 위 DELETE 의 대상이 되어 **삭제됨**
-           --   19-apply-haccp.js 의 컬럼 부재 폴백이 detected_via 없이 INSERT 하므로
-           --   NULL 행은 실제로 존재한다. 갱신하지 않으면 NULL 로 남아 DELETE 를 타지 않는다.
-           --   (경고가 사라지는 방향의 결함이므로 남기는 쪽을 택한다.)
-           evidence_level = CASE
-             WHEN COALESCE(product_allergens.evidence_level, 'contains') = 'contains' THEN 'contains'
-             WHEN EXCLUDED.evidence_level = 'contains' THEN 'contains'
-             WHEN COALESCE(product_allergens.evidence_level, 'contains') = 'inferred'
-               OR EXCLUDED.evidence_level = 'inferred' THEN 'inferred'
-             ELSE 'may_contain'
-           END,
-           updated_at = NOW()`,
-        [productId, a.name, a.source_count, status, level],
-      );
+    // ── 3') 원재료 — 다수결 결과를 candidate 로 ──
+    if (ingredients.length > 0) {
+      reviewIds.ingredients = await upsertMergeCandidate(client, {
+        contributionId: anchorContributionId,
+        productId,
+        axis: 'ingredients',
+        evidence: {
+          ...baseEvidence,
+          ingredient_count: ingredients.length,
+          merged_ingredients: ingredients,
+        },
+      });
+
+      // ── 4') 첨가물 — 원재료명이 있으면 검출할 «내용»이 있다 ──
+      //   ⚠ 첨가물은 `additiveResolver` 가 「검출 ∪ (원재료명 ∩ 마스터)」로 정한다.
+      //     검출이 0종이어도 원재료명 완전일치 축이 살아 있으므로, 원재료가 있으면 축에 내용이 있다.
+      //   ⛔ 여기서 검출 SQL 을 새로 쓰지 않는다 — 규칙 본문은 `additiveResolver.js` 한 곳이고,
+      //     승인 시 `contributionApply` 가 그 함수를 «호출»한다.
+      reviewIds.additives = await upsertMergeCandidate(client, {
+        contributionId: anchorContributionId,
+        productId,
+        axis: 'additives',
+        evidence: {
+          ...baseEvidence,
+          ingredient_names: ingredients.map((i) => i.name),
+          note: '첨가물 검출 규칙 본문은 additiveResolver.js 에 있다. 승인 시 그 함수가 돈다.',
+        },
+      });
+    }
+
+    // ── 5') 알레르기 — union + source_count + 등급을 candidate 로 ──
+    //   ⚠ 등급(evidence_level)은 여기서 **내리지 않는다**(`unionAllergens` 가 올리기만 한다).
+    //     실제 UPSERT 의 승격 CASE 는 `contributionApply.js` 로 옮겼다 — 규칙 본문은 한 곳이다.
+    if (allergens.length > 0) {
+      reviewIds.allergens = await upsertMergeCandidate(client, {
+        contributionId: anchorContributionId,
+        productId,
+        axis: 'allergens',
+        evidence: {
+          ...baseEvidence,
+          allergen_count: allergens.length,
+          merged_allergens: allergens,
+        },
+      });
     }
   });
 
   logger.info('mergeAndApply 완료', {
     productId, sourceCount, distinctDeviceCount, verification,
     outlierCount: outliers.length,
+    reviewCandidates: Object.keys(reviewIds),
+    queued: canQueueReview,
   });
 
   return {
@@ -705,6 +753,13 @@ async function mergeAndApply(productId) {
     verification,
     outliers,
     merged: { meta, nutrition, ingredients, allergens },
+    // ── 세션66 C6 신설 키 ─────────────────────────────────────────────────
+    //   ⚠ 기존 키(`applied`·`sourceCount`·`distinctDeviceCount`·`verification`·
+    //     `outliers`·`merged`)는 **한 글자도 바꾸지 않았다.** 호출부가 그것으로 판정한다.
+    //   ★ `applied: true` 의 뜻이 바뀌었다 — 「병합 «판정»을 냈고 검토 큐에 넣었다」이지
+    //     「공식 테이블에 반영했다」가 아니다. 반영은 사람이 승인할 때 일어난다.
+    reviewIds,
+    queuedForReview: canQueueReview,
   };
 }
 
@@ -712,6 +767,13 @@ module.exports = {
   // 메인 진입점
   mergeContributions,
   mergeAndApply,
+
+  // 세션66 C6: 검토 큐 — 경로 ①·②가 «같은 본문»을 쓴다
+  hasContributionReviewTable,
+  insertReviewCandidate,
+  upsertMergeCandidate,
+  REVIEW_AXES,
+  _resetContributionReviewCache,
 
   // 내부 알고리즘 (테스트용 export)
   median,

@@ -801,25 +801,29 @@ async function main() {
         });
 
         // ── (b) 3차 검증 중대2 — 출처 승격 시나리오 ──
-        await t('★★★ 크라우드 merge → HACCP 재적재 → 알레르겐 0건 merge 후에도 행이 남는다', async () => {
+        await t('★★★ 옛 크라우드 merge 행 → HACCP 재적재 → 알레르겐 0건 merge 후에도 행이 남는다', async () => {
           const PID = 2;
-          // ① 사용자 1명이 알레르기 사진을 올려 merge → detected_via='crowdsource_merge' 행이 생긴다
-          await db.query(
-            `INSERT INTO contributions (user_id, product_id, contribution_type, device_id, data)
-             VALUES ($1, $2, 'ocr_nutrition', 'dev-A', $3)`,
-            [TEST_USER_ID, PID, JSON.stringify({
-              parsed_nutrition: {}, parsed_ingredients: [],
-              allergens: ['대두', '밀', '우유', '새우', '메밀', '땅콩', '게'],
-              allergens_v2: { contains: ['대두', '밀', '우유', '새우', '메밀', '땅콩', '게'], inferred: [], mayContain: [] },
-              user_input: {}, device_id: 'dev-A', avg_confidence: 0.9,
-            })],
-          );
-          await merge.mergeAndApply(PID);
+          // ★★ 세션66 C6 — ①의 «만드는 방법»만 바뀌었다. 지키는 것은 그대로다.
+          //   종전: `mergeAndApply` 가 `detected_via='crowdsource_merge'` 행을 «만들었다».
+          //   지금: 병합은 공식 테이블에 쓰지 않는다(설계 §3-2 · 전량 수동에 예외 없음).
+          //   ⚠ 그러나 **운영 DB 에는 그 행들이 실재한다** — 세션45~65 동안 병합이 만들어 둔 것이다.
+          //     이 시나리오가 지키는 것은 「그 행들이 HACCP 로 승격된 뒤,
+          //     알레르겐 0건 병합 한 번에 삭제되지 않는가」다. 그래서 ①을 «직접 심는다».
+          //     (병합이 더 이상 지우지도 않으므로 이 축은 이제 이중으로 안전하다.)
+          const LEGACY = ['대두', '밀', '우유', '새우', '메밀', '땅콩', '게'];
+          for (const n of LEGACY) {
+            await db.query(
+              `INSERT INTO product_allergens
+                 (product_id, allergen_name, source_count, status, detected_via, evidence_level)
+               VALUES ($1, $2, 1, 'candidate', 'crowdsource_merge', 'contains')`,
+              [PID, n],
+            );
+          }
           const after1 = await db.query('SELECT allergen_name, detected_via FROM product_allergens WHERE product_id=$1', [PID]);
           const N = after1.rows.length;
-          assert.ok(N > 0, 'merge1 이 알레르기를 한 행도 적재하지 못했다 — 시나리오 전제가 깨졌다');
+          assert.ok(N > 0, '옛 크라우드 merge 행 픽스처가 심기지 않았다 — 시나리오 전제가 깨졌다');
           assert.ok(after1.rows.every((r) => r.detected_via === 'crowdsource_merge'),
-            `merge1 행의 detected_via 가 crowdsource_merge 가 아니다: ${JSON.stringify(after1.rows)}`);
+            `픽스처 행의 detected_via 가 crowdsource_merge 가 아니다: ${JSON.stringify(after1.rows)}`);
 
           // ② HACCP 재적재 — 같은 이름이 이미 있다. 승격되는가?
           const { rows: cols } = await db.query(

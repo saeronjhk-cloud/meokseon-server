@@ -40,6 +40,13 @@ const path = require('path');
 const SRV = path.join(__dirname, '..');
 const BASELINE = path.join(SRV, 'scripts', 'migrations', '000_baseline.sql');
 const M022 = path.join(SRV, 'scripts', 'migrations', '022_additive_detected_count.sql');
+// ★★ 세션66 C6 — 제보는 이제 `product_additives` 에 «즉시» 쓰지 않는다(설계 §3-2).
+//   저장집합 규칙(합집합·라벨 원문·ON CONFLICT)은 **한 글자도 안 바뀌었고**,
+//   그 규칙이 도는 «시점»만 「제보 즉시」에서 「관리자 승인」으로 옮겨졌다.
+//   ⇒ 이 회귀는 그 규칙을 계속 재려고 **승인 단계를 픽스처에 넣는다.**
+//     023(data_inspection) · 024(contribution_review) 가 그래서 필요하다.
+const M023 = path.join(SRV, 'scripts', 'migrations', '023_data_inspection.sql');
+const M024 = path.join(SRV, 'scripts', 'migrations', '024_contribution_review.sql');
 
 let pass = 0;
 let fail = 0;
@@ -79,6 +86,8 @@ async function main() {
   try {
     await db.exec(fs.readFileSync(BASELINE, 'utf8'));
     await db.exec(fs.readFileSync(M022, 'utf8'));
+    await db.exec(fs.readFileSync(M023, 'utf8'));
+    await db.exec(fs.readFileSync(M024, 'utf8'));
   } catch (e) {
     console.error(`마이그레이션 적용 실패 — 픽스처가 아니라 정본 SQL 문제다: ${e.message}`);
     process.exit(1);
@@ -109,6 +118,32 @@ async function main() {
   const crowdsource = require('../src/services/crowdsourceService');
   const { mergeAndApply } = require('../src/services/mergeService');
   const resolver = require('../src/services/additiveResolver');
+  const { applyApprovedContribution } = require('../src/services/contributionApply');
+
+  /**
+   * ★ 관리자 승인 1건을 흉내낸다 — 「제보 → (사람) → 공식 테이블」의 가운데 단계.
+   *   ⚠ `reviewed_by` 를 채우는 것이 곧 `cr_approve_human_chk`(DS-1) 를 만족시키는 일이다.
+   *     코드가 스스로 채우면 안 되는 값이라 **테스트가 사람 대신 채운다.**
+   */
+  const approveAxis = async (productId, axis) => {
+    // 축당 approved 는 최대 1건(`uq_cr_approved_per_product_axis`) — 옛 것은 비켜 준다.
+    await db.query(
+      `UPDATE contribution_review SET status = 'superseded'
+        WHERE product_id = $1 AND axis = $2 AND status = 'approved'`, [productId, axis]);
+    const r = await db.query(
+      `SELECT review_id FROM contribution_review
+        WHERE product_id = $1 AND axis = $2 AND status = 'candidate'
+        ORDER BY review_id DESC LIMIT 1`, [productId, axis]);
+    if (r.rows.length === 0) return null;
+    const reviewId = Number(r.rows[0].review_id);
+    await db.query(
+      `UPDATE contribution_review
+          SET status = 'approved', reviewed_by = 'test-admin', reviewed_at = now()
+        WHERE review_id = $1`, [reviewId]);
+    await applyApprovedContribution({ query: (t2, p2) => db.query(t2, p2 || []) }, reviewId,
+      { appliedBy: 'test-admin' });
+    return reviewId;
+  };
 
   // ── 마스터 시드 ──────────────────────────────────────────────────────────
   //   ⚠ `설탕` 은 식품첨가물이 **아니다**. 그런데 운영 마스터에 실제로 들어 있다(`U65-1`).
@@ -165,6 +200,7 @@ async function main() {
     barcode: 'S65C1_UNION', additives: DETECTED,
   }));
   assert.strictEqual(r1.saved, true, `저장이 반려됐다: ${r1.rejectReason}`);
+  await approveAxis(r1.productId, 'additives');
   const rows1 = await additiveRows(r1.productId);
   const byName1 = new Map(rows1.map((r) => [r.name_ko, r]));
 
@@ -206,6 +242,7 @@ async function main() {
       barcode: 'S65C1_NOADD', productName: '첨가물키없음', additives: undefined,
     }));
     assert.strictEqual(r.saved, true, `저장이 반려됐다: ${r.rejectReason}`);
+    await approveAxis(r.productId, 'additives');
     const names = (await additiveRows(r.productId)).map((x) => x.name_ko);
     assert.ok(names.includes('설탕'),
       `analysis.additives 가 없을 때 기존 동작(축 B)이 깨졌다: [${names.join(', ')}]`);
@@ -216,6 +253,7 @@ async function main() {
       barcode: 'S65C1_EMPTY', productName: '첨가물빈배열', additives: [],
     }));
     assert.strictEqual(r.saved, true, `저장이 반려됐다: ${r.rejectReason}`);
+    await approveAxis(r.productId, 'additives');
     const names = (await additiveRows(r.productId)).map((x) => x.name_ko);
     assert.deepStrictEqual(names, ['설탕'],
       `빈 배열일 때 저장집합이 축 B 와 달라졌다: [${names.join(', ')}]`);
@@ -229,6 +267,7 @@ async function main() {
       additives: [{ name: '인산', category: '산도조절제', raw: '산도조절제', match_type: 'exact(main)' }],
     }));
     assert.strictEqual(again.saved, true, `재제보가 반려됐다: ${again.rejectReason}`);
+    await approveAxis(r1.productId, 'additives');
     const after = await additiveRows(r1.productId);
     assert.strictEqual(after.length, before.length,
       `재제보로 행이 ${before.length} → ${after.length} 로 늘었다. ON CONFLICT DO NOTHING 이 깨졌다(계약 C1)`);
@@ -260,6 +299,10 @@ async function main() {
     }
     const res = await mergeAndApply(pid);
     assert.strictEqual(res.applied, true, '병합이 적용되지 않았다');
+    // ★★ 세션66 C6 — 병합도 «자동 반영»이 아니다. 판정만 하고 candidate 를 만든다.
+    //   여기서 관리자 승인을 흉내내야 같은 합집합 규칙이 도는지 잴 수 있다.
+    assert.ok(await approveAxis(pid, 'additives'),
+      '병합이 additives candidate 를 만들지 않았다 — 검토 큐에 안 올라가면 영원히 반영되지 않는다');
 
     const rows = await additiveRows(pid);
     const byName = new Map(rows.map((r) => [r.name_ko, r]));

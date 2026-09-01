@@ -94,6 +94,8 @@ jobs:
             src/services/raccTable.js \
             src/utils/foodCategory.js \
             src/services/contributionApply.js \
+            src/services/reviewActions.js \
+            scripts/staging/off/collapse_classify.js \
             scripts/lib/allergenUpsert.js \
             scripts/19-apply-haccp.js \
             scripts/26-apply-haccp-dump.js \

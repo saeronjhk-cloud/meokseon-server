@@ -16,7 +16,12 @@ const {
   applyApprovedContribution, undoAppliedContribution,
 } = require('../services/contributionApply');
 const { collapseAction, matchAction, entityAction, profileAction, isBulkAllowed } = require('../services/reviewActions');
-const { verifyEligibility } = require('../../scripts/staging/off/collapse_classify');
+// ⛔⛔ 세션66 (2026-09-01) — 이 줄을 `../../scripts/staging/...` 로 되돌리지 말 것.
+//   `.dockerignore` 가 `scripts/staging/` 을 «의도적으로» 제외한다(일회성 파이프라인).
+//   되돌리면 운영 컨테이너가 부팅 즉시 죽고 **로그에 에러가 한 줄도 안 남는다.**
+//   실제로 그렇게 죽었다 — 근거는 `src/services/collapseClassify.js` 머리말.
+//   ★ `src/`(런타임)는 `scripts/`(배치)를 require 하지 않는다. 배포 경계가 다르다.
+const { verifyEligibility } = require('../services/collapseClassify');
 
 const router = express.Router();
 

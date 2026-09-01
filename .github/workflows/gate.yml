@@ -95,6 +95,7 @@ jobs:
             src/utils/foodCategory.js \
             src/services/contributionApply.js \
             src/services/reviewActions.js \
+            src/services/collapseClassify.js \
             scripts/staging/off/collapse_classify.js \
             scripts/lib/allergenUpsert.js \
             scripts/19-apply-haccp.js \
@@ -115,7 +116,8 @@ jobs:
             tests/test_allergen_ingredient_no_infer.js \
             tests/test_contribution_split_schema.js \
             tests/test_contribution_apply.js \
-            tests/test_write_path_split.js
+            tests/test_write_path_split.js \
+            tests/test_boot_graph.js
           do
             node --check "$f"
           done
@@ -125,6 +127,14 @@ jobs:
 
       - name: 앱이 부팅되는가
         run: node -e "require('./src/app')"
+
+      # ★★ 세션66 (2026-09-01) — 「부팅된다」와 「배포되면 부팅된다」는 다르다.
+      #   위 스텝은 **CI 체크아웃**에서 뜨는지만 본다. 그런데 운영은 **Docker 이미지**로 뜨고,
+      #   `.dockerignore` 가 `scripts/staging/`·`scripts/merge/` 등을 «의도적으로» 제외한다.
+      #   실제로 그 틈으로 Railway 배포가 죽었다 — 크래시 루프, **로그에 에러 0줄**.
+      #   이 스텝이 그 틈을 막는다. 위 스텝 «바로 뒤»에 두는 이유다.
+      - name: "test: boot-graph (배포되면 부팅되는가 · 세션66)"
+        run: npm run test:boot-graph
 
       # ── STEP 2 : 회귀 (스위트마다 별도 단계 — 어느 것이 빨강인지 보이게) ────
       - name: "test: allergen"

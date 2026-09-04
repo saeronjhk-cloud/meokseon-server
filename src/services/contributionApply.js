@@ -186,18 +186,45 @@ function normUnit(u) {
  *   판정해 관측용으로만 남긴 값이다(`crowdsourceService` 주석). 여기서 되살리면
  *   게이트가 막은 값이 승인 경로로 우회 입장한다.
  *
+ * ★★ 세션67 `U66-4` — 3번째 인자 `reviewEvidence` (`contribution_review.evidence`).
+ *   관리자가 **사람으로서** 채운 기준이 `evidence.admin_basis.value` 에 들어온다
+ *   (쓰기 엔드포인트는 `POST /api/admin/review/contributions/:reviewId/basis`).
+ *   그 값이 후보 목록 **최상위**다 — 라벨 사진을 직접 본 사람의 판정이
+ *   OCR 파서가 추측한 `_basis` 보다 세다.
+ *
+ *   ⛔ 그런데 그것은 **우회로가 아니다.** `admin_basis.value` 도 `CONTRIBUTION_BASIS_OK`
+ *     4개 어휘를 통과해야 한다. `'unknown'`·`'per_pack'` 을 넣으면 여전히 `basis: null` 이고
+ *     승인은 `BASIS_UNKNOWN` 으로 보류된다. 어휘 검사를 관리자 값에만 면제하면
+ *     「사람이 채웠다」가 곧 「아무 문자열이나 통과한다」가 된다.
+ *
+ *   ⛔ 그리고 `P1`(추정 금지)은 그대로다. 기준을 채워도 **환산 근거**(1회 제공량·총 내용량)가
+ *     없으면 `computeConvertFactor` 가 여전히 `CONVERT_BASIS_UNKNOWN` 을 던진다.
+ *     기준(basis)은 「그 라벨 사진의 성질」이고 제공량은 「제품의 성질」이라 **가는 곳이 다르다**
+ *     (계약 §4 Q2 — 제공량은 `products` 에 쓴다. `buildConvertCtx` 가 그것을 최우선으로 읽는다).
+ *
+ *   ⛔ 관리자 값을 `contributions.data` 에 **쓰지 않는다**(계약 §4 Q1). `contributions.data` 는
+ *     사용자가 낸 원본이다. 거기에 관리자 판정을 써 넣으면 「사용자가 그렇게 신고했다」와
+ *     「관리자가 그렇게 판정했다」가 영원히 구분되지 않는다. 판정은 판정 테이블에 남는다.
+ *
  * @param {Object} contributionData - `contributions.data` (JSONB)
  * @param {Object} [productRow] - `{ has_public_nutrition:boolean, public_serving_marker:string|null }`
+ * @param {Object|string} [reviewEvidence] - `contribution_review.evidence` (JSONB · 문자열도 받는다)
  * @returns {{basis: string|null, evidence: Object}}
  */
-function resolveBasis(contributionData, productRow) {
+function resolveBasis(contributionData, productRow, reviewEvidence) {
   const data = (contributionData && typeof contributionData === 'object') ? contributionData : {};
   const pn = (data.parsed_nutrition && typeof data.parsed_nutrition === 'object')
     ? data.parsed_nutrition : null;
   const nu = (data.nutrition && typeof data.nutrition === 'object') ? data.nutrition : null;
 
-  // 우선순위 = 「제보를 만든 쪽이 실제로 쓰는 자리」 순서.
+  // ★ 관리자가 채운 기준. `contribution_review.evidence` 에만 있다 — `contributions.data` 가 아니다.
+  const rev = asObject(reviewEvidence);
+  const ab = (rev && rev.admin_basis && typeof rev.admin_basis === 'object'
+    && !Array.isArray(rev.admin_basis)) ? rev.admin_basis : null;
+
+  // 우선순위 = 「사람이 판정한 것」 → 「제보를 만든 쪽이 실제로 쓰는 자리」 순서.
   const candidates = [
+    ['review.evidence.admin_basis', ab ? ab.value : undefined],
     ['data.parsed_nutrition._basis', pn && pn._basis],
     ['data.nutrition._basis', nu && nu._basis],
     ['data._basis', data._basis],
@@ -233,6 +260,14 @@ function resolveBasis(contributionData, productRow) {
       considered,
       has_public_nutrition: hasPublic,
       product_basis: productBasis,
+      // ★ 관리자가 무엇을 근거로 채웠는지 그대로 남긴다(계약 §5-2 의 `basis.admin_basis`).
+      //   ⚠ 키를 넷으로 «고정»한다 — evidence 에 실려 온 임의의 키를 그대로 되쏘지 않는다.
+      admin_basis: ab ? {
+        value: ab.value ?? null,
+        by: ab.by ?? null,
+        at: ab.at ?? null,
+        note: ab.note ?? null,
+      } : null,
     },
   };
 }
@@ -496,7 +531,7 @@ async function readCrowdNutritionRow(client, productId) {
 }
 
 async function applyNutritionAxis(client, ctxArgs) {
-  const { productId, review, data, appliedBy } = ctxArgs;
+  const { productId, review, data, appliedBy, reviewEvidence } = ctxArgs;
 
   const parsed = pickNutritionObject(data);
   if (!parsed) {
@@ -519,7 +554,9 @@ async function applyNutritionAxis(client, ctxArgs) {
   const productRow = prow.rows[0];
 
   // ── ★ DS-9 ①: 기준을 «모르면» 저장하지 않는다 ──
-  const resolved = resolveBasis(data, productRow);
+  //   ★ 세션67 — 3번째 인자로 `contribution_review.evidence` 를 넘긴다.
+  //     관리자가 채운 `admin_basis` 가 있으면 그것이 이긴다(어휘 검사는 그대로 통과해야 한다).
+  const resolved = resolveBasis(data, productRow, reviewEvidence);
   if (!resolved.basis) {
     throw fail('BASIS_UNKNOWN',
       '제보의 영양성분 표기 기준(1회 제공량당 / 100g당 / 100mL당 / 총 내용량당)을 '
@@ -621,6 +658,10 @@ async function applyNutritionAxis(client, ctxArgs) {
       basis_stored: targetBasis,
       factor: conv.factor,
       note: `${targetNote.join(' / ')} / ${conv.note}`,
+      // ★ 세션67 — 「그 기준이 «어디서» 왔는가」를 반영 기록에 남긴다.
+      //   `'review.evidence.admin_basis'` 면 사람이 채운 것이고, `'data.*'` 면 제보가 낸 것이다.
+      //   이 한 줄이 없으면 나중에 「누가 그렇게 판정했나」를 되짚을 수 없다.
+      basis_from: resolved.evidence.from,
     },
     counts: {
       nutrients_stored: foundCount,
@@ -873,12 +914,19 @@ async function applyApprovedContribution(client, reviewId, opts = {}) {
   }
   const data = asObject(cr.rows[0].data) || {};
 
+  // ★ 세션67 — 이미 위 SELECT 가 가져온 `evidence` 를 축 핸들러까지 «흘려보낸다».
+  //   여기에 관리자가 채운 `admin_basis` 가 있다(계약 §4 Q1 — `contributions.data` 는 안 건드린다).
+  //   ⚠ 축 핸들러 넷이 같은 인자 모양을 받는다. nutrition 만 쓰지만 모양을 갈라 두면
+  //     다음 축이 기준을 필요로 할 때 또 배선을 뚫어야 한다.
+  const reviewEvidence = asObject(review.evidence);
+
   // ── ②③④ 축별 적용 (before 읽기 → 쓰기 → after 읽기) ──
   const handler = AXIS_HANDLERS[review.axis];
   const out = await handler(client, {
     productId,
     review: { review_id: Number(review.review_id), contribution_id: Number(review.contribution_id) },
     data,
+    reviewEvidence,
     appliedBy,
   });
 
@@ -1121,4 +1169,9 @@ module.exports = {
   basisAmount,
   buildAllergenList,
   buildConvertCtx,
+  // ★ 세션67 계약 §5-4 — 읽기 API(`reviewQueueRead.js`)가 `proposed` 를 뽑을 때 «호출»한다.
+  //   ⛔ 규칙을 두 벌로 만들지 말 것. `contributions.data` 를 통째로 내보내면
+  //     `ocr_raw_text`·`device_id` 가 관리자 화면 응답에 실려 나간다.
+  pickNutritionObject,
+  pickIngredientNames,
 };

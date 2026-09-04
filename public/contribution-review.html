@@ -1,0 +1,914 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>먹선 · 제보 검토 (contribution_review)</title>
+<style>
+  /* review-queue.html 과 «같은» 팔레트·구조. 새 디자인 언어를 만들지 않는다. */
+  :root {
+    --bg:#0f1115; --panel:#171a21; --panel2:#1e222b; --line:#2a2f3a;
+    --txt:#e6e8ec; --muted:#9aa3af; --accent:#4f8cff; --green:#2ea86b;
+    --red:#e5484d; --amber:#e2a336; --chip:#252b36;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--txt);
+    font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI","Malgun Gothic",sans-serif; }
+  header { position:sticky; top:0; z-index:10; background:var(--panel);
+    border-bottom:1px solid var(--line); padding:12px 20px; }
+  h1 { font-size:16px; margin:0 0 8px; }
+  h1 small { color:var(--muted); font-weight:400; font-size:12px; }
+  .cfg { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+  .cfg input { background:var(--panel2); border:1px solid var(--line); color:var(--txt);
+    border-radius:6px; padding:6px 9px; font-size:13px; }
+  .cfg input#token { width:230px; } .cfg input#actor { width:120px; } .cfg input#base { width:180px; }
+  .cfg .hint { color:var(--muted); font-size:11.5px; }
+  button { background:var(--panel2); border:1px solid var(--line); color:var(--txt);
+    border-radius:6px; padding:6px 11px; font-size:13px; cursor:pointer; }
+  button:hover { border-color:var(--accent); }
+  button.primary { background:var(--accent); border-color:var(--accent); color:#fff; }
+  button.green { background:var(--green); border-color:var(--green); color:#fff; }
+  button.red { background:var(--red); border-color:var(--red); color:#fff; }
+  button.amber { background:var(--amber); border-color:var(--amber); color:#20140a; font-weight:600; }
+  button:disabled { opacity:.45; cursor:not-allowed; }
+  button.mini { padding:2px 8px; font-size:11.5px; }
+  .tabs { display:flex; gap:6px; margin-top:10px; flex-wrap:wrap; }
+  .tab { padding:8px 14px; border-radius:8px 8px 0 0; background:transparent;
+    border:1px solid transparent; color:var(--muted); }
+  .tab.active { background:var(--panel2); border-color:var(--line); border-bottom-color:var(--panel2); color:var(--txt); }
+  .tab .n { color:var(--accent); font-weight:600; }
+  .tab.held { color:var(--amber); }
+  .tab.held.active { color:var(--amber); border-color:var(--amber); border-bottom-color:var(--panel2); }
+  .tab.held .n { color:var(--amber); }
+  main { padding:16px 20px 60px; max-width:1180px; margin:0 auto; }
+  .toolbar { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:12px; }
+  select { background:var(--panel2); border:1px solid var(--line); color:var(--txt); border-radius:6px; padding:6px 9px; }
+  .summary { color:var(--muted); font-size:12px; margin-left:auto; }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:10px;
+    padding:14px 16px; margin-bottom:10px; }
+  .card.hasheld { border-color:#6b4a15; }
+  .card .top { display:flex; justify-content:space-between; gap:12px; align-items:flex-start; }
+  .pname { font-weight:600; font-size:15px; }
+  .meta { color:var(--muted); font-size:12px; margin-top:2px; }
+  .chips { display:flex; gap:6px; flex-wrap:wrap; margin:8px 0; align-items:center; }
+  .chip { background:var(--chip); border:1px solid var(--line); border-radius:20px;
+    padding:2px 10px; font-size:11.5px; color:var(--muted); }
+  .chip.warn { color:var(--amber); border-color:#5a4a1e; }
+  .chip.ok { color:var(--green); border-color:#1e4a35; }
+  .chip.bad { color:var(--red); border-color:#5a1e21; }
+  .status-badge { font-size:11px; padding:2px 8px; border-radius:6px; border:1px solid var(--line); }
+  .s-candidate { color:var(--amber); } .s-approved { color:var(--green); }
+  .s-rejected { color:var(--red); } .s-undone { color:var(--muted); } .s-superseded { color:var(--muted); }
+  /* ★ 보류 — 이 화면의 존재 이유. 주황으로 «반영 안 됨»을 말한다. */
+  .held-badge { background:var(--amber); color:#20140a; border:1px solid var(--amber);
+    border-radius:6px; padding:2px 9px; font-size:11.5px; font-weight:700; }
+  .basis-warn { color:var(--amber); font-size:12px; border:1px dashed var(--amber);
+    border-radius:6px; padding:3px 9px; background:rgba(226,163,54,.08); }
+  .axisrow { background:var(--panel2); border:1px solid var(--line); border-radius:8px;
+    padding:9px 11px; margin-top:8px; }
+  .axisrow.held { border-color:var(--amber); }
+  .axisrow .line1 { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+  .axisrow .axname { font-weight:600; min-width:78px; }
+  .actions { display:flex; gap:8px; margin-top:9px; flex-wrap:wrap; align-items:center; }
+  .actions input.note { flex:1; min-width:150px; background:var(--bg); border:1px solid var(--line);
+    color:var(--txt); border-radius:6px; padding:5px 9px; font-size:12.5px; }
+  table.cmp { width:100%; border-collapse:collapse; margin-top:6px; font-size:12px; }
+  table.cmp th,table.cmp td { text-align:left; padding:4px 8px; border-bottom:1px solid var(--line); color:var(--muted); }
+  table.cmp th { color:var(--txt); font-weight:600; }
+  table.cmp td.k { color:var(--txt); }
+  table.cmp tr.diff td { background:rgba(226,163,54,.09); }
+  table.cmp tr.diff td.v { color:var(--amber); font-weight:600; }
+  .col2 { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+  .box { background:var(--panel2); border:1px solid var(--line); border-radius:8px; padding:10px 12px; }
+  .box h4 { margin:0 0 6px; font-size:12.5px; color:var(--muted); font-weight:600; }
+  .empty,.err { text-align:center; padding:40px; color:var(--muted); }
+  .err { color:var(--red); }
+  .pager { display:flex; gap:8px; align-items:center; justify-content:center; margin-top:14px; color:var(--muted); }
+  .toast { position:fixed; bottom:20px; left:50%; transform:translateX(-50%); max-width:80vw;
+    background:var(--panel2); border:1px solid var(--line); border-radius:8px; padding:10px 16px; display:none; }
+  .toast.show { display:block; }
+  code { font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace; background:var(--chip);
+    border:1px solid var(--line); border-radius:4px; padding:1px 5px; color:#ffd479; }
+  pre { font:11.5px/1.45 ui-monospace,SFMono-Regular,Menlo,monospace; background:var(--bg);
+    border:1px solid var(--line); border-radius:6px; padding:8px 10px; overflow:auto; max-height:260px; color:var(--muted); }
+  details summary { cursor:pointer; color:var(--muted); font-size:12px; }
+  /* 409 결과 패널 — «성공으로 표시하지 않는다» */
+  .failpanel { border:1px solid var(--red); border-radius:10px; padding:12px 14px; margin:10px 0;
+    background:rgba(229,72,77,.07); }
+  .failpanel h3 { margin:0 0 8px; font-size:13.5px; color:var(--red); }
+  .failitem { border-top:1px solid var(--line); padding:8px 0; }
+  .failitem:first-of-type { border-top:none; }
+  .failitem .why { color:var(--txt); margin:3px 0; }
+  .failitem .srv { color:var(--muted); font-size:12px; }
+  .failitem .unknown { color:var(--amber); font-size:12px; }
+  /* 모달 (기준 입력 · 상세) */
+  .modal { position:fixed; inset:0; background:rgba(0,0,0,.6); display:none; z-index:30;
+    align-items:flex-start; justify-content:center; overflow:auto; padding:36px 12px; }
+  .modal.show { display:flex; }
+  .modal .sheet { background:var(--panel); border:1px solid var(--line); border-radius:12px;
+    padding:18px 20px; width:100%; max-width:900px; }
+  .modal .sheet.narrow { max-width:520px; }
+  .modal h3 { margin:0 0 4px; font-size:15px; }
+  .modal .sub { color:var(--muted); font-size:12px; margin-bottom:12px; }
+  .frow { display:flex; gap:8px; align-items:center; margin-bottom:9px; flex-wrap:wrap; }
+  .frow label { width:120px; color:var(--muted); font-size:12.5px; }
+  .frow input,.frow select,.frow textarea { background:var(--panel2); border:1px solid var(--line);
+    color:var(--txt); border-radius:6px; padding:6px 9px; font-size:13px; font-family:inherit; }
+  .frow input.w120 { width:120px; } .frow .grow { flex:1; min-width:200px; }
+  .frow textarea { width:100%; min-height:62px; }
+  .req { color:var(--red); }
+  .modal .foot { display:flex; gap:8px; justify-content:flex-end; margin-top:12px; }
+  .formerr { color:var(--red); font-size:12.5px; min-height:18px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>먹선 · 제보 검토 <small>contribution_review — 4축 승인/반려 · ★ 보류(반영 안 됨) 해소 · 표기 기준 채우기</small></h1>
+  <div class="cfg">
+    <input id="base" placeholder="API base (비우면 동일 origin)" />
+    <input id="token" type="password" placeholder="ADMIN_TOKEN" />
+    <input id="actor" placeholder="검토자 이름 (reviewed_by)" />
+    <button class="primary" onclick="saveCfg()">저장</button>
+    <button onclick="loadAll()">새로고침</button>
+    <span class="hint">토큰은 <b>이 탭에만</b>(sessionStorage) 남습니다.</span>
+  </div>
+  <div class="tabs" id="tabs"></div>
+</header>
+
+<main>
+  <div class="toolbar" id="toolbar"></div>
+  <div id="result"></div>
+  <div id="list"><div class="empty">ADMIN_TOKEN 저장 후 새로고침하세요.</div></div>
+  <div class="pager" id="pager"></div>
+</main>
+
+<div class="toast" id="toast"></div>
+
+<div class="modal" id="modal-detail" onclick="if(event.target===this)closeModal('detail')">
+  <div class="sheet"><div id="detail-body"><div class="empty">불러오는 중…</div></div>
+    <div class="foot"><button onclick="closeModal('detail')">닫기</button></div></div>
+</div>
+
+<div class="modal" id="modal-basis" onclick="if(event.target===this)closeModal('basis')">
+  <div class="sheet narrow">
+    <h3>표기 기준 채우기 <small style="color:var(--muted);font-weight:400">POST …/basis</small></h3>
+    <div class="sub" id="basis-sub"></div>
+    <div class="frow"><label>기준 <span class="req">*</span></label>
+      <select id="bf-basis">
+        <option value="">— 선택 —</option>
+        <option value="per_serving">per_serving — 1회 제공량 기준</option>
+        <option value="per_100g">per_100g — 100g 기준</option>
+        <option value="per_100ml">per_100ml — 100ml 기준</option>
+        <option value="per_total">per_total — 총 내용량 기준</option>
+      </select></div>
+    <div class="frow"><label>1회 제공량</label>
+      <input id="bf-ss" class="w120" type="number" step="any" placeholder="예: 30" />
+      <select id="bf-su"><option value="">단위</option><option value="g">g</option><option value="ml">ml</option></select>
+      <span class="hint" style="color:var(--muted);font-size:11.5px">products 에 기록됩니다(제품의 물리적 사실)</span></div>
+    <div class="frow"><label>총 내용량</label>
+      <input id="bf-tc" class="w120" type="number" step="any" placeholder="예: 300" />
+      <select id="bf-cu"><option value="">단위</option><option value="g">g</option><option value="ml">ml</option></select></div>
+    <div class="frow" style="align-items:flex-start"><label>근거 note <span class="req">*</span></label>
+      <textarea id="bf-note" placeholder="예: 라벨 사진 우하단 '1회 제공량 30g' 육안 확인"></textarea></div>
+    <div class="sub">근거 없는 기준은 추정과 구별되지 않습니다. 비우면 서버가 <code>BASIS_NOTE_REQUIRED</code> 로 거절합니다.</div>
+    <div class="formerr" id="bf-err"></div>
+    <div class="foot"><button onclick="closeModal('basis')">취소</button>
+      <button class="primary" onclick="submitBasis()">기준 저장</button></div>
+  </div>
+</div>
+
+<div class="modal" id="modal-correct" onclick="if(event.target===this)closeModal('correct')">
+  <div class="sheet narrow">
+    <h3>공공 영양 정정 <small style="color:var(--muted);font-weight:400">action=correct</small></h3>
+    <div class="sub" id="corr-sub">이 폼은 <b>공공 영양 행(nutrition_data)</b>을 고칩니다. 제보 값이 아닙니다.
+      비운 칸은 <code>COALESCE</code> 로 <b>바뀌지 않습니다</b>.</div>
+    <div id="corr-fields"></div>
+    <div class="formerr" id="corr-err"></div>
+    <div class="foot"><button onclick="closeModal('correct')">취소</button>
+      <button class="primary" onclick="submitCorrect()">정정 저장</button></div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════
+     core — DOM 을 «한 줄도» 참조하지 않는 순수 함수들.
+     Node 에서 그대로 require 해 렌더 결과를 단정할 수 있어야 한다(세션67 검증 조건).
+     ══════════════════════════════════════════════════════════════ -->
+<script id="cr-core">
+(function (root, factory) {
+  var api = factory();
+  if (typeof module === 'object' && module && module.exports) module.exports = api;
+  else root.CR = api;
+})(typeof globalThis !== 'undefined' ? globalThis : this, function () {
+'use strict';
+
+var AXES = ['nutrition', 'ingredients', 'allergens', 'additives'];
+var AXIS_LABEL = { nutrition: '영양', ingredients: '원재료', allergens: '알레르기', additives: '첨가물' };
+var TABS = ['held', 'all', 'nutrition', 'ingredients', 'allergens', 'additives'];
+var TAB_LABEL = { held: '★ 보류(held)', all: '전체' };
+AXES.forEach(function (a) { TAB_LABEL[a] = AXIS_LABEL[a] + ' ' + a; });
+
+/** `nutrition_data_crowd` 와 같은 15개 영양 키. 비교표의 행 순서다. */
+var NUTRIENT_KEYS = ['calories', 'total_fat', 'saturated_fat', 'trans_fat', 'cholesterol',
+  'sodium', 'total_carbs', 'total_sugars', 'added_sugars', 'dietary_fiber',
+  'protein', 'calcium', 'iron', 'vitamin_d', 'potassium'];
+var NUTRIENT_LABEL = {
+  calories: '열량(kcal)', total_fat: '지방(g)', saturated_fat: '포화지방(g)', trans_fat: '트랜스지방(g)',
+  cholesterol: '콜레스테롤(mg)', sodium: '나트륨(mg)', total_carbs: '탄수화물(g)', total_sugars: '당류(g)',
+  added_sugars: '첨가당(g)', dietary_fiber: '식이섬유(g)', protein: '단백질(g)', calcium: '칼슘(mg)',
+  iron: '철(mg)', vitamin_d: '비타민D(µg)', potassium: '칼륨(mg)',
+};
+
+var BASIS_OK = ['per_serving', 'per_100g', 'per_100ml', 'per_total'];
+var UNIT_OK = ['g', 'ml'];
+
+/**
+ * ★★ 서버가 내는 코드 → 사람 말.
+ *   `fix` 가 있으면 화면이 그 자리에서 고칠 수단을 연다.
+ *   ⛔ 여기 «없는» 코드는 「알 수 없는 오류」로 뭉개지 않는다 — 코드 문자열을 그대로 보여준다.
+ */
+var ERROR_TEXT = {
+  BASIS_UNKNOWN: {
+    text: '표기 기준을 모릅니다 — 아래 기준 입력을 채워 주세요.',
+    fix: 'basis', fixLabel: '기준 입력 폼 열기',
+  },
+  CONVERT_BASIS_UNKNOWN: {
+    text: '1회 제공량/총 내용량이 없어 환산할 수 없습니다.',
+    fix: 'serving', fixLabel: '제공량 입력 열기',
+  },
+  AXIS_ALREADY_APPROVED: {
+    text: '이 제품의 이 축에는 이미 승인된 제보가 있습니다. 승인은 축당 1건이라 undo → reopen 을 먼저 거쳐야 합니다.',
+  },
+  UNDO_REQUIRED_BEFORE_REOPEN: {
+    text: '이미 반영된 제보입니다. undo 로 데이터를 되돌린 뒤에 reopen 해야 합니다.',
+  },
+  NO_PUBLIC_NUTRITION_ROW: {
+    text: '이 제품에는 정정할 공공 영양 행(nutrition_data)이 없습니다. 제보 영양은 승인(approve)으로 nutrition_data_crowd 에 들어갑니다.',
+  },
+  ALREADY_APPLIED: {
+    text: '이미 반영된 제보입니다 — 다시 반영하지 않았습니다.',
+  },
+  UNDO_EVIDENCE_MISSING: {
+    text: '되돌릴 근거(evidence.before)가 없습니다. 한 번도 반영된 적 없는 행일 수 있습니다 — 그런 행은 undo 가 아니라 retry(재반영) 또는 reject 입니다.',
+  },
+  NOTHING_TO_APPLY: {
+    text: '이 제보에는 이 축으로 옮길 값이 없습니다.',
+  },
+  INVALID_ACTION: { text: 'action 값이 서버가 아는 목록 밖입니다.' },
+  CORRECTIONS_REQUIRED: { text: "action='correct' 에는 corrections 가 필요합니다." },
+  INVALID_BASIS: { text: '기준 값이 per_serving / per_100g / per_100ml / per_total 밖입니다.' },
+  INVALID_UNIT: { text: '단위는 g 또는 ml 만 됩니다.' },
+  BASIS_NOTE_REQUIRED: { text: '근거(note)가 비어 있습니다. 근거 없는 기준은 추정과 구별되지 않습니다.' },
+};
+
+function esc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+  });
+}
+function num(v) { return (v == null || v === '') ? '–' : (typeof v === 'number' ? (Math.round(v * 1000) / 1000) : v); }
+function shortDate(s) { return s ? String(s).replace('T', ' ').slice(0, 16) : '–'; }
+
+/** 값 두 개가 「다른가」 — 숫자는 수치로, 나머지는 문자열로 비교한다. */
+function differs(a, b) {
+  if (a == null && b == null) return false;
+  if (a == null || b == null) return true;
+  var na = Number(a); var nb = Number(b);
+  if (Number.isFinite(na) && Number.isFinite(nb)) return Math.abs(na - nb) > 1e-9;
+  return String(a) !== String(b);
+}
+
+/** 축 목록·객체·문자열 무엇이 와도 이름 배열로 만든다(에이전트 B 의 `proposed` 모양 방어). */
+function toNameList(x) {
+  if (x == null) return [];
+  if (Array.isArray(x)) {
+    return x.map(function (v) {
+      if (v == null) return '';
+      if (typeof v === 'string') return v;
+      return v.name || v.allergen_name || v.name_ko || v.detected_name || v.additive_name || JSON.stringify(v);
+    }).filter(Boolean);
+  }
+  if (typeof x === 'object') {
+    var inner = x.names || x.list || x.items || x.ingredients || x.allergens || x.additives;
+    if (inner) return toNameList(inner);
+    return [];
+  }
+  return [String(x)];
+}
+
+/** nutrition 축의 제보 값 객체를 찾아낸다. */
+function proposedNutrition(proposed) {
+  if (!proposed || typeof proposed !== 'object') return null;
+  if (proposed.parsed_nutrition && typeof proposed.parsed_nutrition === 'object') return proposed.parsed_nutrition;
+  if (proposed.nutrition && typeof proposed.nutrition === 'object') return proposed.nutrition;
+  return proposed;
+}
+
+// ── 탭 ───────────────────────────────────────────────────────────
+/** 탭에 맞는 축만 남긴다. 남는 축이 0 이면 그 제품 카드는 안 보인다. */
+function filterItems(items, tab) {
+  var src = Array.isArray(items) ? items : [];
+  var out = [];
+  for (var i = 0; i < src.length; i++) {
+    var it = src[i];
+    var axes = Array.isArray(it.axes) ? it.axes : [];
+    var keep;
+    if (tab === 'held') keep = axes.filter(function (a) { return a.held === true; });
+    else if (tab === 'all') keep = axes.slice();
+    else keep = axes.filter(function (a) { return a.axis === tab; });
+    if (keep.length) out.push(Object.assign({}, it, { axes: keep }));
+  }
+  return out;
+}
+
+function tabCounts(items) {
+  var c = { held: 0, all: 0, nutrition: 0, ingredients: 0, allergens: 0, additives: 0 };
+  (Array.isArray(items) ? items : []).forEach(function (it) {
+    (it.axes || []).forEach(function (a) {
+      c.all += 1;
+      if (a.held === true) c.held += 1;
+      if (c[a.axis] != null) c[a.axis] += 1;
+    });
+  });
+  return c;
+}
+
+function tabsHtml(activeTab, counts) {
+  return TABS.map(function (t) {
+    var cls = 'tab' + (t === 'held' ? ' held' : '') + (t === activeTab ? ' active' : '');
+    var n = counts && counts[t] != null ? counts[t] : '–';
+    return '<button class="' + cls + '" id="tab-' + t + '" onclick="switchTab(\'' + t + '\')">'
+      + esc(TAB_LABEL[t]) + ' <span class="n">' + esc(n) + '</span></button>';
+  }).join('');
+}
+
+// ── 배지 ─────────────────────────────────────────────────────────
+/** ★ 보류 = status 'approved' + applied_at NULL. 주황으로 «반영 안 됨»을 말한다. */
+function heldBadgeHtml(ax) {
+  return ax && ax.held === true ? '<span class="held-badge">보류 — 반영 안 됨</span>' : '';
+}
+
+/**
+ * ★ 승인 «전»에 알려야 하는 것: 기준을 모르면 승인해도 보류된다.
+ *   nutrition 축에만 해당한다(다른 축은 basis 를 안 쓴다).
+ */
+function basisWarnHtml(ax) {
+  if (!ax || ax.axis !== 'nutrition') return '';
+  if (ax.basis != null) return '';
+  var raw = ax.basis_raw ? ' (라벨에 있던 값: ' + esc(ax.basis_raw) + ')' : '';
+  return '<span class="basis-warn">⚠ 기준 미상 — 지금 승인하면 보류됩니다' + raw + '</span>';
+}
+
+function basisChipHtml(ax) {
+  if (!ax || ax.axis !== 'nutrition') return '';
+  if (ax.basis == null) return '<span class="chip warn">기준 null</span>';
+  var from = ax.basis_from === 'review.evidence.admin_basis' ? ' · 관리자 입력' : '';
+  return '<span class="chip ok">기준 ' + esc(ax.basis) + esc(from) + '</span>';
+}
+
+/** 상태별로 «할 수 있는 것»만 낸다. 못 하는 버튼을 내면 409 를 눌러 보게 만든다. */
+function axisActions(ax) {
+  var st = ax.status;
+  var out = [];
+  if (st === 'candidate') { out.push('approve'); out.push('reject'); }
+  else if (st === 'approved' && ax.held === true) { out.push('retry'); out.push('undo'); out.push('reject'); }
+  else if (st === 'approved') { out.push('undo'); out.push('reject'); }
+  else if (st === 'rejected' || st === 'undone') { out.push('reopen'); }
+  return out;
+}
+
+var ACTION_LABEL = {
+  approve: '승인(approve)', reject: '반려(reject)', undo: '되돌리기(undo)',
+  reopen: '큐로 복귀(reopen)', retry: '재반영(retry)',
+};
+var ACTION_CLASS = { approve: 'green', reject: 'red', retry: 'amber', undo: '', reopen: '' };
+
+function axisRowHtml(item, ax) {
+  var acts = axisActions(ax).map(function (a) {
+    return '<button class="' + ACTION_CLASS[a] + '" onclick="act(' + Number(item.product_id) + ','
+      + Number(ax.review_id) + ',\'' + a + '\')">' + esc(ACTION_LABEL[a]) + '</button>';
+  }).join('');
+  var basisBtn = ax.axis === 'nutrition'
+    ? '<button class="mini" onclick="openBasis(' + Number(item.product_id) + ',' + Number(ax.review_id) + ')">기준 입력…</button>'
+    : '';
+  var reject = axisActions(ax).indexOf('reject') >= 0
+    ? '<input class="note" id="rr-' + Number(ax.review_id) + '" placeholder="반려 사유(필수)" />'
+    : '';
+  var origin = ax.origin ? '<span class="chip">' + esc(ax.origin) + '</span>' : '';
+  return '<div class="axisrow' + (ax.held ? ' held' : '') + '" data-review-id="' + Number(ax.review_id) + '">'
+    + '<div class="line1">'
+    + '<span class="axname">' + esc(AXIS_LABEL[ax.axis] || ax.axis) + '</span>'
+    + '<span class="status-badge s-' + esc(ax.status) + '">' + esc(ax.status) + '</span>'
+    + heldBadgeHtml(ax) + basisChipHtml(ax) + origin
+    + '<span class="chip">review #' + Number(ax.review_id) + '</span>'
+    + (ax.reviewed_by ? '<span class="chip">검토 ' + esc(ax.reviewed_by) + '</span>' : '')
+    + (ax.applied_at ? '<span class="chip ok">반영 ' + esc(shortDate(ax.applied_at)) + '</span>' : '')
+    + (ax.reject_reason ? '<span class="chip bad">사유 ' + esc(ax.reject_reason) + '</span>' : '')
+    + '</div>'
+    + '<div class="actions">' + acts + basisWarnHtml(ax) + basisBtn + reject + '</div>'
+    + '</div>';
+}
+
+function queueCardHtml(item) {
+  var axes = item.axes || [];
+  var anyHeld = axes.some(function (a) { return a.held === true; });
+  return '<div class="card' + (anyHeld ? ' hasheld' : '') + '" data-product-id="' + Number(item.product_id) + '">'
+    + '<div class="top"><div>'
+    + '<div class="pname">' + esc(item.product_name || '(제품명 없음)') + '</div>'
+    + '<div class="meta">product_id ' + Number(item.product_id) + ' · barcode ' + esc(item.barcode || '—')
+    + ' · ' + esc(item.manufacturer || '') + '</div></div>'
+    + '<div style="text-align:right">'
+    + '<span class="status-badge">' + esc(item.verification || '—') + '</span><br/>'
+    + '<button class="mini" style="margin-top:6px" onclick="openDetail(' + Number(item.product_id) + ')">상세 비교…</button>'
+    + '</div></div>'
+    + '<div class="chips">'
+    + (item.has_public_nutrition ? '<span class="chip ok">공공 영양 있음</span>' : '<span class="chip warn">공공 영양 없음</span>')
+    + '<span class="chip">대기 ' + esc(item.pending_count != null ? item.pending_count : '–') + '</span>'
+    + (item.held_count ? '<span class="chip warn">보류 ' + esc(item.held_count) + '</span>' : '')
+    + '</div>'
+    + axes.map(function (a) { return axisRowHtml(item, a); }).join('')
+    + '</div>';
+}
+
+function listHtml(items, tab) {
+  var f = filterItems(items, tab);
+  if (!f.length) return '<div class="empty">이 탭에 해당하는 제보가 없습니다.</div>';
+  return f.map(queueCardHtml).join('');
+}
+
+// ── 409 REVIEW_APPLY_INCOMPLETE ─────────────────────────────────
+/** 코드 하나를 사람 말 + 고칠 수단으로 푼다. 모르는 코드도 «감추지 않는다». */
+function explainFailure(f) {
+  var code = (f && f.code) || 'UNKNOWN';
+  var known = Object.prototype.hasOwnProperty.call(ERROR_TEXT, code);
+  var e = known ? ERROR_TEXT[code] : null;
+  return {
+    code: code,
+    known: known,
+    text: known ? e.text : null,
+    fix: known && e.fix ? e.fix : null,
+    fixLabel: known && e.fixLabel ? e.fixLabel : null,
+    review_id: f && f.review_id != null ? f.review_id : null,
+    axis: (f && f.axis) || null,
+    serverMessage: (f && f.message) || null,
+  };
+}
+
+/**
+ * ★★ 409 를 «성공으로 표시하지 않는다.» 실패 목록을 축별로 편다.
+ * @param {Array} details `error.details[]`
+ * @param {object} ctx `{ productId, action }`
+ */
+function failuresHtml(details, ctx) {
+  var list = Array.isArray(details) ? details : [];
+  var pid = ctx && ctx.productId != null ? Number(ctx.productId) : 0;
+  var head = '<h3>⚠ 일부 축이 반영되지 않았습니다 — <code>REVIEW_APPLY_INCOMPLETE</code> (HTTP 409)</h3>'
+    + '<div class="srv" style="color:var(--muted);font-size:12px;margin-bottom:6px">'
+    + '승인 자체는 남아 있습니다(<b>보류</b>). 아래 값을 채운 뒤 <b>재반영(retry)</b> 을 눌러야 실제로 반영됩니다.</div>';
+  var body = list.map(function (f) {
+    var x = explainFailure(f);
+    var where = (x.axis ? (AXIS_LABEL[x.axis] || x.axis) : '(축 없음)')
+      + (x.review_id != null ? ' · review #' + x.review_id : '');
+    var why = x.known
+      ? '<div class="why">' + esc(x.text) + '</div>'
+      : '<div class="unknown">이 코드에 대한 화면 설명이 아직 없습니다. 아래 서버 메시지와 코드 문자열을 그대로 보고해 주세요.</div>';
+    var fix = '';
+    if (x.fix && x.review_id != null) {
+      fix = '<button class="mini primary" onclick="openBasis(' + pid + ',' + Number(x.review_id)
+        + ',\'' + x.fix + '\')">' + esc(x.fixLabel) + '</button> ';
+    }
+    if (x.review_id != null) {
+      fix += '<button class="mini amber" onclick="act(' + pid + ',' + Number(x.review_id)
+        + ',\'retry\')">재반영(retry)</button>';
+    }
+    return '<div class="failitem">'
+      + '<div><b>' + esc(where) + '</b> — <code>' + esc(x.code) + '</code></div>'
+      + why
+      + (x.serverMessage ? '<div class="srv">서버: ' + esc(x.serverMessage) + '</div>' : '')
+      + (fix ? '<div class="actions">' + fix + '</div>' : '')
+      + '</div>';
+  }).join('');
+  return '<div class="failpanel">' + head + (body || '<div class="srv">(서버가 details 를 주지 않았습니다)</div>') + '</div>';
+}
+
+/** 성공 응답(부분 실패 없음)을 한 줄로. */
+function successHtml(data, action) {
+  var reviews = (data && data.reviews) || [];
+  var applied = reviews.filter(function (r) { return r.applied === true; }).length;
+  return '<div class="failpanel" style="border-color:var(--green);background:rgba(46,168,107,.07)">'
+    + '<h3 style="color:var(--green)">✔ ' + esc(ACTION_LABEL[action] || action) + ' 완료 — 검토행 '
+    + reviews.length + '건' + (applied ? ' · 실제 반영 ' + applied + '건' : '') + '</h3></div>';
+}
+
+// ── 상세 (제보값 vs 현재 공공값) ─────────────────────────────────
+function nutritionCompareHtml(proposed, current) {
+  var p = proposedNutrition(proposed) || {};
+  var c = current || {};
+  var rows = NUTRIENT_KEYS.map(function (k) {
+    var d = differs(p[k], c[k]);
+    return '<tr class="' + (d ? 'diff' : '') + '"><td class="k">' + esc(NUTRIENT_LABEL[k] || k) + '</td>'
+      + '<td class="v">' + esc(num(p[k])) + '</td><td>' + esc(num(c[k])) + '</td></tr>';
+  }).join('');
+  return '<table class="cmp"><tr><th>항목</th><th>제보값</th><th>현재 공공값</th></tr>' + rows + '</table>'
+    + (current ? '' : '<div class="chip warn" style="margin-top:6px">이 제품에 공공 영양 행이 없습니다</div>');
+}
+
+function listCompareHtml(proposed, current, label) {
+  var p = toNameList(proposed);
+  var c = toNameList(current);
+  var cset = {}; c.forEach(function (n) { cset[n] = true; });
+  var pset = {}; p.forEach(function (n) { pset[n] = true; });
+  var all = p.concat(c.filter(function (n) { return !pset[n]; }));
+  if (!all.length) return '<div class="chip warn">양쪽 모두 비어 있습니다</div>';
+  var rows = all.map(function (n) {
+    var inP = !!pset[n]; var inC = !!cset[n];
+    return '<tr class="' + (inP !== inC ? 'diff' : '') + '"><td class="k">' + esc(n) + '</td>'
+      + '<td class="v">' + (inP ? '있음' : '–') + '</td><td>' + (inC ? '있음' : '–') + '</td></tr>';
+  }).join('');
+  return '<table class="cmp"><tr><th>' + esc(label) + '</th><th>제보</th><th>현재 공공</th></tr>' + rows + '</table>';
+}
+
+/** `evidence.origin==='merge'` 면 기기 수·median 을 보여준다. */
+function mergeEvidenceHtml(ev) {
+  if (!ev || typeof ev !== 'object') return '';
+  var raw = '<details style="margin-top:6px"><summary>evidence 원문</summary><pre>'
+    + esc(JSON.stringify(ev, null, 2)) + '</pre></details>';
+  if (ev.origin !== 'merge') {
+    return '<div class="chips"><span class="chip">origin ' + esc(ev.origin || '—') + '</span></div>' + raw;
+  }
+  var chips = '<div class="chips">'
+    + '<span class="chip ok">merge 판정</span>'
+    + '<span class="chip">기여 ' + esc(num(ev.source_count)) + '건</span>'
+    + '<span class="chip' + (Number(ev.distinct_device_count) >= Number(ev.auto_verify_threshold) ? ' ok' : ' warn')
+    + '">서로 다른 기기 ' + esc(num(ev.distinct_device_count))
+    + (ev.auto_verify_threshold != null ? ' / 기준 ' + esc(num(ev.auto_verify_threshold)) : '') + '</span>'
+    + (ev.has_significant_outliers ? '<span class="chip bad">이상치 있음</span>' : '<span class="chip ok">이상치 없음</span>')
+    + '</div>';
+  var outs = Array.isArray(ev.outliers) ? ev.outliers : [];
+  var otab = outs.length
+    ? '<table class="cmp"><tr><th>이상치 항목</th><th>값</th><th>median</th><th>편차</th></tr>'
+      + outs.map(function (o) {
+        return '<tr class="diff"><td class="k">' + esc(NUTRIENT_LABEL[o.nutrient] || o.nutrient) + '</td>'
+          + '<td class="v">' + esc(num(o.value)) + '</td><td>' + esc(num(o.median)) + '</td>'
+          + '<td>' + esc(num(o.deviation)) + '</td></tr>';
+      }).join('') + '</table>'
+    : '';
+  var mn = ev.merged_nutrition && typeof ev.merged_nutrition === 'object' ? ev.merged_nutrition : null;
+  var mtab = mn
+    ? '<table class="cmp"><tr><th>median 병합값</th><th>값</th></tr>'
+      + NUTRIENT_KEYS.filter(function (k) { return mn[k] != null; }).map(function (k) {
+        return '<tr><td class="k">' + esc(NUTRIENT_LABEL[k] || k) + '</td><td class="v">' + esc(num(mn[k])) + '</td></tr>';
+      }).join('') + '</table>'
+    : '';
+  return chips + otab + mtab + raw;
+}
+
+function basisBoxHtml(b) {
+  if (!b) return '';
+  var v = b.value;
+  var head = v == null
+    ? '<span class="basis-warn">⚠ 기준 미상 — 지금 승인하면 보류됩니다</span>'
+    : '<span class="chip ok">기준 ' + esc(v) + '</span>';
+  var admin = b.admin_basis
+    ? '<div class="meta">관리자 입력: <b>' + esc(b.admin_basis.value) + '</b> · ' + esc(b.admin_basis.by || '?')
+      + ' · ' + esc(shortDate(b.admin_basis.at)) + '<br/>근거: ' + esc(b.admin_basis.note || '(없음)') + '</div>'
+    : '';
+  return '<div class="box"><h4>표기 기준(basis)</h4>' + head
+    + '<div class="meta">출처 ' + esc(b.from || '—')
+    + (b.raw ? ' · 원문 값 "' + esc(b.raw) + '"' : '')
+    + (b.product_basis ? ' · 제품 기준 ' + esc(b.product_basis) : '') + '</div>'
+    + (Array.isArray(b.considered) && b.considered.length
+      ? '<div class="meta">살펴본 자리: ' + esc(b.considered.join(', ')) + '</div>' : '')
+    + admin + '</div>';
+}
+
+function detailHtml(d) {
+  if (!d || !d.product) return '<div class="err">상세 데이터가 비어 있습니다.</div>';
+  var p = d.product;
+  var cur = d.current || {};
+  var head = '<h3>' + esc(p.product_name || '(제품명 없음)') + '</h3>'
+    + '<div class="sub">product_id ' + Number(p.product_id) + ' · barcode ' + esc(p.barcode || '—')
+    + ' · ' + esc(p.manufacturer || '') + ' · ' + esc(p.verification || '—') + '<br/>'
+    + '1회 제공량 ' + esc(num(p.serving_size)) + esc(p.serving_unit || '')
+    + ' · 총 내용량 ' + esc(num(p.total_content)) + esc(p.content_unit || '')
+    + ((p.serving_size == null && p.total_content == null)
+      ? '  <span class="chip warn">제공량·총량 둘 다 없음 — 환산 불가</span>' : '')
+    + '</div>';
+  var axes = (d.axes || []).map(function (ax) {
+    var cmp;
+    if (ax.axis === 'nutrition') cmp = nutritionCompareHtml(ax.proposed, cur.nutrition);
+    else if (ax.axis === 'ingredients') cmp = listCompareHtml(ax.proposed, cur.ingredients, '원재료');
+    else if (ax.axis === 'allergens') cmp = listCompareHtml(ax.proposed, cur.allergens, '알레르기');
+    else if (ax.axis === 'additives') cmp = listCompareHtml(ax.proposed, cur.additives, '첨가물');
+    else cmp = '<pre>' + esc(JSON.stringify(ax.proposed, null, 2)) + '</pre>';
+    return '<div class="box" style="margin-top:12px">'
+      + '<div class="chips"><b>' + esc(AXIS_LABEL[ax.axis] || ax.axis) + '</b>'
+      + '<span class="status-badge s-' + esc(ax.status) + '">' + esc(ax.status) + '</span>'
+      + heldBadgeHtml(ax) + '<span class="chip">review #' + Number(ax.review_id) + '</span>'
+      + '<button class="mini" onclick="openBasis(' + Number(p.product_id) + ',' + Number(ax.review_id) + ')">기준 입력…</button>'
+      + (ax.axis === 'nutrition'
+        ? '<button class="mini" onclick="openCorrect(' + Number(p.product_id) + ')">공공 영양 정정…</button>' : '')
+      + '</div>'
+      + (ax.axis === 'nutrition' ? basisBoxHtml(ax.basis) : '')
+      + cmp
+      + mergeEvidenceHtml(ax.evidence)
+      + '</div>';
+  }).join('');
+  return head + (axes || '<div class="empty">검토 대기 축이 없습니다.</div>');
+}
+
+// ── 기준 입력 폼 검증 (서버에 보내기 전에 같은 규칙으로 막는다) ──
+function validateBasisForm(f) {
+  var v = f || {};
+  if (!v.basis || BASIS_OK.indexOf(v.basis) < 0) return { ok: false, code: 'INVALID_BASIS', message: ERROR_TEXT.INVALID_BASIS.text };
+  if (!v.note || !String(v.note).trim()) return { ok: false, code: 'BASIS_NOTE_REQUIRED', message: ERROR_TEXT.BASIS_NOTE_REQUIRED.text };
+  var pairs = [['serving_size', 'serving_unit'], ['total_content', 'content_unit']];
+  for (var i = 0; i < pairs.length; i++) {
+    var val = v[pairs[i][0]]; var unit = v[pairs[i][1]];
+    var hasVal = val != null && val !== '';
+    var hasUnit = unit != null && unit !== '';
+    if (hasVal && !hasUnit) return { ok: false, code: 'INVALID_UNIT', message: pairs[i][0] + ' 를 넣었으면 단위(g/ml)도 골라야 합니다.' };
+    if (hasUnit && UNIT_OK.indexOf(unit) < 0) return { ok: false, code: 'INVALID_UNIT', message: ERROR_TEXT.INVALID_UNIT.text };
+    if (hasVal && !Number.isFinite(Number(val))) return { ok: false, code: 'INVALID_NUMBER', message: pairs[i][0] + ' 는 숫자여야 합니다.' };
+  }
+  return { ok: true };
+}
+
+/** 폼 값 → §5-3 요청 본문. 빈 칸은 «보내지 않는다»(서버가 덮어쓰지 않도록). */
+function buildBasisBody(f, reviewedBy) {
+  var b = { basis: f.basis, note: String(f.note).trim(), reviewed_by: reviewedBy || 'admin' };
+  if (f.serving_size != null && f.serving_size !== '') { b.serving_size = Number(f.serving_size); b.serving_unit = f.serving_unit; }
+  if (f.total_content != null && f.total_content !== '') { b.total_content = Number(f.total_content); b.content_unit = f.content_unit; }
+  return b;
+}
+
+return {
+  AXES: AXES, AXIS_LABEL: AXIS_LABEL, TABS: TABS, TAB_LABEL: TAB_LABEL,
+  NUTRIENT_KEYS: NUTRIENT_KEYS, NUTRIENT_LABEL: NUTRIENT_LABEL,
+  BASIS_OK: BASIS_OK, UNIT_OK: UNIT_OK, ERROR_TEXT: ERROR_TEXT, ACTION_LABEL: ACTION_LABEL,
+  esc: esc, num: num, shortDate: shortDate, differs: differs, toNameList: toNameList,
+  proposedNutrition: proposedNutrition,
+  filterItems: filterItems, tabCounts: tabCounts, tabsHtml: tabsHtml,
+  heldBadgeHtml: heldBadgeHtml, basisWarnHtml: basisWarnHtml, basisChipHtml: basisChipHtml,
+  axisActions: axisActions, axisRowHtml: axisRowHtml, queueCardHtml: queueCardHtml, listHtml: listHtml,
+  explainFailure: explainFailure, failuresHtml: failuresHtml, successHtml: successHtml,
+  nutritionCompareHtml: nutritionCompareHtml, listCompareHtml: listCompareHtml,
+  mergeEvidenceHtml: mergeEvidenceHtml, basisBoxHtml: basisBoxHtml, detailHtml: detailHtml,
+  validateBasisForm: validateBasisForm, buildBasisBody: buildBasisBody,
+};
+});
+</script>
+
+<!-- ══════════════════════════════════════════════════════════════
+     wire — DOM · fetch. 규칙은 위 core 에만 있다.
+     ══════════════════════════════════════════════════════════════ -->
+<script id="cr-wire">
+'use strict';
+var S = { tab: 'held', items: [], totals: null, count: 0, offset: 0, limit: 50,
+  status: 'candidate,approved', basisTarget: null, correctTarget: null };
+
+// ── 설정 ── 토큰은 sessionStorage(이 탭 한정). base/actor 는 localStorage.
+function el(id) { return document.getElementById(id); }
+function getToken() { return sessionStorage.getItem('ms_token') || ''; }
+function loadCfg() {
+  el('base').value = localStorage.getItem('ms_base') || '';
+  // 편의: 같은 브라우저의 review-queue.html 이 남긴 토큰이 있으면 채워만 준다(저장은 세션에만).
+  el('token').value = getToken() || localStorage.getItem('ms_token') || '';
+  el('actor').value = localStorage.getItem('ms_actor') || '';
+}
+function saveCfg() {
+  localStorage.setItem('ms_base', el('base').value.trim());
+  localStorage.setItem('ms_actor', el('actor').value.trim());
+  sessionStorage.setItem('ms_token', el('token').value.trim());
+  toast('설정 저장됨 (토큰은 이 탭에만)'); loadAll();
+}
+var base = function () { return localStorage.getItem('ms_base') || ''; };
+var actor = function () { return localStorage.getItem('ms_actor') || ''; };
+function headers() { return { Authorization: 'Bearer ' + getToken(), 'Content-Type': 'application/json' }; }
+
+function toast(m, isErr) {
+  var t = el('toast'); t.textContent = m; t.style.color = isErr ? 'var(--red)' : 'var(--txt)';
+  t.classList.add('show'); setTimeout(function () { t.classList.remove('show'); }, 3000);
+}
+
+/**
+ * ★★ 던지지 않는다. 409 는 «실패»지만 본문(details)이 있어야 화면이 고칠 수단을 낼 수 있다.
+ * @returns {{status:number, ok:boolean, body:object}}
+ */
+async function apiRaw(pathname, opts) {
+  var r = await fetch(base() + '/api/admin' + pathname, Object.assign({ headers: headers() }, opts || {}));
+  var body = await r.json().catch(function () { return {}; });
+  return { status: r.status, ok: r.ok, body: body };
+}
+
+function showResult(html) { el('result').innerHTML = html; }
+function clearResult() { el('result').innerHTML = ''; }
+
+function renderTabs() { el('tabs').innerHTML = CR.tabsHtml(S.tab, CR.tabCounts(S.items)); }
+function switchTab(t) { S.tab = t; renderTabs(); renderList(); }
+
+function renderToolbar() {
+  // 보류 탭은 status 를 안 보낸다(위 loadAll 주석) — 안 쓰이는 셀렉트를 보여주면 거짓 조작감이다.
+  if (S.tab === 'held') {
+    el('toolbar').innerHTML = '<span class="summary" style="margin-left:0">'
+      + '보류 = 승인됐지만 아직 반영되지 않은 행. 상태 필터는 이 탭에서 쓰이지 않습니다.'
+      + '</span><span class="summary" id="sum"></span>';
+    return;
+  }
+  el('toolbar').innerHTML = '상태 '
+    + '<select onchange="S.status=this.value;S.offset=0;loadAll()">'
+    + ['candidate,approved', 'candidate', 'approved', 'rejected', 'undone', 'superseded']
+      .map(function (v) { return '<option value="' + v + '"' + (S.status === v ? ' selected' : '') + '>' + v + '</option>'; }).join('')
+    + '</select>'
+    + '<span class="summary" id="sum"></span>';
+}
+
+function renderList() {
+  el('list').innerHTML = CR.listHtml(S.items, S.tab);
+  var t = S.totals || {};
+  var sum = el('sum');
+  if (sum) {
+    sum.textContent = '제품 ' + S.count + '건 · candidate ' + (t.candidate != null ? t.candidate : '–')
+      + ' · 보류 ' + (t.held != null ? t.held : '–')
+      + ' · 반영완료 ' + (t.approved_applied != null ? t.approved_applied : '–')
+      + ' · 반려 ' + (t.rejected != null ? t.rejected : '–');
+  }
+  el('pager').innerHTML = '<button ' + (S.offset <= 0 ? 'disabled' : '') + ' onclick="page(-1)">← 이전</button>'
+    + '<span>offset ' + S.offset + '</span>'
+    + '<button ' + (S.items.length < S.limit ? 'disabled' : '') + ' onclick="page(1)">다음 →</button>';
+}
+function page(d) { S.offset = Math.max(0, S.offset + d * S.limit); loadAll(); }
+
+async function loadAll() {
+  renderToolbar();
+  el('list').innerHTML = '<div class="empty">불러오는 중…</div>';
+  var q = new URLSearchParams({ limit: S.limit, offset: S.offset });
+  // ★★ 세션67 — `held=1` 은 `status` 필터에 «추가로» 걸린다(AND 다).
+  //   그래서 보류 탭에서 상태를 `candidate` 로 바꾸면 교집합이 «공집합»이라
+  //   보류 행이 실제로 있는데도 화면이 「0건」을 보여준다 — 조용한 거짓말이다.
+  //   ⇒ 보류 탭에서는 `status` 를 «아예 안 보낸다». 서버가 held 조건만으로 판정한다.
+  //   ⛔ 여기에 `status` 를 다시 넣지 말 것.
+  if (S.tab === 'held') {
+    q.set('held', '1');
+  } else {
+    q.set('status', S.status);
+    if (CR.AXES.indexOf(S.tab) >= 0) q.set('axis', S.tab);
+  }
+  var r = await apiRaw('/review/contributions?' + q).catch(function (e) {
+    return { status: 0, ok: false, body: { error: { code: 'NETWORK', message: e.message } } };
+  });
+  if (!r.ok) {
+    var c = (r.body.error && (r.body.error.code || r.body.error.message)) || r.status;
+    el('list').innerHTML = '<div class="err">목록 실패: <code>' + CR.esc(c) + '</code>'
+      + ' (HTTP ' + r.status + ') — 토큰·API base 확인, 또는 읽기 API 가 아직 배포되지 않았습니다.</div>';
+    el('tabs').innerHTML = CR.tabsHtml(S.tab, {});
+    return;
+  }
+  var d = r.body.data || {};
+  S.items = d.items || []; S.totals = d.totals || null; S.count = d.count != null ? d.count : S.items.length;
+  renderTabs(); renderList();
+}
+
+// ── 동작 ────────────────────────────────────────────────────────
+var DESTRUCTIVE = { reject: true, undo: true };
+async function act(productId, reviewId, action) {
+  var body = { action: action, review_ids: [Number(reviewId)], reviewed_by: actor() || 'admin' };
+  if (action === 'reject') {
+    var inp = el('rr-' + reviewId);
+    var reason = inp ? String(inp.value || '').trim() : '';
+    if (!reason) { toast('반려에는 사유가 필수입니다.', true); if (inp) inp.focus(); return; }
+    body.reject_reason = reason;
+  }
+  if (DESTRUCTIVE[action]) {
+    var what = action === 'reject' ? '반려(reject) — 반영된 값이 있으면 먼저 되돌립니다'
+      : '되돌리기(undo) — 이미 반영된 데이터를 원상복구합니다';
+    if (!confirm('review #' + reviewId + ' 를 ' + what + '.\n계속할까요?')) return;
+  }
+  await postVerify(productId, body);
+}
+
+async function postVerify(productId, body) {
+  clearResult();
+  var r = await apiRaw('/verify/' + Number(productId), { method: 'POST', body: JSON.stringify(body) })
+    .catch(function (e) { return { status: 0, ok: false, body: { error: { code: 'NETWORK', message: e.message } } }; });
+  var err = r.body.error || {};
+  if (r.status === 409 && err.code === 'REVIEW_APPLY_INCOMPLETE') {
+    // ★★ 성공이 아니다.
+    showResult(CR.failuresHtml(err.details, { productId: productId, action: body.action }));
+    toast('반영 실패 — 보류로 남았습니다. 위 안내를 확인하세요.', true);
+    await loadAll();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    return;
+  }
+  if (!r.ok) {
+    var x = CR.explainFailure({ code: err.code, message: err.message });
+    showResult('<div class="failpanel"><h3>요청 실패 (HTTP ' + r.status + ') — <code>' + CR.esc(x.code) + '</code></h3>'
+      + (x.known ? '<div class="why">' + CR.esc(x.text) + '</div>'
+        : '<div class="unknown">이 코드에 대한 화면 설명이 아직 없습니다 — 코드 문자열을 그대로 보고해 주세요.</div>')
+      + (x.serverMessage ? '<div class="srv">서버: ' + CR.esc(x.serverMessage) + '</div>' : '') + '</div>');
+    toast('실패: ' + x.code, true);
+    return;
+  }
+  showResult(CR.successHtml(r.body.data, body.action));
+  toast(CR.ACTION_LABEL[body.action] + ' 완료');
+  await loadAll();
+}
+
+// ── 상세 ────────────────────────────────────────────────────────
+function openModal(n) { el('modal-' + n).classList.add('show'); }
+function closeModal(n) { el('modal-' + n).classList.remove('show'); }
+
+async function openDetail(productId) {
+  el('detail-body').innerHTML = '<div class="empty">불러오는 중…</div>';
+  openModal('detail');
+  var r = await apiRaw('/review/contributions/' + Number(productId))
+    .catch(function (e) { return { status: 0, ok: false, body: { error: { code: 'NETWORK', message: e.message } } }; });
+  if (!r.ok) {
+    var c = (r.body.error && (r.body.error.code || r.body.error.message)) || r.status;
+    el('detail-body').innerHTML = '<div class="err">상세 실패: <code>' + CR.esc(c) + '</code> (HTTP ' + r.status + ')</div>';
+    return;
+  }
+  el('detail-body').innerHTML = CR.detailHtml(r.body.data);
+}
+
+// ── 기준 입력 ───────────────────────────────────────────────────
+/** @param {string} [focus] 'basis' | 'serving' — 409 에서 열면 어디를 채워야 하는지 말해 준다. */
+function openBasis(productId, reviewId, focus) {
+  S.basisTarget = { productId: Number(productId), reviewId: Number(reviewId) };
+  el('bf-err').textContent = '';
+  el('basis-sub').innerHTML = 'review #' + Number(reviewId) + ' · product_id ' + Number(productId)
+    + (focus === 'serving'
+      ? ' — <b style="color:var(--amber)">1회 제공량 / 총 내용량</b> 이 없어 환산할 수 없습니다. 아래에 채워 주세요.'
+      : focus === 'basis'
+        ? ' — <b style="color:var(--amber)">표기 기준</b> 을 모릅니다. 라벨을 보고 골라 주세요.'
+        : '');
+  openModal('basis');
+  setTimeout(function () { el(focus === 'serving' ? 'bf-ss' : 'bf-basis').focus(); }, 30);
+}
+
+function readBasisForm() {
+  return {
+    basis: el('bf-basis').value,
+    serving_size: el('bf-ss').value, serving_unit: el('bf-su').value,
+    total_content: el('bf-tc').value, content_unit: el('bf-cu').value,
+    note: el('bf-note').value,
+  };
+}
+
+async function submitBasis() {
+  var f = readBasisForm();
+  var v = CR.validateBasisForm(f);
+  if (!v.ok) { el('bf-err').textContent = v.code + ' — ' + v.message; return; }
+  el('bf-err').textContent = '';
+  var t = S.basisTarget;
+  var r = await apiRaw('/review/contributions/' + t.reviewId + '/basis',
+    { method: 'POST', body: JSON.stringify(CR.buildBasisBody(f, actor())) })
+    .catch(function (e) { return { status: 0, ok: false, body: { error: { code: 'NETWORK', message: e.message } } }; });
+  if (!r.ok) {
+    var x = CR.explainFailure({ code: (r.body.error || {}).code, message: (r.body.error || {}).message });
+    el('bf-err').textContent = x.code + ' — ' + (x.text || x.serverMessage || '(설명 없음 — 코드를 그대로 보고해 주세요)');
+    return;
+  }
+  closeModal('basis');
+  toast('기준을 저장했습니다.');
+  await loadAll();
+  // ⛔ 자동으로 승인까지 밀고 가지 않는다. 승인은 사람이 누르는 사건이다.
+  if (confirm('기준을 저장했습니다.\n\n이어서 이 검토행을 재반영(retry)할까요?\n'
+    + '— 예: 지금 반영을 다시 시도합니다(승인 상태는 그대로).\n'
+    + '— 아니오: 목록에서 직접 승인/재반영 버튼을 누릅니다.')) {
+    await postVerify(t.productId, { action: 'retry', review_ids: [t.reviewId], reviewed_by: actor() || 'admin' });
+  }
+}
+
+// ── 공공 영양 정정(correct) ─────────────────────────────────────
+var CORRECT_KEYS = ['calories', 'sodium', 'total_sugars', 'total_fat', 'saturated_fat', 'protein'];
+function openCorrect(productId) {
+  S.correctTarget = Number(productId);
+  el('corr-err').textContent = '';
+  el('corr-fields').innerHTML = CORRECT_KEYS.map(function (k) {
+    return '<div class="frow"><label>' + CR.esc(CR.NUTRIENT_LABEL[k] || k) + '</label>'
+      + '<input class="w120" type="number" step="any" id="cf-' + k + '" placeholder="비우면 유지" /></div>';
+  }).join('');
+  openModal('correct');
+}
+async function submitCorrect() {
+  var n = {}; var any = false;
+  CORRECT_KEYS.forEach(function (k) {
+    var v = el('cf-' + k).value;
+    if (v !== '' && v != null) { n[k] = Number(v); any = true; } else { n[k] = null; }
+  });
+  if (!any) { el('corr-err').textContent = '한 칸도 채우지 않았습니다 — 아무것도 바뀌지 않습니다.'; return; }
+  closeModal('correct');
+  await postVerify(S.correctTarget, { action: 'correct', corrections: { nutrition: n }, reviewed_by: actor() || 'admin' });
+}
+
+document.addEventListener('keydown', function (e) {
+  if (e.key === 'Escape') { ['detail', 'basis', 'correct'].forEach(closeModal); }
+});
+
+loadCfg();
+renderToolbar();
+el('tabs').innerHTML = CR.tabsHtml(S.tab, {});
+if (getToken()) loadAll();
+</script>
+</body>
+</html>

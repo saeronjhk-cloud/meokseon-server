@@ -13,8 +13,11 @@ const {
 // ★★★★★ 세션66 C5·C6 — 승인된 제보를 공식 데이터셋으로 옮기는 «유일한» 곳.
 //   ⛔ 이 라우터가 공식 테이블에 직접 SQL 을 쓰지 않는다. 규칙은 그 파일 한 곳에 있다.
 const {
-  applyApprovedContribution, undoAppliedContribution,
+  applyApprovedContribution, undoAppliedContribution, CONTRIBUTION_BASIS_OK,
 } = require('../services/contributionApply');
+// ★★ 세션67 U66-3 — `contribution_review` 를 «목록으로» 읽는 유일한 곳(계약 §4 Q5).
+//   ⛔ 이 라우터에 조회 SQL 을 다시 적지 말 것. adminRoutes 는 이미 1200줄이 넘는다.
+const { listReviewQueue, getReviewDetail } = require('../services/reviewQueueRead');
 const { collapseAction, matchAction, entityAction, profileAction, isBulkAllowed } = require('../services/reviewActions');
 // ⛔⛔ 세션66 (2026-09-01) — 이 줄을 `../../scripts/staging/...` 로 되돌리지 말 것.
 //   `.dockerignore` 가 `scripts/staging/` 을 «의도적으로» 제외한다(일회성 파이프라인).
@@ -236,7 +239,13 @@ router.get('/contributions/:productId', async (req, res) => {
 //   「미검토 제보가 `products` 를 건드리는가」는 계약 §7-C 가 `U66-1` 로 «보류»했다.
 // ============================================================
 
-const VERIFY_ACTIONS = ['approve', 'reject', 'correct', 'undo', 'reopen'];
+// ★ 세션67 — `'retry'` 를 «추가»했다(기존 5개는 한 글자도 안 바뀌었다).
+//   보류(`approved` + `applied_at IS NULL`)를 한 번에 다시 반영한다.
+//   ⚠ **이것은 버그 수정이 아니다.** `reopen` → `approve` 로 이미 나올 수 있었다(위 `G2` 주석).
+//     `retry` 가 주는 것은 둘: 클릭 3번 → 1번, 그리고 **`approved` 를 유지**해서
+//     「사람이 이미 판정했다」가 큐에서 사라지지 않는 것이다.
+//   `retry` 는 새 상태를 만들지 않는다 — 그 행을 `applyApprovedContribution` 에 다시 넣을 뿐이다.
+const VERIFY_ACTIONS = ['approve', 'reject', 'correct', 'undo', 'reopen', 'retry'];
 
 /** 축별 `SAVEPOINT` 이름. ★ 상수다 — 문자열 보간을 하지 않는다(`77 §C`). */
 const APPLY_SAVEPOINT = 'sp_contrib_apply';
@@ -521,6 +530,49 @@ router.post('/verify/:productId', async (req, res) => {
         }
         logger.info('관리자 승인 취소', { productId, reviewedBy, reviews: result.reviews.length });
 
+      } else if (action === 'retry') {
+        // ★★ 보류(`approved` + `applied_at IS NULL`)를 «다시 반영»한다. 세션67 `G2`.
+        //   관리자가 `BASIS_UNKNOWN` 을 보고 기준을 채운 «뒤» 누르는 버튼이다.
+        //   ⚠ `status` 를 다시 쓰지 않는다(계약 Q4) — 이미 `approved` 다. 다시 쓰면
+        //     `reviewed_at` 이 「마지막 판정 시각」에서 「마지막 시도 시각」으로 뜻이 바뀐다.
+        const rows = await pickReviews(['approved']);
+        for (const row of rows) {
+          const reviewId = Number(row.review_id);
+          if (row.applied_at) {
+            // 이미 반영된 것은 재시도 대상이 아니다. 조용히 넘기지 않는다 —
+            // 관리자가 「눌렀는데 아무 일도 안 일어났다」를 겪지 않게 한다.
+            result.failures.push({
+              review_id: reviewId, axis: row.axis,
+              code: 'ALREADY_APPLIED',
+              message: '이미 반영된 제보입니다. 되돌리려면 undo 를 쓰세요.',
+            });
+            continue;
+          }
+          const step = await runAxisStep(client, 'apply', async () => {
+            const applied = await applyApprovedContribution(client, reviewId, {
+              appliedBy: reviewedBy,
+            });
+            return { counts: applied.counts, convert: applied.convert };
+          });
+          if (step.ok) {
+            result.reviews.push({
+              review_id: reviewId, axis: row.axis, status: 'approved', applied: true,
+              counts: step.counts, convert: step.convert,
+            });
+          } else {
+            result.reviews.push({
+              review_id: reviewId, axis: row.axis, status: 'approved', applied: false,
+              code: step.code,
+            });
+            result.failures.push({
+              review_id: reviewId, axis: row.axis, code: step.code, message: step.message,
+            });
+          }
+        }
+        logger.info('관리자 재반영', {
+          productId, reviewedBy, reviews: result.reviews.length, failures: result.failures.length,
+        });
+
       } else if (action === 'reopen') {
         const rows = await pickReviews(['approved', 'rejected', 'undone']);
         for (const row of rows) {
@@ -700,6 +752,225 @@ function reducerHttpStatus(error) {
   if (error === 'INVALID_TRANSITION') return 409;
   return 400;
 }
+
+// ============================================================
+// 세션67 `U66-3` — 제보 검토 큐 «읽기» + 기준 채우기
+// ============================================================
+//
+// ★★★★★ 왜 이 세 개가 이번에 생겼나 (2026-09-03 코드 원문 실측)
+//
+//   세션66 이 제보 분리를 운영에 넣은 «뒤»의 상태가 이랬다:
+//     `nutrition_data` 의 `ocr_crowdsource` = 0행 · `contribution_review` 에 candidate 5건 대기
+//     ⇒ 그런데 **그 큐를 목록으로 읽는 엔드포인트가 0개였다**(`G1`).
+//     ⇒ 제보는 안전하게 쌓이는데 **아무에게도 안 보였다.**
+//
+//   `G2` — 보류(`approved` + `applied_at IS NULL` = 승인은 됐는데 반영은 실패)는
+//     `approveAndApply()` 가 `pickReviews(['candidate'])` 만 집으므로 **`approve` 로는
+//     다시 안 잡힌다**(잡혀도 `AXIS_ALREADY_APPROVED`).
+//     ⚠⚠ 세션67 검증 정정 — **「빠져나올 경로가 아예 없다」는 틀렸다.**
+//       `undoAppliedContribution` 은 `applied_at IS NULL` 검사(`:1101`)가
+//       `UNDO_EVIDENCE_MISSING`(`:1108`)보다 **먼저** 있어 보류 행에 대해
+//       `{undone:false, reason:'NOT_APPLIED'}` 로 «조용히 성공»한다.
+//       그리고 `reopen` 은 `applied_at` 이 NULL 이면 통과시킨다.
+//       ⇒ **`reopen` → `approve` 로 이미 나올 수 있었다.** 아래 409 문구는 참이었다.
+//     ⇒ 그러면 `retry` 는 왜 있나: ① 클릭 3번이 1번이 된다 ② `reopen` 은 상태를
+//       `candidate` 로 되돌려 **「사람이 이미 판정했다」는 사실이 큐에서 사라진다** —
+//       `retry` 는 `approved` 를 유지하므로 그 기록이 남는다(계약 Q4).
+//       **버그 수정이 아니라 «더 나은 경로»다.** 그렇게 읽을 것.
+//
+//   ⛔ `G3` — 기준(basis)을 채워 넣을 자리가 없었다. `corrections.nutrition` 은
+//     **공공 행(`nutrition_data`)만** 고친다 — 제보의 표기 기준과 아무 상관이 없다.
+//     ⇒ 옛 제보 5건이 `BASIS_UNKNOWN` 으로 영원히 보류될 운명이었다(`U66-4`).
+// ============================================================
+
+// ── GET /api/admin/review/contributions — 제보 검토 큐 목록 (계약 §5-1) ──────
+//   ★★ 이 화면의 존재 이유는 `held`(승인됐는데 아직 반영 안 됨)와
+//     `basis`(지금 승인하면 반영될 것인가) 두 필드다.
+//     관리자는 누르기 «전»에 알아야 한다 — 누른 뒤 409 로 아는 것은 늦다.
+//   ⚠ 조회 본문은 `src/services/reviewQueueRead.js` 다. 여기에 SQL 을 다시 적지 말 것.
+router.get('/review/contributions', async (req, res) => {
+  try {
+    const data = await listReviewQueue(db, {
+      status: req.query.status,
+      axis: req.query.axis,
+      held: req.query.held,
+      limit: req.query.limit,
+      offset: req.query.offset,
+    });
+    res.json({ success: true, data });
+  } catch (e) {
+    logger.error('review/contributions 실패', { error: e.message });
+    res.status(500).json({ success: false, error: { message: e.message } });
+  }
+});
+
+// ── GET /api/admin/review/contributions/:productId — 제보 vs 현재 공공값 (계약 §5-2) ──
+//   ⚠ 반드시 위의 `/review/contributions` «뒤»에 둘 것 — express 는 먼저 등록된 것이 이긴다.
+router.get('/review/contributions/:productId', async (req, res) => {
+  try {
+    const data = await getReviewDetail(db, req.params.productId);
+    if (!data) {
+      return res.status(404).json({
+        success: false,
+        error: { code: 'NOT_FOUND', message: '제품을 찾을 수 없습니다.' },
+      });
+    }
+    return res.json({ success: true, data });
+  } catch (e) {
+    logger.error('review/contributions/:productId 실패', {
+      error: e.message, productId: req.params.productId,
+    });
+    return res.status(500).json({ success: false, error: { message: e.message } });
+  }
+});
+
+// ── POST /api/admin/review/contributions/:reviewId/basis — 기준 채우기 (`U66-4` · 계약 §5-3) ──
+//
+// ★★ 계약 Q1 — **`contributions.data` 를 한 글자도 안 고친다.**
+//   그것은 «사용자가 낸 것»이다. 거기에 관리자 값을 써 넣으면 「사용자가 그렇게 신고했다」와
+//   「관리자가 그렇게 판정했다」가 영원히 구분되지 않는다. 나중에 파서를 고쳐 재평가할 때
+//   원본이 오염돼 있으면 되돌릴 수 없다. ⇒ 판정은 «판정 테이블»에 넣는다.
+//
+// ★★ 계약 Q2 — 기준(basis)과 제공량은 **가는 곳이 다르다. 실수가 아니라 규칙이다.**
+//   `basis`(per_serving / per_100g …)는 «그 라벨 사진의 성질» ⇒ `contribution_review.evidence`
+//   `serving_size`·`total_content` 는 «제품의 물리적 사실» ⇒ `products` (`P3`: 한 제품에 1회 제공량은 하나다)
+//
+// ⛔ `note`(근거)가 **필수**다. 근거 없는 기준은 «추정»과 구별되지 않는다(`P1`).
+//   추정 금지는 「코드가 추정하지 않는다」이지 「사람도 근거 없이 적어도 된다」가 아니다.
+const BASIS_UNITS_OK = ['g', 'ml'];
+
+router.post('/review/contributions/:reviewId/basis', async (req, res) => {
+  const body = req.body || {};
+  const reviewId = Number(req.params.reviewId);
+  if (!Number.isFinite(reviewId)) {
+    return res.status(400).json({
+      success: false,
+      error: { code: 'INVALID_REVIEW_ID', message: 'reviewId 가 숫자가 아닙니다.' },
+    });
+  }
+
+  const basis = typeof body.basis === 'string' ? body.basis.trim() : null;
+  if (!basis || !CONTRIBUTION_BASIS_OK.includes(basis)) {
+    return res.status(400).json({
+      success: false,
+      error: {
+        code: 'INVALID_BASIS',
+        message: `basis 는 ${CONTRIBUTION_BASIS_OK.join(' / ')} 중 하나여야 합니다. `
+          + '모르면 채우지 마십시오 — 추측한 기준의 오차는 신호등 색으로 곧장 넘어갑니다.',
+      },
+    });
+  }
+
+  const note = typeof body.note === 'string' ? body.note.trim() : '';
+  if (!note) {
+    return res.status(400).json({
+      success: false,
+      error: {
+        code: 'BASIS_NOTE_REQUIRED',
+        message: '무엇을 근거로 이 기준을 정했는지 적어 주세요(예: "라벨 사진 우하단 1회 제공량 30g 육안 확인"). '
+          + '근거 없는 기준은 추정과 구별되지 않습니다.',
+      },
+    });
+  }
+
+  // 제품의 물리적 사실 — 선택이지만, 오면 단위를 검사한다. 모르는 단위를 g 로 «가정»하지 않는다.
+  const numOrNull = (v) => {
+    if (v === undefined || v === null || v === '') return null;
+    const n = Number(v);
+    return Number.isFinite(n) && n > 0 ? n : NaN;
+  };
+  const servingSize = numOrNull(body.serving_size);
+  const totalContent = numOrNull(body.total_content);
+  if (Number.isNaN(servingSize) || Number.isNaN(totalContent)) {
+    return res.status(400).json({
+      success: false,
+      error: { code: 'INVALID_AMOUNT', message: 'serving_size · total_content 는 0보다 큰 숫자여야 합니다.' },
+    });
+  }
+  const unitOf = (v) => (typeof v === 'string' && v.trim() ? v.trim().toLowerCase() : null);
+  const servingUnit = unitOf(body.serving_unit);
+  const contentUnit = unitOf(body.content_unit);
+  for (const u of [servingUnit, contentUnit]) {
+    if (u !== null && !BASIS_UNITS_OK.includes(u)) {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'INVALID_UNIT',
+          message: `단위는 ${BASIS_UNITS_OK.join(' / ')} 만 받습니다(밀도를 모르면 g↔ml 환산이 불가능합니다).`,
+        },
+      });
+    }
+  }
+
+  const reviewedBy = (typeof body.reviewed_by === 'string' && body.reviewed_by.trim()) || 'admin';
+
+  try {
+    const out = await db.transaction(async (client) => {
+      const rv = await client.query(
+        `SELECT review_id, product_id, axis, status FROM contribution_review
+          WHERE review_id = $1 FOR UPDATE`,
+        [reviewId],
+      );
+      if (rv.rows.length === 0) {
+        const e = new Error(`contribution_review(review_id=${reviewId}) 가 없습니다.`);
+        e.code = 'REVIEW_NOT_FOUND';
+        throw e;
+      }
+      const review = rv.rows[0];
+
+      // ★ `evidence` 를 **덮어쓰지 않는다.** `mergeService` 의 병합 판정(median·기기 수)이
+      //   같은 컬럼에 있다. `||` 로 병합해야 그것이 살아남는다(`contributionApply` 와 같은 규칙).
+      await client.query(
+        `UPDATE contribution_review
+            SET evidence = COALESCE(evidence, '{}'::jsonb) || jsonb_build_object(
+                  'admin_basis', jsonb_build_object(
+                    'value', $2::text, 'by', $3::text, 'note', $4::text,
+                    'at', to_jsonb(now())))
+          WHERE review_id = $1`,
+        [reviewId, basis, reviewedBy, note],
+      );
+
+      // 제품의 물리적 사실. ⚠ 보내지 않은 값은 COALESCE 로 «건드리지 않는다».
+      let productUpdated = 0;
+      const wantsProduct = servingSize !== null || totalContent !== null
+        || servingUnit !== null || contentUnit !== null;
+      if (wantsProduct && review.product_id !== null && review.product_id !== undefined) {
+        const upd = await client.query(
+          `UPDATE products SET
+             serving_size   = COALESCE($2, serving_size),
+             serving_unit   = COALESCE($3, serving_unit),
+             total_content  = COALESCE($4, total_content),
+             content_unit   = COALESCE($5, content_unit),
+             updated_at     = NOW()
+           WHERE product_id = $1`,
+          [review.product_id, servingSize, servingUnit, totalContent, contentUnit],
+        );
+        productUpdated = (upd && upd.rowCount) || 0;
+      }
+
+      return {
+        review_id: reviewId,
+        axis: review.axis,
+        status: review.status,
+        admin_basis: { value: basis, by: reviewedBy, note },
+        product_updated: productUpdated,
+        // ★ 자동으로 승인까지 밀고 가지 «않는다». 승인은 사람이 누르는 사건이다(`DS-1` 전량 수동).
+        //   화면은 이 값을 보고 「이제 retry 를 누르시겠습니까」를 물어야 한다.
+        next: review.status === 'approved' ? 'retry' : 'approve',
+      };
+    });
+
+    logger.info('관리자 기준 입력', { reviewId, basis, reviewedBy });
+    return res.json({ success: true, data: out });
+  } catch (e) {
+    const status = e.code === 'REVIEW_NOT_FOUND' ? 404 : 500;
+    logger.error('review basis 입력 실패', { reviewId, error: e.message, code: e.code });
+    return res.status(status).json({
+      success: false,
+      error: { code: e.code || 'BASIS_UPDATE_FAILED', message: e.message },
+    });
+  }
+});
 
 // ── GET /api/admin/review/summary — 두 큐 현황(헤더 카운트) ──────────────────
 router.get('/review/summary', async (req, res) => {

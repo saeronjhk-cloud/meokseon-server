@@ -320,6 +320,28 @@ function filterItems(items, tab) {
   return out;
 }
 
+/**
+ * 목록 요청의 쿼리스트링. ★ 순수 함수다 — `cr-core` 에 있어야 테스트가 본다.
+ *
+ * ⛔⛔ **`axis` 도 `held` 도 «서버에» 보내지 않는다.** 탭 필터링은 전부 위의
+ *   `filterItems`/`tabCounts` 가 «클라이언트»에서 한다. 이유는 취향이 아니라 사고다:
+ *
+ *   세션67 실물 1회차에서 화면이 제보 5건을 «하나도» 못 보여줬다. 서버는 정상이었다
+ *   (`listReviewQueue` 도 200 응답도 `count:5`). 원인은 이랬다 —
+ *     ① 첫 화면의 기본 탭이 「보류」이고 `loadAll` 이 서버에 `held=1` 을 보냈다
+ *     ② 보류 행은 «진짜로» 0건이라 서버가 옳게 `items: []` 를 줬다
+ *     ③ `switchTab` 은 **`loadAll` 을 다시 부르지 않는다** — 빈 `S.items` 를 걸러 렌더할 뿐이다
+ *     ⇒ **그때부터 모든 탭이 영원히 0건이었다.**
+ *
+ *   ⇒ 규칙: **필터링 규칙을 두 벌로 두지 말 것.** 한 벌이면 어느 탭에서 시작하든 같다.
+ *     서버 쪽 `axis`·`held` 파라미터는 «지우지 않았다»(다른 호출자가 쓸 수 있다).
+ *     이 화면이 안 쓸 뿐이다.
+ */
+function buildListQuery(state) {
+  var s = state || {};
+  return { status: s.status, limit: s.limit, offset: s.offset };
+}
+
 function tabCounts(items) {
   var c = { held: 0, all: 0, nutrition: 0, ingredients: 0, allergens: 0, additives: 0 };
   (Array.isArray(items) ? items : []).forEach(function (it) {
@@ -648,6 +670,7 @@ return {
   esc: esc, num: num, shortDate: shortDate, differs: differs, toNameList: toNameList,
   proposedNutrition: proposedNutrition,
   filterItems: filterItems, tabCounts: tabCounts, tabsHtml: tabsHtml,
+  buildListQuery: buildListQuery,
   heldBadgeHtml: heldBadgeHtml, basisWarnHtml: basisWarnHtml, basisChipHtml: basisChipHtml,
   axisActions: axisActions, axisRowHtml: axisRowHtml, queueCardHtml: queueCardHtml, listHtml: listHtml,
   explainFailure: explainFailure, failuresHtml: failuresHtml, successHtml: successHtml,
@@ -707,13 +730,9 @@ function renderTabs() { el('tabs').innerHTML = CR.tabsHtml(S.tab, CR.tabCounts(S
 function switchTab(t) { S.tab = t; renderTabs(); renderList(); }
 
 function renderToolbar() {
-  // 보류 탭은 status 를 안 보낸다(위 loadAll 주석) — 안 쓰이는 셀렉트를 보여주면 거짓 조작감이다.
-  if (S.tab === 'held') {
-    el('toolbar').innerHTML = '<span class="summary" style="margin-left:0">'
-      + '보류 = 승인됐지만 아직 반영되지 않은 행. 상태 필터는 이 탭에서 쓰이지 않습니다.'
-      + '</span><span class="summary" id="sum"></span>';
-    return;
-  }
+  // ★ 상태 필터는 «모든 탭»에 똑같이 걸린다(서버로 가는 유일한 필터다).
+  //   ⚠ 보류 행은 status 가 `approved` 다 — 상태를 `candidate` 만으로 좁히면
+  //     보류 탭이 0건이 되는데, 그것은 사용자가 «직접 고른» 필터의 결과이지 거짓말이 아니다.
   el('toolbar').innerHTML = '상태 '
     + '<select onchange="S.status=this.value;S.offset=0;loadAll()">'
     + ['candidate,approved', 'candidate', 'approved', 'rejected', 'undone', 'superseded']
@@ -741,18 +760,9 @@ function page(d) { S.offset = Math.max(0, S.offset + d * S.limit); loadAll(); }
 async function loadAll() {
   renderToolbar();
   el('list').innerHTML = '<div class="empty">불러오는 중…</div>';
-  var q = new URLSearchParams({ limit: S.limit, offset: S.offset });
-  // ★★ 세션67 — `held=1` 은 `status` 필터에 «추가로» 걸린다(AND 다).
-  //   그래서 보류 탭에서 상태를 `candidate` 로 바꾸면 교집합이 «공집합»이라
-  //   보류 행이 실제로 있는데도 화면이 「0건」을 보여준다 — 조용한 거짓말이다.
-  //   ⇒ 보류 탭에서는 `status` 를 «아예 안 보낸다». 서버가 held 조건만으로 판정한다.
-  //   ⛔ 여기에 `status` 를 다시 넣지 말 것.
-  if (S.tab === 'held') {
-    q.set('held', '1');
-  } else {
-    q.set('status', S.status);
-    if (CR.AXES.indexOf(S.tab) >= 0) q.set('axis', S.tab);
-  }
+  // ⛔ 탭(`axis`·`held`)을 «서버에» 보내지 않는다. 이유는 `buildListQuery` 머리말에 있다 —
+  //   실물 1회차에서 그것 때문에 제보 5건이 화면에 «하나도» 안 떴다.
+  var q = new URLSearchParams(CR.buildListQuery(S));
   var r = await apiRaw('/review/contributions?' + q).catch(function (e) {
     return { status: 0, ok: false, body: { error: { code: 'NETWORK', message: e.message } } };
   });

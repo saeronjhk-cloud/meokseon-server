@@ -302,4 +302,43 @@ t('요청 본문 — 빈 칸은 보내지 않는다', () => {
   const b2 = CR.buildBasisBody({ basis:'per_total', note:'x' }, '');
   assert.strictEqual(b2.reviewed_by, 'admin'); assert.ok(!('serving_size' in b2));
 });
+// ── §9 ★★★★★ 목록 요청에 «탭»을 싣지 않는다 (세션67 실물 1회차 사고) ──────────
+//
+// 무슨 일이 있었나 — 배포 첫 실행에서 화면이 제보 5건을 «하나도» 못 보여줬다.
+//   서버는 전부 정상이었다: `listReviewQueue` 가 `items_len:5` · HTTP 200 이 `count:5`.
+//   범인은 화면이었다 —
+//     ① 기본 탭이 「보류」이고 `loadAll` 이 서버에 `held=1` 을 보냈다
+//     ② 보류 행은 «진짜로» 0건이라 서버가 옳게 빈 배열을 줬다
+//     ③ `switchTab` 은 `loadAll` 을 «다시 부르지 않는다» — 이미 받은 `S.items` 를 거를 뿐이다
+//     ⇒ **그 순간부터 모든 탭이 영원히 0건이었다.**
+//   뿌리: 탭 필터링 규칙이 «서버 한 벌 + 클라이언트 한 벌» 두 벌이었다.
+//
+// ⇒ 규칙: 탭은 «클라이언트에서만» 거른다. 서버로 가는 필터는 `status` 뿐이다.
+t('★★ 목록 요청에 axis·held 를 «싣지 않는다» (탭이 서버 필터를 오염시키지 않는다)', () => {
+  for (const tab of ['held', 'all', 'nutrition', 'ingredients', 'allergens', 'additives']) {
+    const q = CR.buildListQuery({ tab, status: 'candidate,approved', limit: 50, offset: 0 });
+    assert.ok(!('axis' in q), `${tab} 탭이 axis 를 서버로 보냈다`);
+    assert.ok(!('held' in q), `${tab} 탭이 held 를 서버로 보냈다`);
+    assert.strictEqual(q.status, 'candidate,approved', `${tab} 탭이 status 를 잃었다`);
+    assert.strictEqual(q.limit, 50);
+    assert.strictEqual(q.offset, 0);
+  }
+});
+
+t('★ 어느 탭에서 받았든 같은 목록이면 탭 배지가 같다 (탭 전환이 데이터를 안 잃는다)', () => {
+  // 보류 탭에서 시작해도 nutrition 축이 보여야 한다 — 위 사고가 바로 이것이 깨진 것이다.
+  const items = [{
+    product_id: 1, barcode: 'b', product_name: 'p', manufacturer: null,
+    verification: 'partial', has_public_nutrition: false, pending_count: 1, held_count: 0,
+    axes: [{ review_id: 1, axis: 'nutrition', status: 'candidate', held: false, basis: null }],
+  }];
+  const c = CR.tabCounts(items);
+  assert.strictEqual(c.nutrition, 1, 'nutrition 탭 배지가 0이다');
+  assert.strictEqual(c.all, 1);
+  assert.strictEqual(c.held, 0, '보류가 아닌 행이 보류로 세어졌다');
+  assert.strictEqual(CR.filterItems(items, 'nutrition').length, 1, 'nutrition 탭이 비었다');
+  assert.strictEqual(CR.filterItems(items, 'all').length, 1);
+  assert.strictEqual(CR.filterItems(items, 'held').length, 0);
+});
+
 console.log('\n✔ ' + n + ' 개 단정 전부 통과');

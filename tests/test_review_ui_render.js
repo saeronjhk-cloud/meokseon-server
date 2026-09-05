@@ -367,4 +367,33 @@ t('★ 기준 후보 자리를 [object Object] 로 찍지 않는다', () => {
   assert.strictEqual(CR.basisConsideredText([]), '');
 });
 
+// ── §11 오류 코드마다 «맞는 동작»을 준다 (세션67 실물 2회차 사고) ─────────────
+//
+// 무슨 일이 있었나 — 기준을 채운 뒤 화면이 「이어서 retry 할까요?」를 물었고, 「예」를 누르자
+//   `REVIEW_NOT_APPROVED`(승인되지 않은 제보는 반영할 수 없습니다) 가 났다.
+//   `retry` 는 «보류»(승인됨 + 미반영) 전용인데 그 행은 아직 `candidate` 였다.
+//   ★ 서버는 처음부터 답을 주고 있었다 — `POST …/basis` 응답의 `next` 가 `'approve'` 였다.
+//   화면이 그것을 «안 읽고» action 을 상수로 박아 둔 것이 원인이다.
+//   그리고 오류 안내의 「다시 시도」 버튼도 «항상 retry» 라 같은 실패를 반복시켰다.
+t('★★ REVIEW_NOT_APPROVED 는 retry 가 아니라 approve 를 권한다 (같은 실패 반복 금지)', () => {
+  const x = CR.explainFailure({ code: 'REVIEW_NOT_APPROVED', review_id: 3, axis: 'nutrition',
+    message: '승인되지 않은 제보는 반영할 수 없습니다(status=candidate).' });
+  assert.ok(x.known, '이 코드에 화면 설명이 없다');
+  assert.strictEqual(x.action, 'approve', 'retry 를 또 권하면 같은 실패를 반복한다');
+  assert.ok(x.text.includes('승인'), '무엇을 해야 하는지가 설명에 없다');
+});
+
+t('★ 설명이 없는 코드의 기본 동작은 retry 이고, 코드 문자열은 그대로 노출된다', () => {
+  const y = CR.explainFailure({ code: 'SOME_FUTURE_CODE_XYZ', review_id: 9 });
+  assert.strictEqual(y.known, false);
+  assert.strictEqual(y.action, 'retry', '기본값이 바뀌면 기존 흐름이 깨진다');
+  assert.strictEqual(y.code, 'SOME_FUTURE_CODE_XYZ');
+});
+
+t('★ 다른 코드들의 동작이 조용히 바뀌지 않았다', () => {
+  for (const c of ['BASIS_UNKNOWN', 'CONVERT_BASIS_UNKNOWN', 'ALREADY_APPLIED']) {
+    assert.strictEqual(CR.explainFailure({ code: c, review_id: 1 }).action, 'retry', c);
+  }
+});
+
 console.log('\n✔ ' + n + ' 개 단정 전부 통과');

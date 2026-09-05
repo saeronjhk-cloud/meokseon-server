@@ -337,6 +337,18 @@ function filterItems(items, tab) {
  *     서버 쪽 `axis`·`held` 파라미터는 «지우지 않았다»(다른 호출자가 쓸 수 있다).
  *     이 화면이 안 쓸 뿐이다.
  */
+/** `resolveBasis` 의 `considered`(= `{from, value}` 객체 배열)를 사람이 읽는 한 줄로. */
+function basisConsideredText(considered) {
+  var src = Array.isArray(considered) ? considered : [];
+  var out = [];
+  for (var i = 0; i < src.length; i++) {
+    var c = src[i];
+    if (c && typeof c === 'object') out.push(String(c.from) + ' = ' + JSON.stringify(c.value));
+    else out.push(String(c));
+  }
+  return out.join(' · ');
+}
+
 function buildListQuery(state) {
   var s = state || {};
   return { status: s.status, limit: s.limit, offset: s.offset };
@@ -599,7 +611,10 @@ function basisBoxHtml(b) {
     + (b.raw ? ' · 원문 값 "' + esc(b.raw) + '"' : '')
     + (b.product_basis ? ' · 제품 기준 ' + esc(b.product_basis) : '') + '</div>'
     + (Array.isArray(b.considered) && b.considered.length
-      ? '<div class="meta">살펴본 자리: ' + esc(b.considered.join(', ')) + '</div>' : '')
+      // ⚠ `considered` 는 «객체 배열»이다 — `resolveBasis` 가 `{from, value}` 로 만든다.
+      //   그냥 join 하면 `[object Object]` 가 화면에 뜬다(세션67 실물 1회차에서 실제로 떴다).
+      //   관리자가 「어느 자리에 무슨 값이 있었나」를 보려고 있는 줄이므로 둘 다 찍는다.
+      ? '<div class="meta">살펴본 자리: ' + esc(basisConsideredText(b.considered)) + '</div>' : '')
     + admin + '</div>';
 }
 
@@ -670,7 +685,7 @@ return {
   esc: esc, num: num, shortDate: shortDate, differs: differs, toNameList: toNameList,
   proposedNutrition: proposedNutrition,
   filterItems: filterItems, tabCounts: tabCounts, tabsHtml: tabsHtml,
-  buildListQuery: buildListQuery,
+  buildListQuery: buildListQuery, basisConsideredText: basisConsideredText,
   heldBadgeHtml: heldBadgeHtml, basisWarnHtml: basisWarnHtml, basisChipHtml: basisChipHtml,
   axisActions: axisActions, axisRowHtml: axisRowHtml, queueCardHtml: queueCardHtml, listHtml: listHtml,
   explainFailure: explainFailure, failuresHtml: failuresHtml, successHtml: successHtml,

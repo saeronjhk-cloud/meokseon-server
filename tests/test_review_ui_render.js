@@ -207,7 +207,15 @@ const DETAIL = {
     created_at: '2026-09-01T10:00:00Z',
     proposed: { calories: 505, sodium: 1600, total_sugars: 4, protein: 11 },
     basis: { value: null, raw: 'unknown', from: null,
-      considered: ['data.parsed_nutrition._basis', 'data.basis'], product_basis: null, admin_basis: null },
+      // ⚠⚠ 세션67 실물 정정 — 초안의 가짜 데이터는 이 자리를 «문자열 배열»로 뒀는데
+      //   실제 `resolveBasis` 는 **`{from, value}` 객체 배열**을 보낸다.
+      //   그래서 테스트는 초록인데 화면에는 `[object Object]` 가 떴다.
+      //   ⛔ 이 모양을 문자열 배열로 되돌리지 말 것 — 그 순간 이 테스트가 «거짓 초록»이 된다.
+      considered: [
+        { from: 'data.parsed_nutrition._basis', value: 'unknown' },
+        { from: 'data.basis', value: 'per_pack' },
+      ],
+      product_basis: null, admin_basis: null },
     evidence: { origin: 'merge', merged_at: '2026-09-01T09:00:00Z', source_count: 4, distinct_device_count: 3,
       auto_verify_threshold: 3, verification: 'crowd_verified', has_significant_outliers: true,
       source_contribution_ids: [1,2,3,4],
@@ -261,7 +269,11 @@ t('★ basis 상자 — null 이면 경고, 값 있으면 관리자 근거까지
   const h = CR.basisBoxHtml(DETAIL.axes[0].basis);
   assert.ok(h.includes('기준 미상 — 지금 승인하면 보류됩니다'));
   assert.ok(h.includes('원문 값 "unknown"') || h.includes('원문 값 &quot;unknown&quot;'));
-  assert.ok(h.includes('살펴본 자리: data.parsed_nutrition._basis, data.basis'));
+  // ★ 「어느 자리에 무슨 값이 있었나」가 둘 다 보여야 한다. 그리고 [object Object] 가 아니어야 한다.
+  assert.ok(!h.includes('[object Object]'), '기준 후보를 [object Object] 로 찍었다');
+  assert.ok(h.includes('data.parsed_nutrition._basis'));
+  assert.ok(h.includes('data.basis'));
+  assert.ok(h.includes('per_pack'), '후보의 «값»이 화면에 없다');
   const h2 = CR.basisBoxHtml({ value: 'per_serving', from: 'review.evidence.admin_basis',
     admin_basis: { value: 'per_serving', by: '제이', at: '2026-09-03T05:00:00Z', note: '라벨 육안 확인' } });
   assert.ok(h2.includes('기준 per_serving')); assert.ok(h2.includes('라벨 육안 확인'));
@@ -339,6 +351,20 @@ t('★ 어느 탭에서 받았든 같은 목록이면 탭 배지가 같다 (탭 
   assert.strictEqual(CR.filterItems(items, 'nutrition').length, 1, 'nutrition 탭이 비었다');
   assert.strictEqual(CR.filterItems(items, 'all').length, 1);
   assert.strictEqual(CR.filterItems(items, 'held').length, 0);
+});
+
+// ── §10 `considered` 는 «객체 배열»이다 (실물 1회차에서 [object Object] 가 떴다) ────
+t('★ 기준 후보 자리를 [object Object] 로 찍지 않는다', () => {
+  const s = CR.basisConsideredText([
+    { from: 'data.parsed_nutrition._basis', value: 'per_100ml' },
+    { from: 'data.basis', value: 'unknown' },
+  ]);
+  assert.ok(!s.includes('[object Object]'), '객체를 그대로 문자열화했다');
+  assert.ok(s.includes('data.parsed_nutrition._basis'), '어느 «자리»였는지가 없다');
+  assert.ok(s.includes('per_100ml'), '무슨 «값»이었는지가 없다');
+  // 빈 값·비배열에도 안 죽는다
+  assert.strictEqual(CR.basisConsideredText(null), '');
+  assert.strictEqual(CR.basisConsideredText([]), '');
 });
 
 console.log('\n✔ ' + n + ' 개 단정 전부 통과');

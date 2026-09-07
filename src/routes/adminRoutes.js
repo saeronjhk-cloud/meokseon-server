@@ -14,6 +14,7 @@ const {
 //   ⛔ 이 라우터가 공식 테이블에 직접 SQL 을 쓰지 않는다. 규칙은 그 파일 한 곳에 있다.
 const {
   applyApprovedContribution, undoAppliedContribution, CONTRIBUTION_BASIS_OK,
+  CROWD_NUTRIENT_KEYS,   // 세션68 U67-11 — 값 정정의 키 어휘
 } = require('../services/contributionApply');
 // ★★ 세션67 U66-3 — `contribution_review` 를 «목록으로» 읽는 유일한 곳(계약 §4 Q5).
 //   ⛔ 이 라우터에 조회 SQL 을 다시 적지 말 것. adminRoutes 는 이미 1200줄이 넘는다.
@@ -968,6 +969,113 @@ router.post('/review/contributions/:reviewId/basis', async (req, res) => {
     return res.status(status).json({
       success: false,
       error: { code: e.code || 'BASIS_UPDATE_FAILED', message: e.message },
+    });
+  }
+});
+
+// ── POST /api/admin/review/contributions/:reviewId/override — 관리자 «값 정정» ──
+//   ★★ 세션68 U67-11. 세션67 실물에서 「지방 32g ↔ 80kcal」 제보를 «반려»할 수밖에 없었다 —
+//   한 값만 3.2 로 고치면 쓸 수 있었는데 고칠 자리가 없었다. 형태는 `…/basis` 와 같다:
+//     · `contribution_review.evidence.admin_override = {values, by, note, at}` 에 «판정»으로 남긴다
+//     · ⛔ `contributions.data` 는 안 건드린다(사용자가 낸 원본)
+//     · 승인은 자동으로 잇지 않는다 — `next` 를 돌려주고 화면이 사람에게 묻는다(DS-1)
+//   body: { values: { total_fat: 3.2, sodium: null, … }, note, reviewed_by }
+//     · 키는 CROWD_NUTRIENT_KEYS 만. 값은 0 이상 숫자, 또는 null(= 그 영양소를 «비운다»)
+//     · note 필수 — 근거 없는 정정은 추정과 구별되지 않는다(Q7 과 같은 이유)
+//   409 ALREADY_APPLIED: 이미 반영된 행은 여기서 못 고친다 — undo 로 되돌린 뒤 다시.
+router.post('/review/contributions/:reviewId/override', async (req, res) => {
+  const body = req.body || {};
+  const reviewId = Number(req.params.reviewId);
+  if (!Number.isFinite(reviewId)) {
+    return res.status(400).json({
+      success: false, error: { code: 'INVALID_REVIEW_ID', message: 'reviewId 가 숫자가 아닙니다.' },
+    });
+  }
+  const values = body.values;
+  if (!values || typeof values !== 'object' || Array.isArray(values)) {
+    return res.status(400).json({
+      success: false,
+      error: { code: 'OVERRIDE_VALUES_REQUIRED', message: 'values 객체가 필요합니다(예: {"total_fat": 3.2}).' },
+    });
+  }
+  const clean = {};
+  for (const [k, v] of Object.entries(values)) {
+    if (!CROWD_NUTRIENT_KEYS.includes(k)) {
+      return res.status(400).json({
+        success: false,
+        error: { code: 'INVALID_NUTRIENT_KEY', message: `${k} 는 정정할 수 있는 영양소가 아닙니다(${CROWD_NUTRIENT_KEYS.join(' / ')}).` },
+      });
+    }
+    if (v === null) { clean[k] = null; continue; }
+    const n = (typeof v === 'number') ? v : (typeof v === 'string' && v.trim() !== '' ? Number(v) : NaN);
+    if (!Number.isFinite(n) || n < 0) {
+      return res.status(400).json({
+        success: false,
+        error: { code: 'INVALID_NUTRIENT_VALUE', message: `${k} 는 0 이상 숫자이거나 null(비움)이어야 합니다.` },
+      });
+    }
+    clean[k] = n;
+  }
+  if (Object.keys(clean).length === 0) {
+    return res.status(400).json({
+      success: false, error: { code: 'OVERRIDE_VALUES_REQUIRED', message: '정정할 값이 하나도 없습니다.' },
+    });
+  }
+  const note = typeof body.note === 'string' ? body.note.trim() : '';
+  if (!note) {
+    return res.status(400).json({
+      success: false,
+      error: {
+        code: 'OVERRIDE_NOTE_REQUIRED',
+        message: '무엇을 근거로 값을 고쳤는지 적어 주세요(예: "라벨 사진 지방 3.2g 육안 확인 · OCR 이 소수점을 잃음"). '
+          + '근거 없는 정정은 추정과 구별되지 않습니다.',
+      },
+    });
+  }
+  const reviewedBy = (typeof body.reviewed_by === 'string' && body.reviewed_by.trim()) || 'admin';
+
+  try {
+    const out = await db.transaction(async (client) => {
+      const rv = await client.query(
+        `SELECT review_id, product_id, axis, status, applied_at FROM contribution_review
+          WHERE review_id = $1 FOR UPDATE`, [reviewId]);
+      if (rv.rows.length === 0) {
+        const e = new Error(`contribution_review(review_id=${reviewId}) 가 없습니다.`);
+        e.code = 'REVIEW_NOT_FOUND'; throw e;
+      }
+      const review = rv.rows[0];
+      if (review.axis !== 'nutrition') {
+        const e = new Error(`값 정정은 nutrition 축에만 있습니다(이 행은 ${review.axis}).`);
+        e.code = 'AXIS_NOT_NUTRITION'; throw e;
+      }
+      if (review.applied_at !== null && review.applied_at !== undefined) {
+        const e = new Error('이미 반영된 행입니다. undo 로 되돌린 뒤 정정하십시오 — 반영된 값을 조용히 바꾸지 않습니다.');
+        e.code = 'ALREADY_APPLIED'; throw e;
+      }
+      // ★ `evidence` 는 `||` 병합. `admin_override` 키는 통째로 교체된다(부분 병합하면 이전 정정이 섞인다).
+      await client.query(
+        `UPDATE contribution_review
+            SET evidence = COALESCE(evidence, '{}'::jsonb) || jsonb_build_object(
+                  'admin_override', jsonb_build_object(
+                    'values', $2::jsonb, 'by', $3::text, 'note', $4::text, 'at', to_jsonb(now())))
+          WHERE review_id = $1`,
+        [reviewId, JSON.stringify(clean), reviewedBy, note]);
+      return {
+        review_id: reviewId,
+        axis: review.axis,
+        status: review.status,
+        admin_override: { values: clean, by: reviewedBy, note },
+        next: review.status === 'approved' ? 'retry' : 'approve',
+      };
+    });
+    logger.info('관리자 값 정정', { reviewId, keys: Object.keys(clean), reviewedBy });
+    return res.json({ success: true, data: out });
+  } catch (e) {
+    const status = e.code === 'REVIEW_NOT_FOUND' ? 404
+      : (e.code === 'ALREADY_APPLIED' || e.code === 'AXIS_NOT_NUTRITION') ? 409 : 500;
+    logger.error('review override 입력 실패', { reviewId, error: e.message, code: e.code });
+    return res.status(status).json({
+      success: false, error: { code: e.code || 'OVERRIDE_UPDATE_FAILED', message: e.message },
     });
   }
 });

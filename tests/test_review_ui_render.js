@@ -396,4 +396,38 @@ t('★ 다른 코드들의 동작이 조용히 바뀌지 않았다', () => {
   }
 });
 
+// ── 세션68 U67-11 — 값 정정(override) 순수 블록 ─────────────────────────────
+t('★ U67-11 override 폼 검증 — 빈 칸은 안 보내고, null 은 비움, 어휘 밖·음수·note 없음은 막는다', () => {
+  const ok = CR.validateOverrideForm({ values: { total_fat: '3.2', sodium: 'null', protein: '' }, note: '라벨 확인' });
+  assert.strictEqual(ok.ok, true); assert.deepStrictEqual(ok.values, { total_fat: 3.2, sodium: null });
+  assert.strictEqual(CR.validateOverrideForm({ values: { total_fat: '' }, note: 'n' }).code, 'OVERRIDE_VALUES_REQUIRED');
+  assert.strictEqual(CR.validateOverrideForm({ values: { total_fat: '3.2' }, note: '  ' }).code, 'OVERRIDE_NOTE_REQUIRED');
+  assert.strictEqual(CR.validateOverrideForm({ values: { total_fat: '-1' }, note: 'n' }).code, 'INVALID_NUTRIENT_VALUE');
+  assert.strictEqual(CR.validateOverrideForm({ values: { _basis: 'per_100g' }, note: 'n' }).code, 'INVALID_NUTRIENT_KEY');
+  const body = CR.buildOverrideBody({ values: { total_fat: '3.2' }, note: ' 확인 ' }, '제이');
+  assert.deepStrictEqual(body, { values: { total_fat: 3.2 }, note: '확인', reviewed_by: '제이' });
+});
+t('★ U67-11 override 배지·값 정정 버튼 — 반영된 행에는 버튼이 «없다»(서버 409 와 같은 규칙)', () => {
+  const base = { review_id: 5, axis: 'nutrition', status: 'candidate', held: false, basis: 'per_serving', applied_at: null };
+  const h = CR.axisRowHtml({ product_id: 1 }, base);
+  assert.ok(h.includes('openOverride(1,5)'), '값 정정 버튼이 없다');
+  assert.ok(!h.includes('값 정정 '), 'override 없는데 배지가 떴다');
+  const applied = CR.axisRowHtml({ product_id: 1 }, Object.assign({}, base, { status: 'approved', applied_at: '2026-09-05T00:00:00Z' }));
+  assert.ok(!applied.includes('openOverride'), '반영된 행에 값 정정 버튼이 떴다');
+  const withOv = CR.axisRowHtml({ product_id: 1 }, Object.assign({}, base, { override: { keys: ['total_fat'], by: '제이' } }));
+  assert.ok(withOv.includes('값 정정 1개') && withOv.includes('지방(g)') && withOv.includes('제이'));
+  assert.strictEqual(CR.overrideChipHtml({ axis: 'ingredients', override: { keys: ['x'] } }), '');
+});
+t('★ U67-11 상세 — effective 표는 서버 값을 «그대로» 그린다(제보값 32 → 정정값 3.2 · 비움)', () => {
+  const ax = { review_id: 5, axis: 'nutrition', status: 'candidate', held: false, basis: { value: 'per_serving' },
+    proposed: { nutrition: { calories: 80, total_fat: 32, sodium: 300 }, nutrient_count: 3 },
+    override: { keys: ['total_fat', 'sodium'], by: '제이', at: '2026-09-06T01:02:03Z', note: '라벨 확인', values: { total_fat: 3.2, sodium: null } },
+    effective: { nutrition: { calories: 80, total_fat: 3.2, sodium: null }, override_keys: ['total_fat'], cleared_keys: ['sodium'], from: 'review.evidence.admin_override' } };
+  const h = CR.effectiveHtml(ax);
+  assert.ok(h.includes('32') && h.includes('3.2') && h.includes('(비움)') && h.includes('라벨 확인'));
+  assert.strictEqual(CR.effectiveHtml(Object.assign({}, ax, { override: null })), '');
+  const d = CR.detailHtml({ product: { product_id: 1, product_name: 'x' }, current: {}, axes: [ax] });
+  assert.ok(d.includes('승인하면 이렇게 저장됩니다') && d.includes('openOverride(1,5)'));
+});
+
 console.log('\n✔ ' + n + ' 개 단정 전부 통과');

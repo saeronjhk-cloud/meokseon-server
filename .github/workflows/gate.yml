@@ -121,6 +121,12 @@ jobs:
             tests/test_review_queue_read.js \
             tests/test_contribution_apply_basis.js \
             tests/test_review_ui_render.js \
+            tests/test_review_flags.js \
+            tests/test_label_dv_check.js \
+            tests/test_contribution_apply_override.js \
+            tests/test_review_routes.js \
+            src/services/labelDvCheck.js \
+            scripts/68-eval-vision-parser.js \
             tests/test_boot_graph.js
           do
             node --check "$f"
@@ -296,6 +302,31 @@ jobs:
       - name: "test: review-ui (관리자 검토 화면 렌더 · 세션67 U66-3)"
         run: npm run test:review-ui
 
+      # ★ 세션68 U67-12 — 저장 게이트(엔진)가 «이미 낸» 열량 검산 경고를 검토 화면까지 나른다.
+      #   세션67 실물에서 「지방 32g ↔ 열량 80kcal」 제보를 사람이 암산으로 잡았다. 검사는 있었다
+      #   (sanityCheck.calorie_deviation) — 없던 것은 그것을 «읽어 보여 주는 층»이다.
+      #   이 스텝이 빨강이면 ① 불일치가 붉게 안 뜨거나 ② 자리가 비어 «검산을 건너뛴» 행이
+      #   초록으로 보이거나 ③ 검사 안 한 행이 「경고 없음」으로 보이는 것이다.
+      - name: "test: review-flags (열량 검산 경고 표면화 · 세션68 U67-12)"
+        run: npm run test:review-flags
+
+      # ★ 세션68 U67-15 — 라벨 %열 교차검증. 값을 «고치지 않고» 의심·가설만 낸다(P1).
+      #   이 스텝이 빨강이면 ① 알려진 오독(449→4.4 · 42g→4.2)이 안 잡히거나 ② 맞는 값을 의심하거나
+      #   ③ 가설이 값이 됐거나(P1 위반) ④ 검토 화면이 %열 불일치를 안 띄우는 것이다.
+      - name: "test: label-dv-check (%열 교차검증 · 세션68 U67-15)"
+        run: npm run test:label-dv-check
+
+      # ★ 세션68 U67-11 — 관리자 값 정정(evidence.admin_override)을 승인 경로가 «얹는다».
+      #   이 스텝이 빨강이면 ① 정정값이 저장 안 되거나 ② contributions.data(원본)가 오염됐거나
+      #   ③ null 비움이 0 이 됐거나 ④ 환산 순서가 바뀌었거나 ⑤ 예고(effective)≠실제 인 것이다.
+      - name: "test: contribution-apply-override (관리자 값 정정 · 세션68 U67-11)"
+        run: npm run test:contribution-apply-override
+
+      # ★ 세션68 U67-7 — 라우터 층(진짜 express + HTTP). 권한 fail-safe · 라우트 순서 · 400/404/409 조립 ·
+      #   evidence 병합 · 개인정보 무유출 · 정정→승인 사슬. 세션67 까지 이 층에 회귀 장치가 0건이었다.
+      - name: "test: review-routes (관리자 검토 라우터 HTTP · 세션68 U67-7)"
+        run: npm run test:review-routes
+
       # ⚠ Firebase 미들웨어는 «남겨 두었다» — health-pick 앱의 사용 여부 미확인.
       #   이 스텝이 빨강이면 누군가 firebaseAuth.js 를 지웠거나 깨뜨린 것이다.
       - name: "test: auth (firebase · 전환기 병존 확인)"
@@ -312,6 +343,12 @@ jobs:
 
       - name: 63-eval 캡처 파서 (153/153 유지)
         run: node scripts/63-eval-capture-parser.js
+
+      # ★ 세션68 U67-15 — Vision «원문» 평가셋 v2 로 런타임 파서(src/services/ocrParser)를 잰다.
+      #   63-eval 은 배치 파서 + 정제 텍스트다. 이것은 제보 경로가 실제로 쓰는 파서 + Vision 이 실제로 낸 텍스트다.
+      #   기준선 145/172 · 가설 오답 0 · 거짓경보 0. 이 스텝이 빨강이면 파서 수정이 실물 라벨에서 후퇴한 것이다.
+      - name: 68-eval Vision 원문 파서 (기준선 145 · DV 가설정답 ≥5 · 오답 0 · 거짓경보 0)
+        run: node scripts/68-eval-vision-parser.js --min-pass 145 --min-hyp-ok 5 --max-hyp-bad 0 --max-false-alarm 0
 
       - name: 실패 시 77 로그 보존
         if: failure()

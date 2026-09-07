@@ -64,6 +64,12 @@
     border-radius:6px; padding:2px 9px; font-size:11.5px; font-weight:700; }
   .basis-warn { color:var(--amber); font-size:12px; border:1px dashed var(--amber);
     border-radius:6px; padding:3px 9px; background:rgba(226,163,54,.08); }
+  /* ★ 세션68 U67-12 — 저장 게이트(엔진)가 낸 경고. 붉은 실선 = 열량 검산 불일치. */
+  .flag-crit { color:var(--red); font-size:12px; border:1px solid var(--red);
+    border-radius:6px; padding:3px 9px; background:rgba(226,74,84,.10); font-weight:600; }
+  .flag-warn { color:var(--amber); font-size:12px; border:1px dashed var(--amber);
+    border-radius:6px; padding:3px 9px; }
+  .axisrow.crit { border-color:var(--red); }
   .axisrow { background:var(--panel2); border:1px solid var(--line); border-radius:8px;
     padding:9px 11px; margin-top:8px; }
   .axisrow.held { border-color:var(--amber); }
@@ -174,6 +180,23 @@
     <div class="formerr" id="bf-err"></div>
     <div class="foot"><button onclick="closeModal('basis')">취소</button>
       <button class="primary" onclick="submitBasis()">기준 저장</button></div>
+  </div>
+</div>
+
+<!-- ★ 세션68 U67-11 — 제보 «값» 정정. contributions.data 가 아니라 evidence.admin_override 에 남는다. -->
+<div class="modal" id="modal-override" onclick="if(event.target===this)closeModal('override')">
+  <div class="sheet narrow">
+    <h3>제보 값 정정 <small style="color:var(--muted);font-weight:400">POST …/override</small></h3>
+    <div class="sub" id="ov-sub"></div>
+    <div class="sub">이 폼은 <b>제보 값</b>을 고쳐서 승인하기 위한 것입니다. 원본(contributions.data)은 바뀌지 않고
+      <code>evidence.admin_override</code> 에 «관리자 판정»으로 남습니다.
+      비운 칸은 <b>제보 값 그대로</b>, <code>null</code> 이라고 쓰면 그 영양소를 <b>비웁니다</b>.</div>
+    <div id="ov-fields"></div>
+    <div class="frow" style="align-items:flex-start"><label>근거 note <span class="req">*</span></label>
+      <textarea id="ov-note" placeholder="예: 라벨 사진 지방 3.2g 육안 확인 · OCR 이 소수점을 잃음(4-9-4 검산 80kcal 정합)"></textarea></div>
+    <div class="formerr" id="ov-err"></div>
+    <div class="foot"><button onclick="closeModal('override')">취소</button>
+      <button class="primary" onclick="submitOverride()">정정 저장</button></div>
   </div>
 </div>
 
@@ -399,6 +422,46 @@ function basisWarnHtml(ax) {
   return '<span class="basis-warn">⚠ 기준 미상 — 지금 승인하면 보류됩니다' + raw + '</span>';
 }
 
+/**
+ * ★ 세션68 U67-12 — 저장 게이트(엔진)가 «이미 낸» 경고를 승인 버튼 «옆»에 낸다.
+ *   화면은 계산하지 않는다 — `flags` 는 서버가 evidence.sanity_warnings 에서 읽어 준 것이다.
+ *   ⚠ 반려가 아니라 «경고»다. 라벨 자체가 어긋난 제품도 실재한다 — 판단은 사람이 한다.
+ */
+function flagsHtml(ax) {
+  if (!ax || ax.axis !== 'nutrition' || !ax.flags) return '';
+  var f = ax.flags; var cc = f.calorie_check || {}; var out = [];
+  if (f.after_override === true) out.push('<span class="chip ok">정정 후 재판정</span>');
+  if (cc.status === 'mismatch') {
+    out.push('<span class="flag-crit">⛔ 열량 검산 불일치 — 표기 ' + esc(num(cc.actual)) + 'kcal vs 4-9-4 추정 '
+      + esc(num(cc.estimated)) + 'kcal (' + esc(cc.deviation_pct != null ? cc.deviation_pct : '?') + '%)</span>');
+  } else if (cc.status === 'incomplete') {
+    out.push('<span class="flag-warn">열량 검산 못 함 — 비어 있음: '
+      + esc((cc.missing || []).map(function (k) { return NUTRIENT_LABEL[k] || k; }).join(', ')) + '</span>');
+  } else if (cc.status === 'unchecked') {
+    out.push('<span class="flag-warn">저장 시 sanity 검사 안 됨</span>');
+  }
+  // ★ U67-15 — 라벨 %열과 값이 어긋난 자리. 가설은 «사람이 판단할 재료»다 — 자동 반영 없음.
+  (f.dv_suspects || []).forEach(function (s) {
+    var lab = NUTRIENT_LABEL[s.key] || s.key;
+    var shown = s.parsed != null ? num(s.parsed) : (s.token != null ? s.token : '?');
+    var hyp = s.hypothesis != null ? ' · 가설 ' + esc(num(s.hypothesis)) + (s.reason ? ' (' + esc(s.reason) + ')' : '') : ' · 가설 없음';
+    out.push('<span class="flag-crit">⛔ %열 불일치 — ' + esc(lab) + ' ' + esc(shown)
+      + ' vs 표기 ' + esc(s.pct != null ? s.pct : '?') + '%' + hyp + '</span>');
+  });
+  var tl = f.traffic_light_missing || [];
+  if (tl.length) {
+    out.push('<span class="flag-warn">신호등 자리 비어 있음: '
+      + esc(tl.map(function (k) { return NUTRIENT_LABEL[k] || k; }).join(', ')) + '</span>');
+  }
+  var others = (f.sanity_warnings || []).filter(function (w) {
+    return w && w.type !== 'calorie_deviation' && w.type !== 'dried_unknown';
+  });
+  others.forEach(function (w) {
+    out.push('<span class="flag-warn">' + esc(w.type) + (w.nutrient ? ' · ' + esc(w.nutrient) : '') + '</span>');
+  });
+  return out.join('');
+}
+
 function basisChipHtml(ax) {
   if (!ax || ax.axis !== 'nutrition') return '';
   if (ax.basis == null) return '<span class="chip warn">기준 null</span>';
@@ -430,22 +493,25 @@ function axisRowHtml(item, ax) {
   }).join('');
   var basisBtn = ax.axis === 'nutrition'
     ? '<button class="mini" onclick="openBasis(' + Number(item.product_id) + ',' + Number(ax.review_id) + ')">기준 입력…</button>'
+      // ★ U67-11 — 값 정정은 «아직 반영 안 된» 행에만(반영된 행은 undo 가 먼저다 · 서버도 409 로 막는다)
+      + (ax.applied_at ? '' : '<button class="mini" onclick="openOverride(' + Number(item.product_id) + ',' + Number(ax.review_id) + ')">값 정정…</button>')
     : '';
   var reject = axisActions(ax).indexOf('reject') >= 0
     ? '<input class="note" id="rr-' + Number(ax.review_id) + '" placeholder="반려 사유(필수)" />'
     : '';
   var origin = ax.origin ? '<span class="chip">' + esc(ax.origin) + '</span>' : '';
-  return '<div class="axisrow' + (ax.held ? ' held' : '') + '" data-review-id="' + Number(ax.review_id) + '">'
+  var crit = !!(ax.flags && ax.flags.critical === true);
+  return '<div class="axisrow' + (ax.held ? ' held' : '') + (crit ? ' crit' : '') + '" data-review-id="' + Number(ax.review_id) + '">'
     + '<div class="line1">'
     + '<span class="axname">' + esc(AXIS_LABEL[ax.axis] || ax.axis) + '</span>'
     + '<span class="status-badge s-' + esc(ax.status) + '">' + esc(ax.status) + '</span>'
-    + heldBadgeHtml(ax) + basisChipHtml(ax) + origin
+    + heldBadgeHtml(ax) + basisChipHtml(ax) + overrideChipHtml(ax) + origin
     + '<span class="chip">review #' + Number(ax.review_id) + '</span>'
     + (ax.reviewed_by ? '<span class="chip">검토 ' + esc(ax.reviewed_by) + '</span>' : '')
     + (ax.applied_at ? '<span class="chip ok">반영 ' + esc(shortDate(ax.applied_at)) + '</span>' : '')
     + (ax.reject_reason ? '<span class="chip bad">사유 ' + esc(ax.reject_reason) + '</span>' : '')
     + '</div>'
-    + '<div class="actions">' + acts + basisWarnHtml(ax) + basisBtn + reject + '</div>'
+    + '<div class="actions">' + acts + basisWarnHtml(ax) + flagsHtml(ax) + basisBtn + reject + '</div>'
     + '</div>';
 }
 
@@ -654,10 +720,15 @@ function detailHtml(d) {
       + '<span class="status-badge s-' + esc(ax.status) + '">' + esc(ax.status) + '</span>'
       + heldBadgeHtml(ax) + '<span class="chip">review #' + Number(ax.review_id) + '</span>'
       + '<button class="mini" onclick="openBasis(' + Number(p.product_id) + ',' + Number(ax.review_id) + ')">기준 입력…</button>'
+      + (ax.axis === 'nutrition' && !ax.applied_at
+        ? '<button class="mini" onclick="openOverride(' + Number(p.product_id) + ',' + Number(ax.review_id) + ')">값 정정…</button>' : '')
       + (ax.axis === 'nutrition'
         ? '<button class="mini" onclick="openCorrect(' + Number(p.product_id) + ')">공공 영양 정정…</button>' : '')
+      + overrideChipHtml(ax)
       + '</div>'
       + (ax.axis === 'nutrition' ? basisBoxHtml(ax.basis) : '')
+      + effectiveHtml(ax)
+      + (ax.axis === 'nutrition' && flagsHtml(ax) ? '<div class="chips" style="margin-top:8px">' + flagsHtml(ax) + '</div>' : '')
       + cmp
       + mergeEvidenceHtml(ax.evidence)
       + '</div>';
@@ -682,6 +753,63 @@ function validateBasisForm(f) {
   return { ok: true };
 }
 
+// ── 값 정정(override) — 세션68 U67-11 ──────────────────────────────
+/** 목록·상세 배지. «있다/없다»와 키만 — 값은 상세의 effective 표가 보여 준다. */
+function overrideChipHtml(ax) {
+  if (!ax || ax.axis !== 'nutrition' || !ax.override) return '';
+  var keys = ax.override.keys || [];
+  return '<span class="chip warn">값 정정 ' + keys.length + '개'
+    + (keys.length ? ' · ' + esc(keys.map(function (k) { return NUTRIENT_LABEL[k] || k; }).join(', ')) : '')
+    + (ax.override.by ? ' · ' + esc(ax.override.by) : '') + '</span>';
+}
+
+/**
+ * 폼 검증. 서버와 «같은 규칙»으로 먼저 막는다.
+ *   f = { values: { key: '3.2' | '' | 'null' }, note }
+ *   빈 칸 = 안 보낸다. 'null'(문자열) = 그 영양소를 비운다. 그 밖은 0 이상 숫자여야 한다.
+ */
+function validateOverrideForm(f) {
+  var v = f || {}; var vals = v.values || {}; var out = {}; var n = 0;
+  for (var k in vals) {
+    if (!Object.prototype.hasOwnProperty.call(vals, k)) continue;
+    if (NUTRIENT_KEYS.indexOf(k) < 0) return { ok: false, code: 'INVALID_NUTRIENT_KEY', message: k + ' 는 정정할 수 있는 영양소가 아닙니다.' };
+    var raw = vals[k]; if (raw == null) continue;
+    var s = String(raw).trim(); if (s === '') continue;
+    if (s.toLowerCase() === 'null') { out[k] = null; n++; continue; }
+    var num = Number(s);
+    if (!isFinite(num) || num < 0) return { ok: false, code: 'INVALID_NUTRIENT_VALUE', message: (NUTRIENT_LABEL[k] || k) + ' 는 0 이상 숫자이거나 null 이어야 합니다.' };
+    out[k] = num; n++;
+  }
+  if (n === 0) return { ok: false, code: 'OVERRIDE_VALUES_REQUIRED', message: '정정할 값이 하나도 없습니다. 고칠 칸만 채우세요.' };
+  if (!v.note || !String(v.note).trim()) return { ok: false, code: 'OVERRIDE_NOTE_REQUIRED', message: '근거(note)가 필요합니다 — 근거 없는 정정은 추정과 구별되지 않습니다.' };
+  return { ok: true, values: out };
+}
+
+/** 폼 값 → 요청 본문. validateOverrideForm 이 ok 를 낸 뒤에만 부른다. */
+function buildOverrideBody(f, reviewedBy) {
+  var v = validateOverrideForm(f);
+  return { values: v.ok ? v.values : {}, note: String((f || {}).note || '').trim(), reviewed_by: reviewedBy || 'admin' };
+}
+
+/**
+ * 상세: 「제보값 → 정정값(승인 시 저장될 값)」 표. effective 는 서버가 applyAdminOverride 로 만든 것이다 —
+ * 화면이 덮어쓰기 규칙을 다시 짜지 않는다(Q6). override 가 없으면 아무것도 안 낸다.
+ */
+function effectiveHtml(ax) {
+  if (!ax || ax.axis !== 'nutrition' || !ax.override || !ax.effective) return '';
+  var eff = ax.effective.nutrition || {}; var prop = proposedNutrition(ax.proposed);
+  var keys = (ax.effective.override_keys || []).concat(ax.effective.cleared_keys || []);
+  if (!keys.length) return '';
+  var rows = keys.map(function (k) {
+    var before = prop[k]; var after = eff[k];
+    return '<tr><td>' + esc(NUTRIENT_LABEL[k] || k) + '</td><td>' + esc(num(before)) + '</td><td><b>'
+      + (after == null ? '(비움)' : esc(num(after))) + '</b></td></tr>';
+  }).join('');
+  return '<div class="box" style="margin-top:8px"><h4>값 정정 — 승인하면 이렇게 저장됩니다</h4>'
+    + '<table class="cmp"><thead><tr><th>영양소</th><th>제보값</th><th>정정값</th></tr></thead><tbody>' + rows + '</tbody></table>'
+    + '<div class="meta">' + esc(ax.override.by || '?') + ' · ' + esc(shortDate(ax.override.at)) + ' · 근거: ' + esc(ax.override.note || '(없음)') + '</div></div>';
+}
+
 /** 폼 값 → §5-3 요청 본문. 빈 칸은 «보내지 않는다»(서버가 덮어쓰지 않도록). */
 function buildBasisBody(f, reviewedBy) {
   var b = { basis: f.basis, note: String(f.note).trim(), reviewed_by: reviewedBy || 'admin' };
@@ -697,7 +825,9 @@ return {
   esc: esc, num: num, shortDate: shortDate, differs: differs, toNameList: toNameList,
   proposedNutrition: proposedNutrition,
   filterItems: filterItems, tabCounts: tabCounts, tabsHtml: tabsHtml,
-  buildListQuery: buildListQuery, basisConsideredText: basisConsideredText,
+  buildListQuery: buildListQuery, basisConsideredText: basisConsideredText, flagsHtml: flagsHtml,
+  overrideChipHtml: overrideChipHtml, validateOverrideForm: validateOverrideForm,
+  buildOverrideBody: buildOverrideBody, effectiveHtml: effectiveHtml,
   heldBadgeHtml: heldBadgeHtml, basisWarnHtml: basisWarnHtml, basisChipHtml: basisChipHtml,
   axisActions: axisActions, axisRowHtml: axisRowHtml, queueCardHtml: queueCardHtml, listHtml: listHtml,
   explainFailure: explainFailure, failuresHtml: failuresHtml, successHtml: successHtml,
@@ -865,6 +995,69 @@ async function openDetail(productId) {
     return;
   }
   el('detail-body').innerHTML = CR.detailHtml(r.body.data);
+  S.detail = r.body.data;   // ★ U67-11 — 값 정정 폼이 제보값·가설을 미리 채우는 데 쓴다
+}
+
+// ── 값 정정(override) — 세션68 U67-11 ────────────────────────────
+//   ★ 폼의 «미리 채움»은 서버가 준 것만 쓴다: 제보값(proposed) · %열 가설(flags.dv_suspects[].hypothesis).
+//   가설은 placeholder 로만 보여 준다 — 사람이 «직접 타이핑»해야 값이 된다(자동 반영 없음 · P1).
+async function openOverride(productId, reviewId) {
+  S.overrideTarget = { productId: Number(productId), reviewId: Number(reviewId) };
+  el('ov-err').textContent = ''; el('ov-note').value = '';
+  el('ov-sub').innerHTML = 'review #' + Number(reviewId) + ' · product_id ' + Number(productId);
+  var ax = null;
+  if (!S.detail || !S.detail.product || Number(S.detail.product.product_id) !== Number(productId)) {
+    var r = await apiRaw('/review/contributions/' + Number(productId)).catch(function () { return null; });
+    if (r && r.ok) S.detail = r.body.data;
+  }
+  if (S.detail && S.detail.axes) ax = S.detail.axes.filter(function (a) { return Number(a.review_id) === Number(reviewId); })[0] || null;
+  var prop = ax ? CR.proposedNutrition(ax.proposed) : {};
+  var hyp = {};
+  ((ax && ax.flags && ax.flags.dv_suspects) || []).forEach(function (s) { if (s.hypothesis != null) hyp[s.key] = s.hypothesis; });
+  el('ov-fields').innerHTML = CR.NUTRIENT_KEYS.map(function (k) {
+    var cur = prop[k];
+    var ph = hyp[k] != null ? '가설 ' + hyp[k] + ' (%열)' : '비우면 제보값 유지';
+    return '<div class="frow"><label>' + CR.esc(CR.NUTRIENT_LABEL[k] || k) + '</label>'
+      + '<span class="chip" style="min-width:64px;text-align:right">' + CR.esc(CR.num(cur)) + '</span>'
+      + '<input class="w120" type="text" id="ov-' + k + '" placeholder="' + CR.esc(ph) + '" />'
+      + (hyp[k] != null ? '<span class="flag-warn">%열 가설 ' + CR.esc(hyp[k]) + '</span>' : '')
+      + '</div>';
+  }).join('');
+  openModal('override');
+}
+
+function readOverrideForm() {
+  var values = {};
+  CR.NUTRIENT_KEYS.forEach(function (k) { var e = el('ov-' + k); if (e) values[k] = e.value; });
+  return { values: values, note: el('ov-note').value };
+}
+
+async function submitOverride() {
+  var f = readOverrideForm();
+  var v = CR.validateOverrideForm(f);
+  if (!v.ok) { el('ov-err').textContent = v.code + ' — ' + v.message; return; }
+  el('ov-err').textContent = '';
+  var t = S.overrideTarget;
+  var r = await apiRaw('/review/contributions/' + t.reviewId + '/override',
+    { method: 'POST', body: JSON.stringify(CR.buildOverrideBody(f, actor())) })
+    .catch(function (e) { return { status: 0, ok: false, body: { error: { code: 'NETWORK', message: e.message } } }; });
+  if (!r.ok) {
+    var x = CR.explainFailure({ code: (r.body.error || {}).code, message: (r.body.error || {}).message });
+    el('ov-err').textContent = x.code + ' — ' + (x.text || x.serverMessage || '(설명 없음 — 코드를 그대로 보고해 주세요)');
+    return;
+  }
+  closeModal('override');
+  toast('값 정정을 저장했습니다.');
+  S.detail = null;
+  await loadAll();
+  // ★ 서버가 준 next 를 «읽는다» — 상수로 박지 않는다(세션67 실물 3회차 교훈).
+  var next = (r.body && r.body.data && r.body.data.next) === 'retry' ? 'retry' : 'approve';
+  var label = next === 'retry' ? '재반영(retry)' : '승인(approve)';
+  if (confirm('값 정정을 저장했습니다.\n\n이어서 ' + label + ' 를 진행할까요?\n'
+    + '— 예: 지금 ' + label + ' 를 실행합니다(정정값이 저장됩니다).\n'
+    + '— 아니오: 목록에서 직접 버튼을 누릅니다.')) {
+    await postVerify(t.productId, { action: next, review_ids: [t.reviewId], reviewed_by: actor() || 'admin' });
+  }
 }
 
 // ── 기준 입력 ───────────────────────────────────────────────────

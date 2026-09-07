@@ -60,9 +60,12 @@ const {
   pickNutritionObject,
   pickIngredientNames,
   buildAllergenList,
+  applyAdminOverride,   // 세션68 U67-11 — 상세의 «반영 예고»에 승인 경로와 같은 규칙을 쓴다
+  toEngineKeys,         // 세션68 — 정정 뒤 flags 재판정에 엔진을 «부르기» 위한 키 매핑
   CROWD_NUTRIENT_KEYS,
   AXES,
 } = require('./contributionApply');
+const { sanityCheck } = require('./nutritionTrafficLight');
 
 // ============================================================================
 // 0. 어휘·상수
@@ -181,6 +184,119 @@ function proposedNutrition(data) {
     if (out[k] !== null) n += 1;
   }
   return { nutrition: out, nutrient_count: n };
+}
+
+// ============================================================================
+// 1-b. ★ 세션68 `U67-12` — 저장 게이트가 «이미 낸» 경고를 검토 화면까지 나른다
+// ============================================================================
+
+/**
+ * 4-9-4 검산에 쓰이는 매크로 자리. `calories` 가 없으면 검산 자체가 성립하지 않는다.
+ * ⚠ 이것은 «완전성» 검사다 — 열량 공식을 다시 계산하지 «않는다»(계약 §4 Q6 의 형태).
+ */
+const CALORIE_CHECK_KEYS = ['calories', 'total_carbs', 'protein', 'total_fat'];
+/** 신호등 판정이 요구하는 4자리. 하나라도 없으면 그 축은 «판정 불가»로 화면에 뜬다. */
+//   ⚠ 키는 **저장용**(`CROWD_NUTRIENT_KEYS`) 이름이다 — 판정용 `sugars`/`sat_fat` 가 아니다.
+//     `proposedNutrition` 이 그 화이트리스트로 뽑기 때문이다(세션42 주석 참조).
+const TRAFFIC_LIGHT_KEYS = ['calories', 'sodium', 'total_sugars', 'saturated_fat'];
+
+/**
+ * ★★ 검토 행의 영양 «신호».
+ *
+ * 왜 이 함수가 있나 — 세션67 실물 1회차에서 「지방 32g ↔ 열량 80kcal」 제보가 큐에 떴고,
+ *   사람이 암산으로 잡아 반려했다. 인수인계는 「열량 정합성 검사가 없다」고 적었는데
+ *   **틀렸다** — `nutritionTrafficLight.sanityCheck` 가 저장 시점에 이미
+ *   `calorie_deviation`(76%) 을 냈고 `contribution_review.evidence.sanity_warnings` 에
+ *   그대로 들어 있었다. 없던 것은 검사가 아니라 **그것을 읽어 화면에 나르는 층**이다.
+ *
+ * ⛔ 규칙을 여기서 다시 계산하지 않는다. 경고의 «출처»는 언제나 저장 게이트(엔진)다.
+ *   이 함수가 새로 만드는 것은 두 가지 «완전성» 사실뿐이다:
+ *     · 4-9-4 자리 중 무엇이 비었나 (비었으면 엔진은 검산을 «건너뛴다» — 초록이 아니다)
+ *     · 신호등 4자리 중 무엇이 비었나 (육포 제보가 나트륨·지방·단백질 없이 큐에 있었다)
+ *
+ * @returns {{
+ *   sanity_warnings: Array|null,      // 엔진이 저장 시 낸 것 그대로. null = 검사 못 함(세션64b 관례)
+ *   calorie_check: {status:'mismatch'|'ok'|'incomplete'|'unchecked', actual?, estimated?, deviation_pct?, missing?},
+ *   traffic_light_missing: string[],  // 신호등 4자리 중 비어 있는 것
+ *   critical: boolean,                // mismatch 이면 true — 화면이 승인 버튼 «옆»에 붉게 낸다
+ * }}
+ */
+function buildNutritionFlags(evidence, contributionData) {
+  const ev = asObject(evidence) || {};
+  const data = asObject(contributionData) || {};
+
+  // ★ 세션68 검증이 찾은 구멍 — 관리자가 32→3.2 로 정정해도 붉은 배지가 «그대로» 남았다
+  //   (저장 시점 evidence.sanity_warnings 만 봤다). 정정이 있으면 «정정된 값»으로 엔진을 «다시 부른다».
+  //   ⛔ 4-9-4 를 여기서 계산하는 것이 아니다 — `sanityCheck` 를 호출한다(출처는 여전히 엔진 하나).
+  const ovApplied = applyAdminOverride(pickNutritionObject(data) || {}, evidence);
+  const afterOverride = !!ovApplied.from;
+  const { nutrition } = afterOverride
+    ? proposedNutrition({ parsed_nutrition: ovApplied.nutrition })
+    : proposedNutrition(data);
+  const n = nutrition || {};
+  const isNull = (k) => n[k] === null || n[k] === undefined;
+
+  let warnings;
+  if (afterOverride) {
+    // 건조 여부·제공량은 여기서 모른다 → null. 열량 검산(4-9-4)·음수·포화>총지방은 그것 없이도 돈다.
+    warnings = sanityCheck(toEngineKeys(ovApplied.nutrition), null, null, 'per_serving')
+      .filter((w) => w && w.type !== 'dried_unknown');
+  } else {
+    const rawWarnings = ev.sanity_warnings;
+    warnings = Array.isArray(rawWarnings)
+      ? rawWarnings.filter((w) => w && typeof w === 'object')
+      : null;
+  }
+
+  const missingMacro = CALORIE_CHECK_KEYS.filter(isNull);
+  const trafficLightMissing = TRAFFIC_LIGHT_KEYS.filter(isNull);
+
+  let calorieCheck;
+  const dev = warnings ? warnings.find((w) => w.type === 'calorie_deviation') : null;
+  if (dev) {
+    const actual = Number(dev.value);
+    const estimated = Number(dev.limit);
+    const pct = Number.isFinite(actual) && Number.isFinite(estimated) && estimated > 0
+      ? Math.round(Math.abs(actual - estimated) / estimated * 100)
+      : null;
+    calorieCheck = { status: 'mismatch', actual, estimated, deviation_pct: pct };
+  } else if (!warnings) {
+    // 저장 게이트가 sanity 를 «돌리지 않은» 행(세션64b: null = 검사 못 함). 결손도 같이 싣는다.
+    calorieCheck = { status: 'unchecked', missing: missingMacro };
+  } else if (missingMacro.length > 0) {
+    // 엔진은 4자리가 다 있을 때만 검산한다 — 비어 있으면 「통과」가 아니라 「안 했다」다.
+    calorieCheck = { status: 'incomplete', missing: missingMacro };
+  } else {
+    calorieCheck = { status: 'ok' };
+  }
+
+  // ★ 세션68 U67-15 — 파서가 붙여 보낸 %열 교차검증(`parsed_nutrition._dv_check`). 있으면 그대로 나른다.
+  //   suspects 원소: {key, parsed, token, pct, hypothesis, reason}. 가설은 «표시용»이다 — 값으로 쓰지 않는다.
+  const rawNut = pickNutritionObject(data);
+  const dvRaw = rawNut && asObject(rawNut._dv_check);
+  // ★ 정정된 키의 의심은 «해소»로 본다 — 사람이 그 자리를 이미 봤다. 나머지 의심은 남는다.
+  const overriddenKeys = new Set([...ovApplied.applied_keys, ...ovApplied.cleared_keys]);
+  const dvSuspects = dvRaw && Array.isArray(dvRaw.suspects)
+    ? dvRaw.suspects.filter((s) => s && typeof s === 'object' && typeof s.key === 'string' && !overriddenKeys.has(s.key)).map((s) => ({
+      key: s.key,
+      parsed: Number.isFinite(Number(s.parsed)) && s.parsed !== null ? Number(s.parsed) : null,
+      token: s.token == null ? null : String(s.token),
+      pct: Number.isFinite(Number(s.pct)) ? Number(s.pct) : null,
+      hypothesis: Number.isFinite(Number(s.hypothesis)) && s.hypothesis !== null ? Number(s.hypothesis) : null,
+      reason: s.reason == null ? null : String(s.reason),
+    }))
+    : [];
+
+  return {
+    sanity_warnings: warnings,
+    calorie_check: calorieCheck,
+    traffic_light_missing: trafficLightMissing,
+    dv_suspects: dvSuspects,
+    dv_checked: dvRaw ? Object.keys(asObject(dvRaw.checked) || {}).length : 0,
+    // 관리자 정정 «뒤»의 판정인가 — 화면이 「정정 후」라고 표시할 수 있게
+    after_override: afterOverride,
+    critical: calorieCheck.status === 'mismatch' || dvSuspects.length > 0,
+  };
 }
 
 /**
@@ -412,7 +528,9 @@ function buildAxisSummary(row, productRow) {
   let basis = null;
   let basisRaw = null;
   let basisFrom = null;
+  let flags = null;
   if (row.axis === 'nutrition') {
+    flags = buildNutritionFlags(row.evidence, row.contribution_data);
     const r = resolveBasis(
       asObject(row.contribution_data) || {},
       {
@@ -442,6 +560,53 @@ function buildAxisSummary(row, productRow) {
     basis,
     basis_raw: basisRaw,
     basis_from: basisFrom,
+    // ★ 세션68 `U67-12` — nutrition 축만. 다른 축은 null(«그 축에 없는 개념»).
+    flags,
+    // ★ 세션68 `U67-11` — 관리자 값 정정이 있는가(목록은 «있다/없다»와 키만. 값은 상세에서).
+    override: row.axis === 'nutrition' ? overrideSummary(row.evidence) : null,
+  };
+}
+
+/**
+ * 상세용: `override`(값 포함) + `effective`(승인 시 실제 저장될 영양값 · 화이트리스트 키만).
+ * override 가 없으면 effective 는 proposed 와 같다 — 그래도 낸다(화면이 분기하지 않게).
+ */
+function buildOverrideDetail(evidence, data) {
+  const summary = overrideSummary(evidence);
+  const ev = asObject(evidence);
+  const ov = ev && asObject(ev.admin_override);
+  const values = ov && asObject(ov.values) ? asObject(ov.values) : null;
+  const src = pickNutritionObject(asObject(data) || {});
+  const applied = applyAdminOverride(src || {}, evidence);
+  const eff = {};
+  for (const k of CROWD_NUTRIENT_KEYS) {
+    if (!Object.prototype.hasOwnProperty.call(applied.nutrition, k)) continue;
+    const v = applied.nutrition[k];
+    const num = (v === null || v === undefined || v === '') ? null : Number(v);
+    eff[k] = Number.isFinite(num) ? num : null;
+  }
+  return {
+    override: summary ? { ...summary, values: values || {} } : null,
+    effective: {
+      nutrition: eff,
+      override_keys: applied.applied_keys,
+      cleared_keys: applied.cleared_keys,
+      from: applied.from,
+    },
+  };
+}
+
+/** `evidence.admin_override` 요약. 없으면 null. ⛔ 값을 해석하지 않는다 — `applyAdminOverride` 가 한다. */
+function overrideSummary(evidence) {
+  const ev = asObject(evidence);
+  const ov = ev && asObject(ev.admin_override);
+  if (!ov) return null;
+  const vals = asObject(ov.values) || {};
+  return {
+    keys: Object.keys(vals).filter((k) => CROWD_NUTRIENT_KEYS.includes(k)),
+    by: ov.by ?? null,
+    at: ov.at ?? null,
+    note: ov.note ?? null,
   };
 }
 
@@ -610,6 +775,10 @@ async function getReviewDetail(client, productId) {
       reject_reason: row.reject_reason ?? null,
       proposed: buildProposed(row.axis, data),
       basis,
+      flags: row.axis === 'nutrition' ? buildNutritionFlags(row.evidence, data) : null,
+      // ★ 세션68 U67-11 — 관리자 값 정정(있으면 값까지) + 「승인하면 실제로 저장될 값」(effective).
+      //   effective 는 `applyAdminOverride` 를 «호출»해 만든다 — 화면이 덮어쓰기 규칙을 다시 짜지 않는다(Q6).
+      ...(row.axis === 'nutrition' ? buildOverrideDetail(row.evidence, data) : { override: null, effective: null }),
       // ★ merge 판정(median·기기 «수»·이상치)은 **살려서** 내보낸다.
       //   개인 식별자만 키째 지운다 — `EVIDENCE_PII_KEYS` 주석 참조.
       evidence: scrubEvidence(asObject(row.evidence)),
@@ -633,4 +802,9 @@ module.exports = {
   scrubEvidence,
   buildProposed,
   normalizeList,
+  buildNutritionFlags,
+  overrideSummary,
+  buildOverrideDetail,
+  CALORIE_CHECK_KEYS,
+  TRAFFIC_LIGHT_KEYS,
 };

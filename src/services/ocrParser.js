@@ -15,6 +15,7 @@
 //   그것이 P4(원재료표에 `밀` 단독 추가)를 한 세션 동안 막아 세운 직접 원인이었다.
 //   ⚠ 가드 규칙을 여기에 «복사»하지 말 것. 고칠 일이 있으면 `allergenGuards.js` 를 고친다.
 const allergenGuards = require('./allergenGuards');
+const { dvCheck } = require('./labelDvCheck');   // 세션68 U67-15 — %열 교차검증(값을 고치지 않는다)
 
 // ============================================================
 // 1. 원재료명 섹션 추출
@@ -987,6 +988,16 @@ function parseNutrition(text) {
   //    클라이언트는 이 값을 \"라벨 명시\" 로 신뢰하고, 없는 영양소는 1회분 × 배수로 자동 계산.
   if (Object.keys(nutritionTotal).length > 0) {
     nutrition._total = nutritionTotal;
+  }
+
+  // 6) ★ 세션68 U67-15 — 라벨 %열로 값을 교차검증한 결과를 «붙여 보낸다».
+  //   값을 고치지 않는다(P1). `_dv_check.suspects[]` 는 검토 화면(U67-12 flags)이 사람에게 보여 주는
+  //   재료다. `analysis.nutrition` 이 그대로 `contributions.data.parsed_nutrition` 에 저장되므로
+  //   여기 붙이면 evidence 를 타고 검토 큐까지 간다. 언더스코어 키라 저장용 화이트리스트에는 안 걸린다.
+  //   ⚠ 원문이 비었거나 삼중항이 하나도 없으면 붙이지 않는다 — 「검사 안 함」과 「이상 없음」을 구분한다.
+  {
+    const dv = dvCheck(nutrition, text);
+    if (Object.keys(dv.checked).length > 0) nutrition._dv_check = dv;
   }
 
   return nutrition;

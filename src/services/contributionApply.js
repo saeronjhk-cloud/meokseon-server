@@ -62,7 +62,7 @@
 //   · deriveBasis            — `nutrition_data.serving_size` 의 basis 마커 문자열을 읽는 «유일한 본문»
 //   · normalizeAllergenNames — 알레르겐 19종 정본 사전의 «유일한 본문»(세션55)
 //   · strongerLevel          — 등급 서열. 「내리지 않는다」의 JS 쪽 본문
-const { deriveBasis } = require('./nutritionTrafficLight');
+const { deriveBasis, sanityCheck } = require('./nutritionTrafficLight');
 const { normalizeAllergenNames, strongerLevel } = require('./allergenName');
 const {
   upsertProductAdditives, detectFromIngredientNames, countDetected,
@@ -391,6 +391,85 @@ function pickNutritionObject(data) {
   return null;
 }
 
+/**
+ * ★★ 세션68 `U67-11` — 관리자 «값 정정»(`contribution_review.evidence.admin_override`)을 제보 영양값 위에 얹는다.
+ *
+ * 왜 이것이 있나
+ *   세션67 실물 1회차: 「지방 32g ↔ 열량 80kcal」 제보를 관리자가 «반려»할 수밖에 없었다.
+ *   지방 한 값만 3.2 로 고치면 쓸 수 있는 제보였는데 「고쳐서 승인」할 자리가 없었다.
+ *   `corrections.nutrition` 은 공공 행(`nutrition_data`)만 고치고, 제보가 들어오는 제품은 대개 공공 행이 없다.
+ *
+ * 형태는 `admin_basis` 와 같다 (계약 §4 Q1 의 연장):
+ *   ⛔ `contributions.data` 는 한 글자도 안 고친다 — 그것은 «사용자가 낸 것»이다.
+ *   ✅ 관리자 판정은 `contribution_review.evidence.admin_override = {values, by, note, at}` 에 남고,
+ *      승인 «시점»에 여기서 원본 위에 얹힌다. 원본과 판정이 영원히 구분된다.
+ *
+ * 규칙
+ *   · `values` 의 키는 `CROWD_NUTRIENT_KEYS` 안에서만 읽는다(그 밖의 키는 무시 — 우회로 아님).
+ *   · 값이 «숫자»면 덮어쓴다. 값이 **null** 이면 그 영양소를 «비운다»(OCR 쓰레기 값을 지우는 용도).
+ *   · 값이 그 밖(문자열·NaN·음수)이면 «무시»한다 — 조용히 0 으로 만들지 않는다.
+ *   · 원본 객체를 변형하지 않는다(새 객체를 만든다). `_basis` 같은 언더스코어 키는 그대로 보존한다.
+ *
+ * @returns {{ nutrition: Object, applied_keys: string[], cleared_keys: string[], from: string|null }}
+ */
+function applyAdminOverride(parsedNutrition, reviewEvidence) {
+  const base = (parsedNutrition && typeof parsedNutrition === 'object') ? { ...parsedNutrition } : {};
+  const rev = asObject(reviewEvidence);
+  const ov = rev && rev.admin_override && typeof rev.admin_override === 'object' && !Array.isArray(rev.admin_override)
+    ? rev.admin_override : null;
+  const values = ov && ov.values && typeof ov.values === 'object' && !Array.isArray(ov.values) ? ov.values : null;
+  if (!values) return { nutrition: base, applied_keys: [], cleared_keys: [], from: null };
+
+  const applied = [];
+  const cleared = [];
+  for (const k of CROWD_NUTRIENT_KEYS) {
+    if (!Object.prototype.hasOwnProperty.call(values, k)) continue;
+    const v = values[k];
+    if (v === null) { base[k] = null; cleared.push(k); continue; }
+    const n = typeof v === 'number' ? v : (typeof v === 'string' && v.trim() !== '' ? Number(v) : NaN);
+    if (!Number.isFinite(n) || n < 0) continue;
+    base[k] = n;
+    applied.push(k);
+  }
+  return {
+    nutrition: base,
+    applied_keys: applied,
+    cleared_keys: cleared,
+    from: (applied.length || cleared.length) ? 'review.evidence.admin_override' : null,
+  };
+}
+
+/**
+ * 저장용 키 → 엔진(`nutritionTrafficLight`) 판정용 키. 엔진은 `sugars`/`sat_fat`/`fiber` 를 쓴다(세션42 주석).
+ * ★ 이 매핑은 `crowdsourceService.js` 의 저장 게이트(`:209~215`)와 같은 뜻이다 — 새 규칙이 아니다.
+ */
+function toEngineKeys(n) {
+  const src = n || {};
+  return {
+    calories: src.calories ?? null, sodium: src.sodium ?? null,
+    sugars: src.total_sugars ?? null, sat_fat: src.saturated_fat ?? null,
+    total_fat: src.total_fat ?? null, protein: src.protein ?? null,
+    total_carbs: src.total_carbs ?? null, trans_fat: src.trans_fat ?? null,
+    cholesterol: src.cholesterol ?? null, fiber: src.dietary_fiber ?? null,
+  };
+}
+
+/**
+ * ★ 세션68 검증이 찾은 구멍 — 관리자 정정값은 어떤 sanity 게이트도 안 거쳤다.
+ *   제보 저장 시엔 `crowdsourceService` 가 `sanityCheck` 를 돌려 이상치를 버리는데, 관리자가 `override` 로
+ *   넣은 값(예: 3.2 대신 오타 320)은 검사 없이 `nutrition_data_crowd` 에 들어갔다 — 사람이 고친 값이
+ *   OCR 값보다 «덜» 검증되는 역전이다.
+ *   ⇒ 정정이 «있을 때만» 엔진을 부른다. 규칙은 엔진 것 그대로(음수·1회분 상한). 건조 여부는 모르므로
+ *     null 을 넘긴다(100g 상한은 건너뛰고 `dried_unknown` 경고가 남는다 — 그것은 치명이 아니다).
+ *   ⚠ 정정이 «없는» 행은 종전대로 검사하지 않는다(저장 시 이미 검사됐다). 회귀 0.
+ * @returns {Array} 치명 경고(negative_value · per_serving_exceeded). 비면 통과.
+ */
+function overrideCriticalWarnings(nutritionStoredKeys, servingSize, basis) {
+  const b = (basis === 'per_100g' || basis === 'per_100ml') ? basis : 'per_serving';
+  const warnings = sanityCheck(toEngineKeys(nutritionStoredKeys), Number(servingSize) > 0 ? Number(servingSize) : null, null, b);
+  return warnings.filter((w) => w.type === 'negative_value' || w.type === 'per_serving_exceeded');
+}
+
 /** `parsed_ingredients` → 이름 배열. `crowdsourceService` 의 추출과 같은 모양. */
 function pickIngredientNames(data) {
   const list = data && data.parsed_ingredients;
@@ -533,11 +612,14 @@ async function readCrowdNutritionRow(client, productId) {
 async function applyNutritionAxis(client, ctxArgs) {
   const { productId, review, data, appliedBy, reviewEvidence } = ctxArgs;
 
-  const parsed = pickNutritionObject(data);
-  if (!parsed) {
+  const parsedRaw = pickNutritionObject(data);
+  if (!parsedRaw) {
     throw fail('NOTHING_TO_APPLY',
       '이 제보에는 옮길 영양정보가 없습니다(parsed_nutrition 이 비어 있습니다).');
   }
+  // ★ 세션68 U67-11 — 관리자 값 정정을 «여기서» 얹는다. 원본(`contributions.data`)은 그대로다.
+  const override = applyAdminOverride(parsedRaw, reviewEvidence);
+  const parsed = override.nutrition;
 
   const prow = await client.query(
     `SELECT p.product_id,
@@ -585,6 +667,17 @@ async function applyNutritionAxis(client, ctxArgs) {
   // ── ★ DS-9 ②: 환산 «근거»가 없으면 저장하지 않는다 ──
   const convCtx = buildConvertCtx(data, productRow);
   const conv = computeConvertFactor(resolved.basis, targetBasis, convCtx);
+
+  // ── ★ 세션68 — 정정값은 엔진의 sanity 를 «다시» 거친다(정정이 있을 때만) ──
+  if (override.from) {
+    const crit = overrideCriticalWarnings(parsed, convCtx && convCtx.servingSize, resolved.basis);
+    if (crit.length > 0) {
+      throw fail('OVERRIDE_SANITY_OUTLIER',
+        `관리자 정정값이 물리적 상한을 넘습니다: ${crit.map((w) => `${w.nutrient}(${w.value} > ${w.limit})`).join(', ')}. `
+        + '정정을 다시 확인하십시오 — 오타(3.2 → 320)일 가능성이 큽니다.',
+        { warnings: crit, override_keys: override.applied_keys });
+    }
+  }
 
   const scaled = scaleNutrition(parsed, conv.factor);
   const foundCount = CROWD_NUTRIENT_KEYS.reduce(
@@ -662,11 +755,17 @@ async function applyNutritionAxis(client, ctxArgs) {
       //   `'review.evidence.admin_basis'` 면 사람이 채운 것이고, `'data.*'` 면 제보가 낸 것이다.
       //   이 한 줄이 없으면 나중에 「누가 그렇게 판정했나」를 되짚을 수 없다.
       basis_from: resolved.evidence.from,
+      // ★ 세션68 U67-11 — 「어느 값이 사람 손을 거쳤는가」. 없으면 null. 이 줄이 없으면
+      //   나중에 `nutrition_data_crowd` 의 값이 제보 원본과 다른 이유를 되짚을 수 없다.
+      override_from: override.from,
+      override_keys: override.applied_keys,
+      override_cleared: override.cleared_keys,
     },
     counts: {
       nutrients_stored: foundCount,
       converted: conv.factor !== 1,
       had_public_nutrition: !!resolved.evidence.has_public_nutrition,
+      overridden: override.applied_keys.length + override.cleared_keys.length,
     },
     foundCount,
     scopeNote: 'nutrition_facts_table',
@@ -1159,6 +1258,9 @@ module.exports = {
   resolveBasis,
   computeConvertFactor,
   scaleNutrition,
+  applyAdminOverride,   // 세션68 U67-11 — 순수 함수. 읽기 API 가 «예고»에 같은 규칙을 쓴다(두 벌 금지)
+  overrideCriticalWarnings,
+  toEngineKeys,
   // 어휘·헬퍼 (테스트·관리자 화면이 읽는다)
   AXES,
   CROWD_NUTRIENT_KEYS,

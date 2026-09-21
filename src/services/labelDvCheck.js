@@ -183,4 +183,29 @@ function dvCheck(parsed, text) {
   return { checked, suspects };
 }
 
-module.exports = { dvCheck, extractTriples, consistent, hypotheses, DV };
+/**
+ * ★ 세션69 U68-6 — `_dv_check` 를 «현재 값» 기준으로 «다시» 붙인다.
+ *
+ * 왜 필요한가: `parseNutrition` 이 OCR 값으로 `_dv_check` 를 한 번 붙이는데, 라우트가 그 뒤에
+ * 사용자 수정값(`productInfo.nutrition`)을 «병합»한다. 사용자가 앱에서 42→4.2 로 고쳐 보내도
+ * `suspects[{parsed:42}]` 가 그대로 남아 검토 큐에 **거짓 붉은 배지**가 떴다.
+ * 게다가 앱이 `analysis.nutrition` 을 그대로 되돌려 보내면 `productInfo.nutrition._dv_check`
+ * (OCR 시점 값)가 병합으로 «덮어쓰기»까지 한다.
+ *
+ * 규칙(파서 6단계와 같다 — 출처는 여기 하나):
+ *   · 기존 `_dv_check` 는 «어떤 것이든» 버린다(사용자 쪽에서 온 것 포함)
+ *   · 삼중항이 하나도 없으면 붙이지 않는다 — 「검사 안 함」≠「이상 없음」
+ *   · 값은 고치지 않는다(P1)
+ *
+ * 제자리(in-place)로 고치고 같은 객체를 돌려준다 — 라우트가 `analysis.nutrition` 참조를 그대로
+ * 쓰기 때문이다. `nutrition` 이 객체가 아니면 그대로 돌려준다.
+ */
+function applyDvCheck(nutrition, text) {
+  if (!nutrition || typeof nutrition !== 'object') return nutrition;
+  delete nutrition._dv_check;
+  const dv = dvCheck(nutrition, text || '');
+  if (Object.keys(dv.checked).length > 0) nutrition._dv_check = dv;
+  return nutrition;
+}
+
+module.exports = { dvCheck, applyDvCheck, extractTriples, consistent, hypotheses, DV };

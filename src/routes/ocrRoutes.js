@@ -10,6 +10,7 @@ const { callVisionAPI, correctOcrText } = require('../services/ocrService');
 const {
   analyzeText, detectNutritionBasis, reconcileAllergens, mergeAllergensV2, flattenAllergensV2,
 } = require('../services/ocrParser');
+const { applyDvCheck } = require('../services/labelDvCheck');   // 세션69 U68-6 — 사용자 병합 뒤 %열 재검증
 // ★ 세션50 D2 — `sanityCheck` 를 **일부러 import 하지 않는다.** 판정은 엔진 한 곳에서만 한다.
 //   (되돌리려면 import 부터 다시 넣어야 하므로, 이 한 줄이 다음 세션에 보내는 신호다)
 const { evaluateNutrition } = require('../services/nutritionTrafficLight');
@@ -433,6 +434,11 @@ router.post('/analyze', supabaseAuthOptional, upload.single('image'), async (req
   // OCR 결과 대신 사용자 값을 신뢰한다. (Trust the user, not the OCR.)
   if (productInfo?.nutrition) {
     analysis.nutrition = { ...analysis.nutrition, ...productInfo.nutrition };
+    // ★ 세션69 U68-6 — 사용자가 고친 «뒤» 값으로 %열 교차검증을 다시 한다.
+    //   안 하면 OCR 시점의 suspects(42 vs 8%)가 그대로 저장돼 검토 큐에 거짓 붉은 배지가 뜬다.
+    //   앱이 `analysis.nutrition` 을 통째로 되돌려 보내는 경우 `_dv_check` 도 같이 오는데,
+    //   `applyDvCheck` 가 그것을 버리고 현재 값으로 다시 만든다. 값은 고치지 않는다(P1).
+    applyDvCheck(analysis.nutrition, corrected);
   }
   if (productInfo?.ingredients_text) {
     // 사용자가 텍스트 영역에서 수정한 원재료 — corrected 텍스트로 갈아끼우면
@@ -683,6 +689,12 @@ router.post(
     // 사용자 입력 우선 적용
     if (productInfo?.nutrition) {
       merged.nutrition = { ...merged.nutrition, ...productInfo.nutrition };
+      // ★ 세션69 U68-6 — /analyze 와 **같은 규칙**(두 경로가 갈라지면 한쪽만 고쳐지는 사고 — 세션48).
+      //   원문은 영양표 컷을 우선하고 없으면 라벨 컷(영양값이 어느 컷에서 왔든 %열은 그 컷에 있다).
+      applyDvCheck(merged.nutrition, [
+        nutritionAnalysis?._corrected_text,
+        labelAnalysis?._corrected_text,
+      ].filter(Boolean).join('\n'));
     }
     // ★ 세션44 2차: /analyze 와 같은 이유 — 빈 배열은 덮어쓰기로 보지 않는다(경미M).
     //   ★ 세션47 경미4 — /analyze 와 같은 정규화. 문자열로 와도 버리지 않는다.

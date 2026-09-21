@@ -125,6 +125,7 @@ jobs:
             tests/test_label_dv_check.js \
             tests/test_contribution_apply_override.js \
             tests/test_review_routes.js \
+            tests/test_dv_check_remerge.js \
             src/services/labelDvCheck.js \
             scripts/68-eval-vision-parser.js \
             tests/test_boot_graph.js
@@ -326,6 +327,12 @@ jobs:
       #   evidence 병합 · 개인정보 무유출 · 정정→승인 사슬. 세션67 까지 이 층에 회귀 장치가 0건이었다.
       - name: "test: review-routes (관리자 검토 라우터 HTTP · 세션68 U67-7)"
         run: npm run test:review-routes
+
+      # ★ 세션69 U68-6 — 사용자가 앱에서 값을 고친 «뒤» %열 교차검증을 다시 한다.
+      #   이 스텝이 빨강이면 ① 라우트가 병합 뒤 applyDvCheck 를 안 부르거나 ② 낡은 _dv_check 가 남거나
+      #   ③ 삼중항 0 에도 _dv_check 가 붙는 것이다 → 검토 큐에 거짓 붉은 배지가 쌓인다.
+      - name: "test: dv-check-remerge (사용자 수정 뒤 %열 재검증 · 세션69 U68-6)"
+        run: npm run test:dv-check-remerge
 
       # ⚠ Firebase 미들웨어는 «남겨 두었다» — health-pick 앱의 사용 여부 미확인.
       #   이 스텝이 빨강이면 누군가 firebaseAuth.js 를 지웠거나 깨뜨린 것이다.

@@ -15,7 +15,7 @@
 //   그것이 P4(원재료표에 `밀` 단독 추가)를 한 세션 동안 막아 세운 직접 원인이었다.
 //   ⚠ 가드 규칙을 여기에 «복사»하지 말 것. 고칠 일이 있으면 `allergenGuards.js` 를 고친다.
 const allergenGuards = require('./allergenGuards');
-const { dvCheck } = require('./labelDvCheck');   // 세션68 U67-15 — %열 교차검증(값을 고치지 않는다)
+const { applyDvCheck } = require('./labelDvCheck');   // 세션68 U67-15 — %열 교차검증(값을 고치지 않는다) · 세션69 U68-6 재계산 헬퍼
 
 // ============================================================
 // 1. 원재료명 섹션 추출
@@ -995,10 +995,9 @@ function parseNutrition(text) {
   //   재료다. `analysis.nutrition` 이 그대로 `contributions.data.parsed_nutrition` 에 저장되므로
   //   여기 붙이면 evidence 를 타고 검토 큐까지 간다. 언더스코어 키라 저장용 화이트리스트에는 안 걸린다.
   //   ⚠ 원문이 비었거나 삼중항이 하나도 없으면 붙이지 않는다 — 「검사 안 함」과 「이상 없음」을 구분한다.
-  {
-    const dv = dvCheck(nutrition, text);
-    if (Object.keys(dv.checked).length > 0) nutrition._dv_check = dv;
-  }
+  //   ★ 세션69 U68-6 — 규칙은 `applyDvCheck` 한 곳. 라우트가 사용자 수정값을 병합한 «뒤»에도
+  //     같은 함수를 다시 부른다(ocrRoutes /analyze · /multi-photo).
+  applyDvCheck(nutrition, text);
 
   return nutrition;
 }

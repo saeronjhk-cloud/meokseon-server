@@ -334,6 +334,13 @@ jobs:
       - name: "test: dv-check-remerge (사용자 수정 뒤 %열 재검증 · 세션69 U68-6)"
         run: npm run test:dv-check-remerge
 
+      # ★ 세션70 U69-2 — /multi-photo 영양 폴백. analyzeText 의 nutrition 은 표가 없어도 객체(truthy)라
+      #   `a.nutrition || b.nutrition` 이 라벨 컷 영양을 영원히 무시했다(세션44 치명B 영양 축 잔재).
+      #   이 스텝이 빨강이면 ① 영양표 컷 0개인데 라벨 컷 값이 안 올라오거나 ② 두 컷을 키 단위로 섞거나
+      #   ③ 영양표 컷이 값을 읽었는데 라벨 컷이 이긴 것이다.
+      - name: "test: multi-photo-pick (영양 컷 빈 객체 truthy · 세션70 U69-2)"
+        run: npm run test:multi-photo-pick
+
       # ⚠ Firebase 미들웨어는 «남겨 두었다» — health-pick 앱의 사용 여부 미확인.
       #   이 스텝이 빨강이면 누군가 firebaseAuth.js 를 지웠거나 깨뜨린 것이다.
       - name: "test: auth (firebase · 전환기 병존 확인)"

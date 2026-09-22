@@ -689,6 +689,13 @@ async function applyNutritionAxis(client, ctxArgs) {
 
   const before = await readCrowdNutritionRow(client, productId);
 
+  // ★★ 세션70 U69-3 — `verified_at` 을 반영 시각으로 채운다.
+  //   종전엔 `applied_at` 만 적고 `verified_at` 은 비워 뒀다. 그런데 소비자 API 는
+  //   `product_nutrition_resolved.verified_at = COALESCE(nd.verified_at, ndc.verified_at)` 를 읽으므로
+  //   제보만 있는 제품(육포·쌈장 실측)은 `admin_verified` 인데 `data_freshness.verified_at: null` 이었고
+  //   앱의 신선도(is_stale/is_expired) 판정도 못 했다. 이 함수는 관리자 승인 경로에서만 불린다
+  //   (adminRoutes `/verify` approve·correct) — 「반영됨 = 관리자가 확인함」이므로 같은 시각이 맞다.
+  //   ⛔ `/verify` 라우트에 `UPDATE nutrition_data_crowd` 를 따로 두지 말 것 — 이 테이블의 문은 여기 하나다.
   const params = [
     productId,
     ...CROWD_NUTRIENT_KEYS.map((k) => (num(scaled[k]) === null ? null : num(scaled[k]))),
@@ -710,9 +717,9 @@ async function applyNutritionAxis(client, ctxArgs) {
        serving_size, ocr_confidence,
        contribution_id, review_id,
        basis_original, basis_stored, convert_factor, convert_note,
-       applied_at, applied_by)
+       applied_at, applied_by, verified_at)
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,
-             $17,$18,$19,$20,$21,$22,$23,$24, now(), $25)
+             $17,$18,$19,$20,$21,$22,$23,$24, now(), $25, now())
      ON CONFLICT (product_id) DO UPDATE SET
        calories = EXCLUDED.calories,
        total_fat = EXCLUDED.total_fat,
@@ -738,7 +745,8 @@ async function applyNutritionAxis(client, ctxArgs) {
        convert_factor = EXCLUDED.convert_factor,
        convert_note = EXCLUDED.convert_note,
        applied_at = now(),
-       applied_by = EXCLUDED.applied_by`,
+       applied_by = EXCLUDED.applied_by,
+       verified_at = now()`,
     params);
 
   const after = await readCrowdNutritionRow(client, productId);

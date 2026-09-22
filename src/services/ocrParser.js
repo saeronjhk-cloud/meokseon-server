@@ -2451,7 +2451,28 @@ function analyzeText(correctedText) {
   };
 }
 
+/**
+ * ★ 세션70 U69-2 — 영양 객체에 «실제 영양값»이 몇 개 있는가.
+ *   `parseNutrition` 은 표가 없어도 항상 객체(`{_basis:'unknown'}`)를 돌려준다.
+ *   그래서 라우터가 `a.nutrition || b.nutrition` 으로 고르면 빈 객체도 truthy 라 폴백이 «영원히» 안 된다
+ *   (세션44 치명B 와 같은 유형 · 세션69 검증자 발견). 「있다/없다」는 이 함수 한 곳에서만 센다.
+ *   세는 것: NUTRIENT_PATTERNS 의 키(열량·탄수·당류·단백질·지방·포화·트랜스·콜레·나트륨·식이섬유)가
+ *   유한한 수인 것. `serving_size`·`total_content`·`_basis` 같은 메타는 영양값이 아니다.
+ */
+const NUTRIENT_KEYS = Object.freeze(Object.keys(NUTRIENT_PATTERNS));
+function countNutrientValues(nutrition) {
+  if (!nutrition || typeof nutrition !== 'object') return 0;
+  let n = 0;
+  for (const k of NUTRIENT_KEYS) {
+    const v = nutrition[k];
+    if (typeof v === 'number' && Number.isFinite(v)) n += 1;
+  }
+  return n;
+}
+
 module.exports = {
+  NUTRIENT_KEYS,
+  countNutrientValues,   // 세션70 U69-2: /multi-photo 영양 폴백은 «값이 있는 컷»으로 고른다
   extractIngredientSection,
   parseIngredients,
   identifyAdditives,

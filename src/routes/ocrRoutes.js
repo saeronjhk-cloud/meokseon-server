@@ -9,6 +9,7 @@ const multer = require('multer');
 const { callVisionAPI, correctOcrText } = require('../services/ocrService');
 const {
   analyzeText, detectNutritionBasis, reconcileAllergens, mergeAllergensV2, flattenAllergensV2,
+  countNutrientValues,   // 세션70 U69-2 — /multi-photo 영양 폴백은 «값이 있는 컷»으로 고른다(빈 객체 truthy 방어)
 } = require('../services/ocrParser');
 const { applyDvCheck } = require('../services/labelDvCheck');   // 세션69 U68-6 — 사용자 병합 뒤 %열 재검증
 // ★ 세션50 D2 — `sanityCheck` 를 **일부러 import 하지 않는다.** 판정은 엔진 한 곳에서만 한다.
@@ -284,6 +285,24 @@ function mergeProductMeta(labelMeta, nutritionMeta) {
     }
   }
   return out;
+}
+
+/**
+ * ★★★ 세션70 U69-2 — 두 컷의 영양 객체 중 «값이 있는 쪽»을 고른다.
+ *   종전 `nutritionAnalysis?.nutrition || labelAnalysis?.nutrition || {}` 는 `analyzeText` 가 표가 없어도
+ *   `{_basis:'unknown'}`(truthy) 를 돌려주므로 영양표 컷에서 표를 못 읽으면 라벨 컷 영양이 «영원히» 무시됐다
+ *   (세션44 치명B 가 product_meta·allergens_v2 는 고치고 영양 축만 남긴 것 · 세션69 검증자 발견).
+ *   ⛔ 키 단위로 «섞지 않는다» — 두 컷의 기준(per_serving / per_100g / per_total)이 다를 수 있어
+ *     섞으면 한 표 안에 기준이 둘이 된다(값·%열·신호등이 전부 어긋난다). 객체 하나를 통째로 고른다.
+ *   규칙: 영양표 컷에 값이 1개라도 있으면 영양표 컷(종전 우선순위 그대로 — 따로 찍은 컷이 정본이다 · 세션42)
+ *         · 영양표 컷이 0개면 라벨 컷 · 둘 다 0 이면 종전과 같은 폴백(메타만 있는 객체).
+ *   ⚠ 「값이 많은 쪽」으로 고르지 않는다 — 라벨 컷이 7개, 영양표 컷이 4개여도 영양표 컷이다.
+ *     개수로 고르면 영양표 컷을 따로 찍은 의미가 사라지고, 어느 컷이 이길지 사진마다 달라진다.
+ */
+function pickNutrition(nutritionNut, labelNut) {
+  if (countNutrientValues(nutritionNut) > 0) return nutritionNut;
+  if (countNutrientValues(labelNut) > 0) return labelNut;
+  return nutritionNut || labelNut || {};
 }
 
 function judgeNutrition({ productData, nutrition, labelText, explicitServingSize = null }) {
@@ -683,7 +702,9 @@ router.post(
         ...(nutritionAnalysis?.allergens || []),
       ])].sort(),
       allergens_v2: mergeAllergensV2(labelAnalysis?.allergens_v2, nutritionAnalysis?.allergens_v2),
-      nutrition: nutritionAnalysis?.nutrition || labelAnalysis?.nutrition || {},
+      // ★★★ 세션70 U69-2 — 종전 `nutritionAnalysis?.nutrition || labelAnalysis?.nutrition || {}` 는
+      //   위 product_meta·allergens_v2 와 **같은 결함**(빈 객체도 truthy)이었다. `pickNutrition` 주석 참조.
+      nutrition: pickNutrition(nutritionAnalysis?.nutrition, labelAnalysis?.nutrition),
     };
 
     // 사용자 입력 우선 적용

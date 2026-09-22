@@ -171,7 +171,7 @@ async function main() {
   //   존재하지 않는 파일을 체인에서 찾으면 병렬 작업 중 거짓 빨강이 된다.
   //   파일이 하나도 없으면 이 절은 「아직 검사할 것이 없다」로 남고, 아래 인라인 SQL 로 진행한다.
   const MIG_FILES = fs.existsSync(MIG) ? fs.readdirSync(MIG) : [];
-  const NEW_MIGS = MIG_FILES.filter((f) => /^(023|024|025|026)_.*\.sql$/.test(f)).sort();
+  const NEW_MIGS = MIG_FILES.filter((f) => /^(023|024|025|026|027)_.*\.sql$/.test(f)).sort();
   if (NEW_MIGS.length === 0) {
     console.log('  ⓘ 023~026 이 아직 없다 — 계약 §2~§4 정본 SQL 을 «인라인»으로 적용해 진행한다.');
     console.log('    (에이전트 B 가 파일을 만들면 이 절이 자동으로 체인 검사를 시작한다.)');
@@ -470,6 +470,16 @@ async function main() {
     assert.strictEqual(Number(row.review_id), same.reviewId, '계보(review_id)가 안 남았다');
   });
 
+  await t('§4-1b ★ 세션70 U69-3 — verified_at 이 반영 시각으로 채워진다(소비자 API data_freshness 가 읽는 값)', async () => {
+    const row = await crowdRow(same.productId);
+    assert.ok(row.verified_at, 'verified_at 이 null 이다 — 소비자 API 가 admin_verified 인데 verified_at: null 을 낸다(U69-3)');
+    assert.ok(row.applied_at, 'applied_at 이 null 이다');
+    const dv = Math.abs(new Date(row.verified_at).getTime() - new Date(row.applied_at).getTime());
+    assert.ok(dv < 5000, `verified_at 과 applied_at 이 다른 시각이다(${dv}ms) — 「반영됨 = 관리자가 확인함」이어야 한다`);
+    const age = Date.now() - new Date(row.verified_at).getTime();
+    assert.ok(age >= 0 && age < 60000, `verified_at 이 지금이 아니다(${age}ms)`);
+  });
+
   await t('§4-2 ★ 제보는 nutrition_data(공공 테이블)를 «건드리지 않는다» (U65-6 소멸)', async () => {
     const r = await db.query('SELECT count(*)::int c FROM nutrition_data WHERE product_id=$1',
       [same.productId]);
@@ -485,6 +495,26 @@ async function main() {
       [same.productId, 'nutrition']);
     assert.strictEqual(di.rows[0].c, 1, '검사 기록이 두 번 남았다 — 멱등이 아니다');
   });
+
+  await t('§3-2 ★ 세션70 U69-3 — 같은 제품의 «두 번째» 제보 반영(ON CONFLICT 갱신)도 verified_at 을 다시 찍는다', async () => {
+    const first = await crowdRow(same.productId);
+    // 뷰가 먼저 읽히도록 1초 뒤 시각을 강제한다(같은 트랜잭션 now() 는 같은 값이라 «갱신됐는지» 재려면 과거로 민다).
+    await db.query(`UPDATE nutrition_data_crowd SET verified_at = now() - interval '1 day' WHERE product_id = $1`, [same.productId]);
+    // `uq_cr_approved_per_product_axis`(제품·축당 approved 1건) 때문에 첫 리뷰를 superseded 로 내린 뒤 두 번째를 승인한다
+    //   — 운영에서 「더 나은 제보로 대체」가 바로 이 경로다. 행은 1:1 이므로 ON CONFLICT 갱신을 탄다.
+    await db.query(`UPDATE contribution_review SET status = 'superseded' WHERE review_id = $1`, [same.reviewId]);
+    const cid2 = await mkContribution(same.productId, { parsed_nutrition: { ...NUT_100G, sodium: 210 }, avg_confidence: 0.9 });
+    const rid2 = await mkReview(cid2, same.productId, 'nutrition');
+    const r = await SERVICE.applyApprovedContribution(client, rid2, { appliedBy: 'jay' });
+    assert.strictEqual(r.applied, true, JSON.stringify(r));
+    const row = await crowdRow(same.productId);
+    assert.strictEqual(numOf(row.sodium), 210, '두 번째 제보 값으로 갱신되지 않았다');
+    assert.ok(row.verified_at, 'verified_at 이 null 이 됐다');
+    const age = Date.now() - new Date(row.verified_at).getTime();
+    assert.ok(age < 60000, `ON CONFLICT 경로가 verified_at 을 안 찍었다(${Math.round(age / 3600000)}h 전 값)`);
+    assert.ok(first, '첫 행이 없다');
+  });
+
 
   // ══════════════════════════════════════════════════════════════════════════
   section('§5  기준이 다르고 근거가 있으면 «환산»해서 저장한다 (DS-9)');

@@ -341,6 +341,10 @@ jobs:
       - name: "test: multi-photo-pick (영양 컷 빈 객체 truthy · 세션70 U69-2)"
         run: npm run test:multi-photo-pick
 
+      # ★ 세션70 U69-3 운영 사고 — 027 첫 판이 026 이관 행까지 verified_at 을 찍었다(5행). 027 범위 + 028 되돌림.
+      - name: "test: migration-027-028 (verified_at 백필 범위 · 세션70 U69-3)"
+        run: npm run test:migration-027-028
+
       # ⚠ Firebase 미들웨어는 «남겨 두었다» — health-pick 앱의 사용 여부 미확인.
       #   이 스텝이 빨강이면 누군가 firebaseAuth.js 를 지웠거나 깨뜨린 것이다.
       - name: "test: auth (firebase · 전환기 병존 확인)"

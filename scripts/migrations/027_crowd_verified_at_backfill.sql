@@ -21,7 +21,13 @@
 --    `tests/test_contribution_apply.js §0` 이 체인을 단정한다).
 -- ============================================================
 
+-- ⚠⚠ 운영 실측(2026-09-22 00:47Z · 세션70): 이 파일의 «첫 판»은 `WHERE verified_at IS NULL AND applied_at IS NOT NULL`
+--   뿐이어서 5행이 갱신됐다 — 관리자 승인 3행(306258·306259·306260)은 맞았지만,
+--   **026 이관 행 2건(306257·306261 · `applied_by='migration_026'` · `review_id NULL` · products.verification='unverified')**
+--   까지 「이관 시각 = 관리자 확인 시각」으로 채웠다. 이관은 확인이 아니다 — 거짓 기록. 028 이 그 2행을 되돌린다.
+--   ⇒ 이 판은 `review_id IS NOT NULL`(승인 리뷰를 거친 행)로 좁혔다. 빈 DB·CI 재현에서는 처음부터 이 판이 돈다.
 UPDATE nutrition_data_crowd
    SET verified_at = applied_at
  WHERE verified_at IS NULL
-   AND applied_at IS NOT NULL;
+   AND applied_at IS NOT NULL
+   AND review_id IS NOT NULL;

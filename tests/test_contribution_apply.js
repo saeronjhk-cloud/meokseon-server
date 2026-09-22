@@ -171,7 +171,7 @@ async function main() {
   //   존재하지 않는 파일을 체인에서 찾으면 병렬 작업 중 거짓 빨강이 된다.
   //   파일이 하나도 없으면 이 절은 「아직 검사할 것이 없다」로 남고, 아래 인라인 SQL 로 진행한다.
   const MIG_FILES = fs.existsSync(MIG) ? fs.readdirSync(MIG) : [];
-  const NEW_MIGS = MIG_FILES.filter((f) => /^(023|024|025|026|027)_.*\.sql$/.test(f)).sort();
+  const NEW_MIGS = MIG_FILES.filter((f) => /^(023|024|025|026|027|028)_.*\.sql$/.test(f)).sort();
   if (NEW_MIGS.length === 0) {
     console.log('  ⓘ 023~026 이 아직 없다 — 계약 §2~§4 정본 SQL 을 «인라인»으로 적용해 진행한다.');
     console.log('    (에이전트 B 가 파일을 만들면 이 절이 자동으로 체인 검사를 시작한다.)');

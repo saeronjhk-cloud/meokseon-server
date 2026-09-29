@@ -271,9 +271,12 @@ async function getProductWithTrafficLight(barcode) {
   //     소실 수는 `buildAllergens` 가 받는 행에는 이미 남아 있지 않아서
   //     그 함수 안에서는 셀 수 없다(정규화는 model 단계에서 끝난다).
   let allergens = null;
+  let allergenAuto = null;   // ★ 세션72 — buildAllergenAutoSignals
   const allergenStats = { dropped: 0 };
   try {
-    allergens = buildAllergens(await productModel.getAllergens(product.product_id, allergenStats));
+    const allergenRows = await productModel.getAllergens(product.product_id, allergenStats);
+    allergens = buildAllergens(allergenRows);
+    allergenAuto = buildAllergenAutoSignals(allergenRows, allergens);
   } catch (e) {
     logger.error('알레르기 조회 실패 — 응답에서 알레르기를 생략한다(500 대신)', {
       barcode, productId: product.product_id, error: e.message,
@@ -385,9 +388,16 @@ async function getProductWithTrafficLight(barcode) {
     //   → 버린 것이 하나라도 있으면 `false`(= 「단정하지 말라」)를 낸다.
     //   ★ `false` 는 「알레르겐 없음」이 아니라 「flat 이 전부인지 모른다」는 뜻이다.
     //     클라이언트는 이 값이 false 면 「알레르기 없음」이라고 쓰면 안 된다.
+    // ★ 세션72 — 혼입 미확인(자동 반영 · 혼입 0)도 「flat 이 전부다」를 단정할 근거가 없다 → false.
     allergens_flat_complete: !(allergens && allergens.collected)
       ? null
-      : (allergens.v2.mayContain.length === 0 && allergenStats.dropped === 0),
+      : (allergens.v2.mayContain.length === 0 && allergenStats.dropped === 0
+        && !(allergenAuto && allergenAuto.mayUnconfirmed)),
+    // ★★★ 세션72 신설 2키 (기존 키 무변경 · 미수집이면 null — 위 세 키와 같은 방향)
+    //   allergens_crowd_auto: 게이트 자동 반영(관리자 미검증) 이름 목록 → 앱 배지 「제보 기반 · 포장 확인」.
+    //   allergens_may_unconfirmed: true = 혼입 정보 미확인(혼입 문장을 못 읽었을 수 있다). 「혼입 없음」이라 쓰지 말 것.
+    allergens_crowd_auto: allergenAuto ? allergenAuto.crowdAuto : null,
+    allergens_may_unconfirmed: allergenAuto ? allergenAuto.mayUnconfirmed : null,
     context,
     sources: buildSources(trafficLight),
     data_freshness: buildFreshness(product),
@@ -441,6 +451,25 @@ function buildAllergens(rows) {
   //   필터로 전부 떨어졌다면 그것은 「없음」이 아니라 「읽지 못했다」다.
   const kept = v2.contains.length + v2.inferred.length + v2.mayContain.length;
   return { flat: flattenAllergensV2(v2, []), v2, collected: kept > 0 };
+}
+
+/**
+ * ★★★ 세션72 — 게이트 자동 반영(`status='crowd_auto'`) 신호. `buildAllergens` 와 «같은 행»을 받는다.
+ *   ⚠ `buildAllergens` 의 반환 형태 `{flat, v2, collected}` 는 회귀(test_allergen_name_normalize §6)가
+ *     고정한다 — 그래서 곁 함수로 뺐다.
+ *   crowdAuto      — 자동 반영 이름(앱 배지 「제보 기반 · 포장 확인」)
+ *   mayUnconfirmed — 자동 반영 행이 있는데 혼입이 0 → 「혼입 정보 미확인」(대책3 · 신라면 캡처본처럼
+ *                    이미지에 혼입 줄이 없었을 수 있다). 미검증 데이터로 「혼입 없음」을 말하지 않는다.
+ *   ⚠ 사람이 확인한 행·공공데이터 행만 있는 제품은 `{crowdAuto: [], mayUnconfirmed: false}` — 종전과 같다.
+ */
+function buildAllergenAutoSignals(rows, built) {
+  if (!Array.isArray(rows) || !built || !built.collected) return null;
+  const crowdAuto = [];
+  for (const r of rows) {
+    const name = r && typeof r.allergen_name === 'string' ? r.allergen_name.trim() : '';
+    if (name && r.status === 'crowd_auto') crowdAuto.push(name);
+  }
+  return { crowdAuto, mayUnconfirmed: crowdAuto.length > 0 && built.v2.mayContain.length === 0 };
 }
 
 /**
@@ -503,6 +532,7 @@ module.exports = {
   // 테스트·재사용용 export
   buildMfras,
   buildAllergens,        // 세션45
+  buildAllergenAutoSignals,   // 세션72
 
   buildSources,
   buildFreshness,

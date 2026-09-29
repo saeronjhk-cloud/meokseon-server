@@ -72,7 +72,7 @@ const { sanityCheck } = require('./nutritionTrafficLight');
 // ============================================================================
 
 /** `cr_status_chk`(024)와 «같은» 목록이어야 한다. 어휘 밖 값은 조용히 버린다. */
-const REVIEW_STATUSES = ['candidate', 'approved', 'rejected', 'undone', 'superseded'];
+const REVIEW_STATUSES = ['candidate', 'approved', 'rejected', 'undone', 'superseded', 'auto_applied'];   // ★ 세션72 029
 
 /** 계약 §5-1 — `status` 를 안 주면 「지금 사람이 볼 것」 둘이다. */
 const DEFAULT_STATUSES = ['candidate', 'approved'];
@@ -377,7 +377,7 @@ async function hasReviewTable(client) {
 }
 
 const EMPTY_TOTALS = Object.freeze({
-  candidate: 0, held: 0, approved_applied: 0, rejected: 0,
+  candidate: 0, held: 0, approved_applied: 0, rejected: 0, auto_applied: 0,   // 세션72
 });
 
 // ============================================================================
@@ -423,13 +423,16 @@ async function listReviewQueue(client, opts = {}) {
             count(*) FILTER (WHERE status = 'approved' AND applied_at IS NULL)::int  AS held,
             count(*) FILTER (WHERE status = 'approved' AND applied_at IS NOT NULL)::int
                                                                                      AS approved_applied,
-            count(*) FILTER (WHERE status = 'rejected')::int                         AS rejected
+            count(*) FILTER (WHERE status = 'rejected')::int                         AS rejected,
+            count(*) FILTER (WHERE status = 'auto_applied')::int                     AS auto_applied
        FROM contribution_review`)).rows[0];
   const totals = {
     candidate: Number(totalsRow.candidate) || 0,
     held: Number(totalsRow.held) || 0,
     approved_applied: Number(totalsRow.approved_applied) || 0,
     rejected: Number(totalsRow.rejected) || 0,
+    // ★ 세션72 — 게이트 자동 반영(알레르기). 관리자가 «감사»로 볼 수 있게 수를 낸다(기본 탭에는 안 섞는다).
+    auto_applied: Number(totalsRow.auto_applied) || 0,
   };
 
   // ── 공통 필터 ──

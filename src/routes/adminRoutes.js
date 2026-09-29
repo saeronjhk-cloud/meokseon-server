@@ -505,7 +505,8 @@ router.post('/verify/:productId', async (req, res) => {
         logger.info('관리자 거부', { productId, reviewedBy, reviews: result.reviews.length });
 
       } else if (action === 'undo') {
-        const rows = await pickReviews(['approved']);
+        // ★ 세션72 — 게이트 자동 반영(`auto_applied`)도 같은 경로로 되돌린다(before/after 가 같은 모양).
+        const rows = await pickReviews(['approved', 'auto_applied']);
         for (const row of rows) {
           const reviewId = Number(row.review_id);
           const step = await runAxisStep(client, 'undo', async () => {

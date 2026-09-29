@@ -130,7 +130,7 @@ async function main() {
     assert.deepStrictEqual(out.items, [], 'items 가 빈 배열이 아니다');
     assert.strictEqual(out.queue_ready, true, '024 는 적용돼 있는데 queue_ready 가 false 다');
     assert.deepStrictEqual(out.totals,
-      { candidate: 0, held: 0, approved_applied: 0, rejected: 0 },
+      { candidate: 0, held: 0, approved_applied: 0, rejected: 0, auto_applied: 0 /* 세션72 029 */ },
       `totals=${JSON.stringify(out.totals)}`);
   });
 
@@ -556,7 +556,7 @@ async function main() {
       assert.deepStrictEqual(out.items, []);
       assert.strictEqual(out.count, 0);
       assert.deepStrictEqual(out.totals,
-        { candidate: 0, held: 0, approved_applied: 0, rejected: 0 });
+        { candidate: 0, held: 0, approved_applied: 0, rejected: 0, auto_applied: 0 /* 세션72 029 */ });
     } finally {
       await bare.close();
     }

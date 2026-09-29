@@ -14,6 +14,9 @@
  *         공식 테이블에 옮기는 일은 관리자가 승인할 때
  *         `contributionApply.applyApprovedContribution` «한 곳»이 한다.
  *   근거: 설계 §3-2 · 제이 확인 2026-08-30 — **전량 수동에 예외가 없다.**
+ *   ★★ 세션72 예외 하나(제이 확정 2026-09-28/29 · IP/결정_알레르기자동반영_2026-09-29.md):
+ *      «알레르기 축 · 게이트 통과분»만 `crowdsourceService` 가 `contributionApply.applyAutoAllergens` 를 불러
+ *      `product_allergens(status='crowd_auto')` 에 쓴다. 이 파일은 여전히 한 줄도 쓰지 않는다.
  *   ⇒ `U65-6`(공공데이터 보호가 1회용) 원천 소멸. `products.verification` 갱신만 남았고
  *      그것은 계약 §7-C 가 `U66-1` 로 «보류»한 별개 축이다.
  *

@@ -50,6 +50,10 @@ const { reconcileAllergens, flattenAllergensV2 } = require('./ocrParser');
 //   ⚠ 세션66 C6 — 이제 여기서 `upsertProductAdditives` 를 부르지 않는다(공식 테이블 쓰기).
 //     승인 시 `contributionApply` 가 그 함수를 부른다. 여기서는 「축에 내용이 있는가」만 센다.
 const { countDetected } = require('./additiveResolver');
+// ★★★ 세션72 — 알레르기 «자동 반영»(C6 첫 예외 · 알레르기 축 · 게이트 통과분만).
+//   정본: IP/결정_알레르기자동반영_2026-09-29.md. 판정은 게이트, 쓰기는 contributionApply «한 곳».
+const { evaluateAllergenAutoGate } = require('./allergenAutoGate');
+const { applyAutoAllergens } = require('./contributionApply');
 // ★ 세션65 C2-a — 022(`products.additive_detected_count`) 배포순서 방어 판정에만 쓴다.
 const productModel = require('../models/productModel');
 
@@ -784,6 +788,40 @@ async function saveOcrContribution(params) {
       }
     }
 
+    // ══════════════════════════════════════════════════════════════════════
+    // ★★★ 세션72 — 알레르기 축 «자동 반영» (C6 의 첫 예외 · 제이 확정 2026-09-28/29)
+    // ══════════════════════════════════════════════════════════════════════
+    //   게이트(allergen_auto_gate_v1): 표시란 읽음 ∧ 19종 ≥1 ∧ 잔여 토큰 0 ∧ inferred 없음 ∧ 저장본==파서.
+    //   통과 → candidate 를 `auto_applied` 로 전이 + `product_allergens(status='crowd_auto')`.
+    //   미통과 → 종전 그대로 candidate(관리자 큐).
+    //   ⚠ SAVEPOINT 로 감싼다 — 자동 반영이 실패해도(예: 029 미적용 DB 의 CHECK 위반) **제보 저장은 살아야** 한다.
+    //     실패하면 그 축은 candidate 로 남는다 = 종전 동작. 여기서 throw 하면 세션45 치명1(트랜잭션 전체 롤백)과 같은 사고다.
+    //   ⛔ 영양·원재료·첨가물 축에는 이 경로가 «없다»(범위 확정 · applyAutoAllergens 가 axis 로 한 번 더 막는다).
+    let allergenAuto = { applied: false, reason: null, may_inspected: null };
+    const allergenCand = reviewCandidates.find((c) => c.axis === 'allergens');
+    if (allergenCand && productId !== null && productId !== undefined) {
+      const gate = evaluateAllergenAutoGate({
+        text: ocrResult?.corrected_text || '',
+        storedV2: allergensV2ForStore,
+      });
+      allergenAuto = { applied: false, reason: gate.reason, may_inspected: gate.may_inspected };
+      if (gate.pass) {
+        try {
+          await client.query('SAVEPOINT allergen_auto');
+          await applyAutoAllergens(client, allergenCand.review_id, gate);
+          await client.query('RELEASE SAVEPOINT allergen_auto');
+          allergenCand.auto_applied = true;
+          allergenAuto = { applied: true, reason: null, may_inspected: gate.may_inspected };
+        } catch (e) {
+          try { await client.query('ROLLBACK TO SAVEPOINT allergen_auto'); } catch (_) { /* 원 오류를 남긴다 */ }
+          allergenAuto = { applied: false, reason: `AUTO_APPLY_FAILED:${e.code || 'ERR'}`, may_inspected: gate.may_inspected };
+          logger.warn('알레르기 자동 반영 실패 — candidate 로 남김', {
+            productId, reviewId: allergenCand.review_id, code: e.code, error: e.message,
+          });
+        }
+      }
+    }
+
     // ★ 세션64b 3단계 — 개수·상태를 **로그에도** 남긴다.
     //   DB 는 나중에 파는 것이고, 로그는 배포 직후 바로 볼 수 있다. 둘 다 있어야
     //   「1~4개 구간이 실제로 나오는가」를 운영 첫날부터 관찰할 수 있다.
@@ -794,6 +832,8 @@ async function saveOcrContribution(params) {
       nutrition_reject_code: nutritionRejectCode,
       review_axes: reviewCandidates.map((c) => c.axis),
       queued_for_review: canQueueReview,
+      allergen_auto_applied: allergenAuto.applied,
+      allergen_auto_reason: allergenAuto.reason,
     });
 
     // ── 자동 merge 트리거 ──
@@ -840,8 +880,14 @@ async function saveOcrContribution(params) {
       //     `saved`·`message` 만 읽는다 — 그래서 화면이 «지금과 똑같다»(`DS-0`).
       //   ★ `saved: true` 의 뜻이 바뀌었다: 「제보가 접수·적립됐다」이지
       //     「다른 사용자에게 보이기 시작했다」가 아니다. 후자는 관리자 승인 뒤다(`U65-8` 소멸).
-      review_candidates: reviewCandidates,        // [{review_id, axis}] — 검토 큐에 올라간 축
+      review_candidates: reviewCandidates,        // [{review_id, axis, auto_applied?}] — 검토 큐에 올라간 축
       queued_for_review: canQueueReview,          // false = 024 미적용 DB (원본은 보존됨)
+      // ── 세션72 신설 키 (기존 키 무변경) ──────────────────────────────────
+      //   allergen_auto_applied: true = 알레르기가 게이트를 통과해 «바로» 조회 결과에 반영됐다(「제보 기반 · 포장 확인」).
+      //   allergen_may_inspected: false = 혼입 문장을 읽지 못했다 → 「혼입 정보 미확인」. null = 알레르기 축 없음.
+      allergen_auto_applied: allergenAuto.applied,
+      allergen_auto_reason: allergenAuto.reason,
+      allergen_may_inspected: allergenAuto.may_inspected,
       // ★ 세션64b — 영양이 미확보면 **그 사실을 사용자에게 말한다.**
       //   「등록되었습니다」만 보여주면, 영양표를 못 읽은 것을 모른 채 「등록됐으니 다 들어갔겠지」로
       //   읽는다. 「모름」을 침묵으로 감추는 것은 「모름」을 「없음」으로 바꾸는 것과 같은 실수다.
@@ -855,8 +901,11 @@ async function saveOcrContribution(params) {
       warnings: Array.isArray(sanityWarnings)
         ? sanityWarnings.filter(w => w.type === 'calorie_deviation')
         : [],
+      // ★ 세션72 — 자동 반영됐으면 문구가 달라진다(이미 조회 결과에 보인다). 둘 다 「포장 확인」을 말한다.
       allergenWarning: analysis.allergens?.length > 0
-        ? '⚠️ 알레르기 정보는 관리자 검증 전까지 미확정 상태입니다. 반드시 실제 제품 패키지를 확인하세요.'
+        ? (allergenAuto.applied
+          ? '⚠️ 알레르기 정보가 제보 기반으로 바로 반영되었습니다(관리자 미검증). 반드시 실제 제품 패키지를 확인하세요.'
+          : '⚠️ 알레르기 정보는 관리자 검증 전까지 미확정 상태입니다. 반드시 실제 제품 패키지를 확인하세요.')
         : null,
     };
   }).then(async (txResult) => {

@@ -123,6 +123,19 @@ const ALLERGEN_LEVEL_DEFAULT = 'contains';
 const ALLERGEN_DETECTED_VIA = 'contribution_apply';
 
 /**
+ * ★★★ 세션72 — 게이트 «자동 반영» 행의 `detected_via` · `status`.
+ *   정본 결정: `IP/결정_알레르기자동반영_2026-09-29.md` (C6 전량 수동의 첫 예외 · 알레르기 축 · 게이트 통과분만).
+ *   · detected_via 를 사람 승인(`contribution_apply`)과 «다르게» 둔다 — 되돌리기가 «자기 행만» 지우려면
+ *     누가 넣었는지가 행에 남아 있어야 한다(`undoAllergensAxis` 의 DELETE 조건).
+ *   · status `'crowd_auto'` = 「제보 기반 · 포장 확인」 배지. 사람 승인(`confirmed`)·관리자 검증(`admin_verified`)을
+ *     «깎지 않는다»(아래 CASE). 반대로 사람이 승인하면 crowd_auto → confirmed 로 «올라간다».
+ *   ⚠ `'crowdsource_merge'` 는 쓰지 말 것(위 ALLERGEN_DETECTED_VIA 주석과 같은 이유).
+ */
+const ALLERGEN_DETECTED_VIA_AUTO = 'contribution_auto';
+const ALLERGEN_STATUS_AUTO = 'crowd_auto';
+const AUTO_APPLIED_BY = 'auto:allergen_auto_gate_v1';
+
+/**
  * `product_ingredients.source`.
  * ★ 기존 어휘(`'ocr_crowdsource'`)를 **그대로 쓴다.** 새 값을 만들면 `19·26-apply-haccp`
  *   계열 스크립트와 관리자 화면이 모르는 값을 보게 된다. 되돌리기는 새 어휘가 아니라
@@ -842,6 +855,9 @@ async function readAllergenRows(client, productId) {
 
 async function applyAllergensAxis(client, ctxArgs) {
   const { productId, data } = ctxArgs;
+  // ★ 세션72 — 자동 반영은 같은 함수를 «상태·출처만 바꿔» 부른다(규칙 두 벌 금지).
+  const rowStatus = ctxArgs.allergenStatus || 'confirmed';
+  const detectedVia = ctxArgs.detectedVia || ALLERGEN_DETECTED_VIA;
 
   const { inspected, list } = buildAllergenList(data);
   if (!inspected) {
@@ -862,11 +878,13 @@ async function applyAllergensAxis(client, ctxArgs) {
       // ⚠ `detected_via` 는 갱신하지 않는다(NULL 세탁 방지 — mergeService 와 같은 판단).
       `INSERT INTO product_allergens
          (product_id, allergen_name, source_count, status, detected_via, evidence_level)
-       VALUES ($1, $2, 1, 'confirmed', $3, $4)
+       VALUES ($1, $2, 1, $5, $3, $4)
        ON CONFLICT (product_id, allergen_name) DO UPDATE SET
          source_count = GREATEST(COALESCE(product_allergens.source_count, 0), EXCLUDED.source_count),
          status = CASE
            WHEN product_allergens.status = 'admin_verified' THEN 'admin_verified'
+           -- ★ 세션72 — 자동 반영(crowd_auto)이 사람 승인(confirmed)을 깎지 않는다.
+           WHEN product_allergens.status = 'confirmed' AND EXCLUDED.status = 'crowd_auto' THEN 'confirmed'
            ELSE EXCLUDED.status
          END,
          evidence_level = CASE
@@ -877,14 +895,15 @@ async function applyAllergensAxis(client, ctxArgs) {
            ELSE 'may_contain'
          END,
          updated_at = NOW()`,
-      [productId, a.name, ALLERGEN_DETECTED_VIA, a.evidence_level]);
+      [productId, a.name, detectedVia, a.evidence_level, rowStatus]);
   }
 
   const after = await readAllergenRows(client, productId);
 
   return {
     before: { rows: before },
-    after: { rows: after, applied_names: list.map((a) => a.name) },
+    // ★ 세션72 — `detected_via` 를 남긴다. 되돌리기가 «이 반영이 넣은 행»만 지우는 근거다.
+    after: { rows: after, applied_names: list.map((a) => a.name), detected_via: detectedVia },
     convert: null,
     // ★★ `found_count = 0` 이 **「봤는데 없었다」**다. 행이 «없는» 것이 「안 봤다」다.
     //   `U63-6`(알레르기 「확인했고 없음」 상태 부재)의 전부가 이 한 줄이다.
@@ -1037,6 +1056,28 @@ async function applyApprovedContribution(client, reviewId, opts = {}) {
     appliedBy,
   });
 
+  await recordApplied(client, review, out, { ...opts, appliedBy });
+
+  return {
+    applied: true,
+    axis: review.axis,
+    productId,
+    before: out.before ?? null,
+    after: out.after ?? null,
+    convert: out.convert ?? null,
+    counts: out.counts ?? {},
+  };
+}
+
+/**
+ * ⑤⑥ — 적용 «뒤» 기록. 사람 승인(`applyApprovedContribution`)과 게이트 자동 반영(`applyAutoAllergens`)이
+ *   «같은» 기록을 남기도록 한 곳에 둔다(세션72 — 두 벌이면 다음 수정 때 한쪽만 고친다).
+ * @param {{ appliedBy?: string|null, sourceKind?: string, scopeNote?: string, extraEvidence?: object, setStatus?: string }} opts
+ */
+async function recordApplied(client, review, out, opts = {}) {
+  const productId = Number(review.product_id);
+  const reviewId = Number(review.review_id);
+  const appliedBy = opts.appliedBy ?? null;
   // ── ⑤ 검사 기록 1행 ──
   //   ★ 행이 «없는» 것이 「안 봤다」이므로, 여기까지 온 이상 **반드시** 1행을 남긴다.
   await client.query(
@@ -1074,13 +1115,94 @@ async function applyApprovedContribution(client, reviewId, opts = {}) {
       appliedBy,
     ]);
 
+  // ★ 세션72 — 자동 반영은 같은 UPDATE 뒤에 «상태 전이 + 게이트 근거»를 덧붙인다.
+  //   사람 승인 경로는 opts.setStatus 가 없으므로 종전과 완전히 같다.
+  if (opts.setStatus) {
+    await client.query(
+      `UPDATE contribution_review
+          SET status = $2,
+              evidence = COALESCE(evidence, '{}'::jsonb) || $3::jsonb
+        WHERE review_id = $1`,
+      [reviewId, opts.setStatus, JSON.stringify(opts.extraEvidence || {})]);
+  }
+}
+
+/**
+ * ★★★ 세션72 — 게이트를 통과한 알레르기 candidate 1건을 «자동 반영»한다.
+ *   정본 결정: `IP/결정_알레르기자동반영_2026-09-29.md` — C6 전량 수동의 첫 예외(알레르기 축 · 게이트 통과분만).
+ *   · 판정은 호출부가 `allergenAutoGate.evaluateAllergenAutoGate` 로 한다. 여기는 «쓰기»만 한다.
+ *   · 상태: candidate → `auto_applied`(029). `approved` 가 아니다 — `cr_approve_human_chk` 의 뜻(사람)을 지킨다.
+ *   · 행: `product_allergens.status='crowd_auto'` · `detected_via='contribution_auto'`.
+ *   · 되돌리기: 기존 `undoAppliedContribution` 그대로(before/after 가 같은 모양으로 남는다).
+ * ⚠ 트랜잭션 안에서 불러야 한다. 실패하면 throw — 호출부가 SAVEPOINT 로 감싸 «candidate 로 남긴다».
+ */
+async function applyAutoAllergens(client, reviewId, gate = {}) {
+  const rv = await client.query(
+    `SELECT review_id, contribution_id, product_id, axis, status, applied_at, evidence
+       FROM contribution_review
+      WHERE review_id = $1
+      FOR UPDATE`,
+    [reviewId]);
+  if (rv.rows.length === 0) {
+    throw fail('REVIEW_NOT_FOUND', `contribution_review(review_id=${reviewId}) 가 없습니다.`);
+  }
+  const review = rv.rows[0];
+  if (review.axis !== 'allergens') {
+    // ⛔ 예외 범위 밖. 영양·원재료·첨가물은 전량 수동이다(세션72 범위 확정).
+    throw fail('AUTO_AXIS_FORBIDDEN', `자동 반영은 알레르기 축만 허용됩니다(axis=${review.axis}).`);
+  }
+  if (review.status !== 'candidate') {
+    throw fail('REVIEW_NOT_CANDIDATE', `검토 대기가 아닌 행은 자동 반영하지 않습니다(status=${review.status}).`);
+  }
+  if (review.applied_at !== null && review.applied_at !== undefined) {
+    throw fail('ALREADY_APPLIED', `이미 반영된 제보입니다(applied_at=${review.applied_at}).`);
+  }
+  if (gate.pass !== true) {
+    throw fail('AUTO_GATE_NOT_PASSED', `게이트 미통과(reason=${gate.reason || 'unknown'}).`);
+  }
+  const productId = review.product_id === null || review.product_id === undefined
+    ? null : Number(review.product_id);
+  if (productId === null || !Number.isFinite(productId)) {
+    throw fail('NOTHING_TO_APPLY', '이 제보에는 연결된 제품이 없습니다(product_id 가 NULL).');
+  }
+  const cr = await client.query(
+    `SELECT contribution_id, data FROM contributions WHERE contribution_id = $1`,
+    [review.contribution_id]);
+  if (cr.rows.length === 0) {
+    throw fail('NOTHING_TO_APPLY', `원본 제보(contribution_id=${review.contribution_id})가 없습니다.`);
+  }
+  const data = asObject(cr.rows[0].data) || {};
+
+  const out = await applyAllergensAxis(client, {
+    productId,
+    review: { review_id: Number(review.review_id), contribution_id: Number(review.contribution_id) },
+    data,
+    reviewEvidence: asObject(review.evidence),
+    appliedBy: AUTO_APPLIED_BY,
+    allergenStatus: ALLERGEN_STATUS_AUTO,
+    detectedVia: ALLERGEN_DETECTED_VIA_AUTO,
+  });
+
+  await recordApplied(client, review, out, {
+    appliedBy: AUTO_APPLIED_BY,
+    setStatus: 'auto_applied',
+    extraEvidence: {
+      auto_gate: {
+        gate_version: gate.gate_version || null,
+        contains: gate.contains || [],
+        may_contain: gate.may_contain || [],
+        may_inspected: gate.may_inspected === true,
+      },
+    },
+  });
+
   return {
     applied: true,
-    axis: review.axis,
+    auto: true,
+    axis: 'allergens',
     productId,
     before: out.before ?? null,
     after: out.after ?? null,
-    convert: out.convert ?? null,
     counts: out.counts ?? {},
   };
 }
@@ -1157,10 +1279,12 @@ async function undoAllergensAxis(client, { productId, before, after }) {
     }
     // 적용 «전»에는 없던 이름 → 우리가 넣은 행이다. **우리 detected_via 인 것만** 지운다.
     //   그 사이에 다른 출처가 같은 이름을 덮었다면 건드리지 않는다.
+    //   ★ 세션72 — 자동 반영 행은 detected_via 가 다르다(`after.detected_via`). 옛 증거엔 그 키가 없으므로 기본값.
+    const via = (after && typeof after.detected_via === 'string') ? after.detected_via : ALLERGEN_DETECTED_VIA;
     const r = await client.query(
       `DELETE FROM product_allergens
         WHERE product_id = $1 AND allergen_name = $2 AND detected_via = $3`,
-      [productId, name, ALLERGEN_DETECTED_VIA]);
+      [productId, name, via]);
     deleted += (r && r.rowCount) || 0;
   }
   return { deleted, restored };
@@ -1261,6 +1385,7 @@ async function undoAppliedContribution(client, reviewId, opts = {}) {
 module.exports = {
   // 공개 API
   applyApprovedContribution,
+  applyAutoAllergens,        // ★ 세션72 — 알레르기 게이트 자동 반영(C6 첫 예외)
   undoAppliedContribution,
   // 순수 함수 (테스트가 DB 없이 단정한다 — 계약 §6-2)
   resolveBasis,
@@ -1275,6 +1400,9 @@ module.exports = {
   CONTRIBUTION_BASIS_OK,
   BASIS_MARKER,
   ALLERGEN_DETECTED_VIA,
+  ALLERGEN_DETECTED_VIA_AUTO,
+  ALLERGEN_STATUS_AUTO,
+  AUTO_APPLIED_BY,
   INGREDIENTS_SOURCE,
   basisAmount,
   buildAllergenList,

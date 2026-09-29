@@ -127,9 +127,21 @@ async function main() {
   await t('§1-2 원산지 괄호 표기(`밀:미국산`)도 «직접 함유»로 승격되지 않는다', () => {
     // ⚠ 이것이 입구 가드(`kind === 'ingredients'` continue)를 지웠을 때 가장 먼저 터지는 형태다.
     //   원재료명 안의 `밀`·`대두` 는 **구분자 경계**가 성립해 법정명 매칭에 그대로 걸린다.
-    const r = allAxes('원재료명: 밀가루(밀:미국산), 탈지분유(우유), 대두유(대두:수입산), 정제소금');
+    // ★ 세션71 `DS-6″` — 종전 입력에 있던 `탈지분유(우유)` 는 이제 «제조사 괄호 표기»로 인정된다(§1-2b).
+    //   그래서 원산지 괄호만 남겼다. 원산지 괄호는 여전히 0 이어야 한다.
+    const r = allAxes('원재료명: 밀가루(밀:미국산), 탈지분유, 대두유(대두:수입산), 새우분말(새우:중국산), 정제소금');
     assert.deepStrictEqual(r.union, [],
       `원재료명 괄호 표기가 알레르겐으로 새어 나왔다: ${JSON.stringify(r.union)}`);
+  });
+
+  await t('§1-2b `DS-6″` 괄호 안 19종 이름(제조사 표기)은 contains — 단, 선언란을 봤다고는 하지 않는다', () => {
+    // 제이 확정 2026-09-28 · IP/결정_DS-6pp_괄호알레르겐_2026-09-28.md · 근거 케이스 맥심모카골드 `카제인나트륨(우유)`
+    const v2 = detectAllergensV2('원재료명: 밀가루(밀:미국산), 탈지분유(우유), 베이컨(돼지고기), 대두유(대두:수입산)');
+    assert.deepStrictEqual(v2.contains, ['돼지고기', '우유'], `괄호 표기 contains 가 다르다: ${JSON.stringify(v2.contains)}`);
+    assert.strictEqual(v2.declarationFound, false, '괄호 표기만으로 declarationFound 를 세우면 안 된다');
+    // ⛔ 원재료명 «추론»은 여전히 금지 — 괄호 밖 `밀가루`·`탈지분유` 만으로는 아무것도 나오면 안 된다.
+    const v2b = detectAllergensV2('원재료명: 밀가루, 탈지분유, 대두유, 땅콩버터');
+    assert.deepStrictEqual(v2b.contains, [], `원재료명 추론이 되살아났다: ${JSON.stringify(v2b.contains)}`);
   });
 
   await t('§1-3 「확인 못 했다」로 나간다 — 「없다」로 단정하지 않는다', () => {

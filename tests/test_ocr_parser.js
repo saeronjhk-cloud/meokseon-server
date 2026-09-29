@@ -525,19 +525,40 @@ console.log('\n⚠️ 테스트 6-G: U63-1 — 줄바꿈이 갈라 놓은 혼입
       + '오징어, 고등어, 복숭아를 사용한\n'
       + '제품과 같은 제조시설에서 제조하고 있습니다.';
     const v2 = detectAllergensV2(text);
-    const must = ['닭고기', '난류(가금류)', '우유', '메밀'];
-    const lost = must.filter(x => !v2.contains.includes(x));
-    assert(lost.length === 0,
-      `6-G G-N8 ★★★★ 실물 048 형태 — 「알레르기 유발물질」 줄이 강등되면 안 된다 (조건 ④) → 강등된 것 [${lost.join(', ')}] (contains=[${v2.contains.join(', ')}] mayContain=[${v2.mayContain.join(', ')}])`);
+    // ★★★ 세션71 `U71-7` — 기대를 «뒤집었다». 제이 사진 검수(048 실물): 이 줄의 알레르겐은 전부 «혼입».
+    //   「알레르기 유발물질인 X를 사용한 제품과 같은 제조시설」은 관계절이지 선언이 아니다.
+    //   제이 결정 2026-09-28: 과잉경고도 소비자에게 틀린 정보 — 바로잡는다. (IP/자문패킷_U71-7_혼입문장강등_2026-09-28.md)
+    const must = ['닭고기', '난류(가금류)', '우유', '메밀', '오징어', '고등어', '복숭아'];
+    const miss = must.filter(x => !v2.mayContain.includes(x));
+    assert(miss.length === 0 && v2.contains.length === 0,
+      `6-G G-N8 ★★★★ 실물 048 형태(U71-7) — 관계절 혼입 문장은 전부 혼입이어야 한다 → 누락 [${miss.join(', ')}] (contains=[${v2.contains.join(', ')}] mayContain=[${v2.mayContain.join(', ')}])`);
   }
 
-  // ★★★ G-N9 — 실물 `036` 형태. `포함된` 으로 contains 가 되는 줄도 강등 금지.
-  //   실측: 조건 ④ 제거 시 036 에서 쇠고기·우유가 강등됐다(F1 위반).
+  // ★★★ G-N9 — 실물 `036` 형태. 세션71 `U71-7` 로 기대를 뒤집었다: `…가 포함된 제⏎같은 제조시설` 은 혼입.
   //   ⚠ 이 라벨의 「아몬드우유 → 우유」 는 **별개 오탐**이다. 이 테스트가 그것을 승인하는 것이 아니다.
   {
     const v2 = detectAllergensV2('이 제품은 아몬드우유, 쇠고기가 포함된 제\n같은 제조시설에서 제조하고 있습니다');
-    assert(v2.contains.includes('쇠고기'),
-      `6-G G-N9 ★★★ 실물 036 형태 — 「포함된」 줄이 강등되면 안 된다 (조건 ④) → contains=[${v2.contains.join(', ')}]`);
+    assert(v2.mayContain.includes('쇠고기') && !v2.contains.includes('쇠고기'),
+      `6-G G-N9 ★★★ 실물 036 형태(U71-7) — 「포함된 제⏎같은 제조시설」은 혼입 → contains=[${v2.contains.join(', ')}] mayContain=[${v2.mayContain.join(', ')}]`);
+  }
+
+  // ★★★★ 세션71 `U71-7` 역방향 대조군 — «진짜 선언»은 절대 혼입으로 내려가면 안 된다(최악의 과소경고).
+  //   예외 조건(관계절 `유발물질인` · `포함된 제` 끝 · `함유` 없음)에 걸리지 않는 선언형을 전부 못 박는다.
+  {
+    const REV = [
+      ['R1 콜론 선언이 줄바꿈 뒤 함유로 끝남', '알레르기 유발물질: 대두, 밀,\n우유 함유\n이 제품은 땅콩을 사용한 제품과 같은 제조시설에서 제조', ['대두', '밀', '우유'], ['땅콩']],
+      ['R2 함유 없는 나열 선언 + 다음 줄 혼입 문장', '알레르기 유발물질 대두, 밀, 우유\n이 제품은 땅콩, 호두를 사용한 제품과 같은 제조시설에서 제조합니다', ['대두', '밀', '우유'], ['땅콩', '호두']],
+      ['R4 쉼표로 끝나는 콜론 선언', '알레르기 유발물질 : 밀, 대두,\n이 제품은 땅콩을 사용한 제품과 같은 제조시설에서 제조', ['대두', '밀'], ['땅콩']],
+      ['R6 「유발물질인 … 함유」는 선언', '알레르기유발물질인 밀, 대두 함유\n땅콩, 호두를 사용한 제품과 같은 제조시설에서 제조', ['대두', '밀'], ['땅콩', '호두']],
+      ['R7 쉼표 끝 선언 + 문장 시작 없는 혼입 줄', '알레르기 유발물질: 밀, 대두,\n땅콩을 사용한 제품과 같은 제조시설에서 제조', ['대두', '밀'], ['땅콩']],
+    ];
+    for (const [name, text, wantC, wantM] of REV) {
+      const v2 = detectAllergensV2(text);
+      const lostC = wantC.filter(x => !v2.contains.includes(x));
+      const lostM = wantM.filter(x => !v2.mayContain.includes(x));
+      assert(lostC.length === 0 && lostM.length === 0,
+        `6-G U71-7 역방향 ${name} → contains 에서 빠짐 [${lostC.join(', ')}] 혼입에서 빠짐 [${lostM.join(', ')}] (contains=[${v2.contains.join(', ')}] mayContain=[${v2.mayContain.join(', ')}])`);
+    }
   }
 
   // ★★ G-N10 — 조건 ③ 을 못 박는다. 실물 `062` 형태.

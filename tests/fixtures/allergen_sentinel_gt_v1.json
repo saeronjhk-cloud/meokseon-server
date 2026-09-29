@@ -756,7 +756,7 @@
       "allergen": "돼지고기",
       "path": "no_declaration",
       "text": "원재료명: 베이컨(돼지고기), 후추",
-      "expect": false,
+      "expect": true,
       "expect_declaration_found": false,
       "status": "contract",
       "why": "[재정의] 질문이 바뀌었다 — 「이 원재료 문장에서 돼지고기을(를) 검출하는가」 → 「이 문장에는 법정 선언란이 없다고 말하는가」. 원재료 추론을 폐기하므로 검출은 없어야 하고 declarationFound 는 false 여야 한다. 원래 질문: 베이컨",
@@ -770,7 +770,10 @@
         "condition_met": "2단계(추론 폐기) 완료 후 이 케이스들이 통과하면 status 를 contract 로 승격한다. 그때 SENTINEL_STRICT=1 이 초록이어야 한다.",
         "evidence": "SENTINEL_STRICT=1 EXIT 0 (계약 36+27=63 · 실패 0)",
         "note": "[세션58 승격] 2단계(추론 폐기) 완료. 실측: SENTINEL_STRICT=1 EXIT 0 · 해소 27 / 미해소 0. 승격 전 조건은 promoted_from 에 보존한다."
-      }
+      },
+      "superseded_expect_v2": true,
+      "superseded_expect_v2_value": false,
+      "superseded_reason_v2": "DS-6″ 괄호 안 19종 이름 = 제조사 표기로 인정 (제이 확정 2026-09-28 · 세션71 · IP/결정_DS-6pp_괄호알레르겐_2026-09-28.md). declarationFound 는 여전히 false."
     },
     {
       "id": "S-복숭아-D1",

@@ -1320,7 +1320,7 @@ function detectAllergens(text) {
     // ★ 세션44 2차 검증 — 1글자 원재료 키워드(`굴`)도 경계를 요구한다.
     //   `얼굴 보습 성분 함유` → `굴` 이 걸려 **조개류**가 나왔다(2차 검증에서 확인).
     const blob = explicitText.join(' ');
-    const detected = new Set();
+    const detected = _parenDeclaredInIngredients(text);   // ★ 세션71 DS-6″ — 판별기 C 와 같은 규칙(B==C 계약)
     // ★★★ 세션58 2단계 — 여기 있던 `ALLERGEN_KEYWORDS`(원재료 형태 표) 루프를 **제거**했다.
     //   제이 결정 D55-2: 알레르기 성분은 «법정 표시란 파싱»으로만 파악한다.
     //   이 자리는 이미 «선언 문구를 뽑아낸 blob» 이다. 법정 선언란에는 `밀`·`대두` 같은
@@ -1367,7 +1367,19 @@ function detectAllergens(text) {
   //     (`KEYWORD_LEFT_NEGATIVE`)는 «일부러» 남겼다 — 되돌릴 수 있어야 하고, 죽은 코드 정리는
   //     설계 §5 의 4단계로 분리돼 있다. 지금 지우면 이 커밋 하나로 되돌릴 수 없다.
   //     ⚠ 남아 있다고 해서 「억제 장치가 살아 있다」고 세지 말 것 — 도달 불가다(세션58 계약 참조).
-  return [];
+  // ★ 세션71 DS-6″ — 선언란이 없어도 원재료 괄호 안 제조사 표기(`카제인나트륨(우유)`)는 낸다.
+  return [..._parenDeclaredInIngredients(text)].sort();
+}
+
+/** ★ 세션71 DS-6″ — 판별기 B 용. C(`detectAllergensV2`)와 «같은» 세그먼트 분류·같은 괄호 규칙을 쓴다. */
+function _parenDeclaredInIngredients(text) {
+  const out = new Set();
+  if (!text || (text.indexOf('(') === -1 && text.indexOf('（') === -1)) return out;
+  for (const seg of _splitSegments(text)) {
+    if (_classifySegment(seg) !== 'ingredients') continue;
+    for (const x of _parenDeclaredNames(seg)) out.add(x);
+  }
+  return out;
 }
 
 // ------------------------------------------------------------
@@ -1800,8 +1812,25 @@ function _shouldJoinMayContain(prev, cur) {
   //       잘라내며 우연히 방어하고 있어서, 조건 ④ 를 지워도 초록이었다. MUT 가 아니었으면 못 봤다.
   //   ※ 앞줄에 이미 혼입 신호가 있는 경우(옛 조건 ⑤)는 `_classifySegment` 가 `'mayContain'` 을
   //     내므로 이 조건이 «이미 포함»한다. 세션63 MUT-6 으로 확인하고 중복 조건을 걷어냈다.
-  if (_classifySegment(prev) !== 'other') return false;
-  return true;
+  const prevKind = _classifySegment(prev);
+  if (prevKind === 'other') return true;
+  // ★★★ 세션71 `U71-7` (제이 결정 2026-09-28: «과잉경고도 소비자에게 틀린 정보다 — 바로잡는다»)
+  //   조건 ④ 의 유일한 예외 — 앞줄이 `contains` 로 분류됐지만 «관계절»이라 그 자체로는 선언이 될 수 없는 경우.
+  //     048 `이 제품은 알레르기 유발물질인 닭고기, …,게,새우,` ⏎ `오징어, …를 사용한 제품과 같은 제조시설에서`
+  //     036 `이 제품은 아몬드우유, 쇠고기가 포함된 제` ⏎ `같은 제조시설에서 제조하고 있습니다`
+  //   세션63 은 이 두 형태를 «강등 금지»(G-N8·G-N9)로 못 박았다 — 제이 사진 검수(eval_allergen_auto_v1)가
+  //   두 라벨 모두 «혼입»임을 확인해 뒤집는다. 근거: IP/자문패킷_U71-7_혼입문장강등_2026-09-28.md
+  //   ⛔ 예외는 좁게: ⓐ 앞줄에 `함유` 가 «없고» ⓑ `알레르기유발물질인` (관계절 `…인 X를 사용한`) 이거나
+  //      줄 끝이 `포함된 제`(=`포함된 제품과` 가 끊긴 것) 일 때만. `알레르기 유발물질: A, B,` 처럼 콜론·나열형
+  //      선언은 ⓑ 에 걸리지 않으므로 종전대로 붙지 않는다(역방향 대조군 R1·R2·R4·R6·R7).
+  if (prevKind === 'contains' && _isRelativeClauseLead(prev)) return true;
+  return false;
+}
+
+function _isRelativeClauseLead(line) {
+  const c = _compact(line);
+  if (c.indexOf('함유') !== -1) return false;
+  return /알레르기유발물질인/.test(c) || /포함된제?$/.test(c);
 }
 
 function _joinWrappedMayContain(text) {
@@ -1884,6 +1913,45 @@ function _matchSet(segment, table) {
     }
   }
   return detected;
+}
+
+/**
+ * ★★★ 세션71 `U71-6` — 줄바꿈이 «이름 한가운데»를 끊은 경우를 되붙인다.
+ *   실측(eval_allergen_auto_v1 · 제이 사진 검수 2026-09-28):
+ *     074 칠성사이다 `…밀, 복⏎숭아, 토마토…` → 되붙이기(U63-1) 뒤 `복 숭아` → 복숭아 «혼입 누락»
+ *     072 메가도스C `…쇠고기, 오징⏎어, 조개류…` → `오징 어` → 오징어 «혼입 누락»
+ *   ⚠ 규칙은 하나뿐이다: 공백으로 갈린 «두 조각이 둘 다 이름이 아니고» 붙이면 19종 키워드와
+ *     «정확히» 같을 때만 붙인다. 이름을 «더할» 수만 있고 지울 수는 없다(과소경고 방향 없음).
+ *   ⚠ 선언·혼입 세그먼트에만 쓴다(호출부). 원재료 세그먼트는 애초에 읽지 않는다(DS-6′).
+ */
+const _ALL_NAME_TOKENS = (() => {
+  const set = new Set();
+  for (const kws of Object.values(ALLERGEN_NAMES)) for (const k of kws) set.add(k);
+  return set;
+})();
+function _parenDeclaredNames(seg) {
+  const out = new Set();
+  if (!seg || seg.indexOf('(') === -1 && seg.indexOf('（') === -1) return out;
+  const re = /[(（]([^()（）]{1,20})[)）]/g;
+  let m;
+  while ((m = re.exec(seg)) !== null) {
+    for (const raw of m[1].split(/[,，、·ㆍ]/)) {
+      const tok = raw.trim();
+      if (!tok) continue;
+      for (const [canon, kws] of Object.entries(ALLERGEN_NAMES)) {
+        if (kws.includes(tok)) { out.add(canon); break; }
+      }
+    }
+  }
+  return out;
+}
+
+function _rejoinSplitNames(seg) {
+  if (!seg || seg.indexOf(' ') === -1) return seg;
+  return seg.replace(/([가-힣]{1,3})\s+([가-힣]{1,3})/g, (m, a, b) => {
+    if (_ALL_NAME_TOKENS.has(a) || _ALL_NAME_TOKENS.has(b)) return m;
+    return _ALL_NAME_TOKENS.has(a + b) ? a + b : m;
+  });
 }
 
 function _classifySegment(seg) {
@@ -2094,15 +2162,28 @@ function detectAllergensV2(text) {
     //     `reconcileAllergens`(flat↔3분리 정합)가 이 구획을 계속 쓴다. 필드를 없애면
     //     세션44 치명3(「flat 에만 있는 알레르기가 화면에서 통째로 사라진다」)이 되살아난다.
     //   ⚠ `declarationFound` 는 위에서 이미 세워졌다 — 원재료 세그먼트는 애초에 그 신호가 아니다.
-    if (kind === 'ingredients') continue;
-    const found = _matchSet(seg, ALLERGEN_NAMES);
+    if (kind === 'ingredients') {
+      // ★★★ 세션71 `DS-6″` (제이 확정 2026-09-28) — 원재료 «괄호 안에 제조사가 적은 19종 이름»은 제조사 표기다.
+      //   예) `카제인나트륨(우유)` · `베이컨(돼지고기)` → contains.  근거: IP/결정_DS-6pp_괄호알레르겐_2026-09-28.md
+      //   ⚠ 괄호 항목이 19종 키워드와 «정확히» 같을 때만. `(밀:미국산)`·`(새우:중국산)` 같은 원산지 표기,
+      //     `밀가루`→밀 같은 원재료명 추론은 여전히 금지(DS-6′ 유지). declarationFound 는 세우지 않는다 —
+      //     괄호 표기는 «선언란을 봤다»는 증거가 아니다(나머지 알레르겐 부재를 말해 주지 않는다).
+      for (const a of _parenDeclaredNames(seg)) {
+        contains.add(a);
+        if (evidence.length < V2_MAX_EVIDENCE) evidence.push({ allergen: a, level: 'contains', textSpan: seg.slice(0, 60), via: 'paren' });
+      }
+      continue;
+    }
+    // ★ 세션71 `U71-6` — 끊긴 이름 되붙이기. 매칭·선언 판정에만 쓰고 textSpan 은 원문 그대로 둔다.
+    const segM = _rejoinSplitNames(seg);
+    const found = _matchSet(segM, ALLERGEN_NAMES);
     // ★★★★ 세션62 `U61-6` — 「선언란을 봤다」는 **근거가 있을 때만** 세운다.
     //   종전에는 이 자리가 위쪽(`kind` 판정 직후)에 있었고 맨몸 `함유` 하나로 켜졌다.
     //   근거·실측·「무엇을 인정하나」는 `_isDeclarationEvidence` 주석에 있다.
     //   ⚠ `found` 를 봐야 하므로 `_matchSet` **뒤로** 내려왔다. 순서를 되돌리지 말 것.
     //   ⚠ 아래 `if (!found.size) continue;` 보다는 **앞**이어야 한다 —
     //     ㉡(선언란은 봤고 19종 0)이 바로 그 `found.size === 0` 자리에서 관측된다.
-    if (!declarationFound && _isDeclarationEvidence(_compact(seg), kind, found)) {
+    if (!declarationFound && _isDeclarationEvidence(_compact(segM), kind, found)) {
       declarationFound = true;
     }
     if (!found.size) continue;
@@ -2151,6 +2232,52 @@ function detectAllergensV2(text) {
     // ★ 세션56 — 3구획과 «다른 질문»에 답하는 필드다. 구획에 섞지 말 것.
     declarationFound,
   };
+}
+
+/**
+ * ★★★ 세션71 — 선언·혼입 목록에 «19종으로 해석되지 않는 짧은 한글 토큰»이 남았는가.
+ *   용도: 제보 알레르기 «자동 반영» 게이트(1순위 가드). 남은 토큰이 있으면 자동 반영하지 않고 큐로 보낸다.
+ *   왜: OCR 한 글자 오독은 규칙으로 «고칠» 수 없지만 «알아챌» 수는 있다.
+ *     실측 030 다향훈제오리 `알레르기 유발물질 일 대두, …` — `밀`→`일` 오독 → 밀 «함유 누락»(치명).
+ *   ⚠ 응답 계약(allergens_v2)에는 넣지 않는다 — 게이트 전용 관측 함수다.
+ *   eval: IP/eval_allergen_auto_v1 (라벨 32건 오탐 0 · 치명 3건 전부 검출 · sentinel 63건 중 2건 큐행=안전 방향)
+ * @returns {{tok:string, kind:string, seg:string}[]}
+ */
+const _RESIDUE_STOP = new Set(['이', '본', '및', '등', '외', '인', '의', '와', '과', '을', '를', '은', '는', '도', '로',
+  '품', '제', '시', '중', '것', '수', '있는', '함께', '모두', '소량', '일부', '원료', '성분']);
+const _RESIDUE_PART = /(을|를|이|가|은|는|와|과|도|로|등|및)$/;
+function _isNameTok(t) {
+  if (_ALL_NAME_TOKENS.has(t) || t === '가금류' || t === '포함' || t === '함유') return true;
+  const s = t.replace(_RESIDUE_PART, '');
+  return !!s && _ALL_NAME_TOKENS.has(s);
+}
+function declarationResidue(text) {
+  const out = [];
+  for (const seg of _splitSegments(text || '')) {
+    const kind = _classifySegment(seg);
+    if (kind !== 'contains' && kind !== 'mayContain') continue;
+    const segM = _rejoinSplitNames(seg);
+    const list = segM.split(/함유|사용한|사용하|혼입|같은\s*(?:제조)?시설|제조시설|포함된/)[0];
+    if (_matchSet(list, ALLERGEN_NAMES).size === 0) continue;   // 이름 없는 세그먼트(예: 뼈 혼입 고지)는 목록이 아니다
+    const items = list.split(/[,，、·ㆍ\/()（）\[\]:：;]+/);
+    items.forEach((it, idx) => {
+      let words = it.trim().split(/\s+/).filter(Boolean);
+      if (idx === 0) {   // 첫 항목은 산문 꼬리(「이 제품은 알레르기 유발물질」)가 붙는다 — 뒤에서부터 목록 부분만
+        const keep = [];
+        for (let w = words.length - 1; w >= 0; w--) {
+          const t = words[w];
+          if (_isNameTok(t) || (t.length <= 2 && !_RESIDUE_STOP.has(t))) { keep.unshift(t); continue; }
+          break;
+        }
+        words = keep;
+      }
+      for (const tok of words) {
+        if (!/^[가-힣]+$/.test(tok) || _isNameTok(tok) || _RESIDUE_STOP.has(tok)) continue;
+        if (tok.length <= 2 && out.length < 20) out.push({ tok, kind, seg: seg.slice(0, 70) });
+      }
+    });
+  }
+  return out;
 }
 
 /**
@@ -2480,6 +2607,7 @@ module.exports = {
   detectNutritionBasis,   // 세션42: 2장 분리 촬영 시 라우터가 합친 텍스트로 재판정한다
   detectAllergens,
   detectAllergensV2,
+  declarationResidue,   // ★ 세션71: 자동 반영 게이트 — OCR 오독 흔적(19종 밖 짧은 토큰)
   // ★ 세션56 1단계 — 판별기 B 의 선언 탐지 신호(회귀·조사용). 응답 계약은 v2 쪽을 쓴다.
   hasExplicitDeclaration,
   reconcileAllergens,   // ★ 세션44: flat ↔ 3분리 어긋남 방지(치명3)

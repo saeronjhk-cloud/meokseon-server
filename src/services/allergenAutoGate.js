@@ -20,7 +20,9 @@
 
 const { analyzeText, declarationResidue } = require('./ocrParser');
 
-const GATE_VERSION = 'allergen_auto_gate_v1';
+// ★ 세션72 U72-8 — v2: residue v2(표시어 없는 선언은 이름과 가까운 토큰만 · 같은 줄 경계 검사). 판정 규칙이 바뀌면 올린다(감사 추적).
+//   ⚠ `contributionApply.AUTO_APPLIED_BY`('auto:allergen_auto_gate_v1')는 «행위자 이름»이라 그대로 둔다.
+const GATE_VERSION = 'allergen_auto_gate_v2';
 
 function sortedSet(arr) {
   return [...new Set((Array.isArray(arr) ? arr : []).map(String))].sort();

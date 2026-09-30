@@ -48,7 +48,7 @@ for (const d of detail) console.log('   ', d.key, JSON.stringify(d));
 
 ok(agg.crit === 0, `자동 반영 치명 0 (실측 ${agg.crit})`);
 ok(agg.minor === 0, `자동 반영 경미(과잉경고 포함) 0 (실측 ${agg.minor})`);
-ok(agg.auto >= fx._baseline_session71.auto, `자동 반영 건수 ≥ 기준선 ${fx._baseline_session71.auto} (실측 ${agg.auto})`);
+ok(agg.auto >= fx._baseline_session72.auto, `자동 반영 건수 ≥ 기준선 ${fx._baseline_session72.auto} (세션72 U72-8 · 실측 ${agg.auto})`);
 ok(agg.auto + agg.queue + agg.excluded === fx.cases.length, '케이스 누락 없음');
 
 // ── 서버 경로 조건 ④⑤ ──
@@ -64,6 +64,34 @@ ok(evaluateAllergenAutoGate({ text: '' }).reason === 'NO_TEXT', '빈 텍스트 �
 ok(evaluateAllergenAutoGate({ text: '원재료명: 밀가루, 설탕' }).pass === false, '표시란 없음(원재료명만) → 큐 (DS-6′)');
 const noMay = evaluateAllergenAutoGate({ text: '알레르기 유발물질: 밀, 대두 함유' });
 ok(noMay.pass === true && noMay.may_inspected === false, '혼입 문장 없음 → 통과하되 may_inspected=false(「혼입 정보 미확인」)');
+
+// ── 세션72 U72-8 — residue v2 ──
+const { declarationResidue, ALLERGEN_NAMES } = require('../src/services/ocrParser');
+const c15 = fx.cases.find((c) => c.key === 'real:306268_c15');
+ok(c15 && evaluateAllergenAutoGate({ text: c15.text }).pass === true, 'U72-8 실물 306268 — 원재료 꼬리 `라향` 은 오독이 아니다(자동 반영)');
+ok(evaluateAllergenAutoGate({ text: '원재료명: 설탕, 정제소금, 토코페롤 일, 대두 함유' }).reason === 'RESIDUE',
+  'U72-8 ③ 같은 줄 원재료+선언 — `일`(밀 오독)을 경계 검사로 잡는다(v1 은 통과시켰다 = 밀 누락 자동 반영)');
+ok(evaluateAllergenAutoGate({ text: '알레르기 유발물질: 일, 대두 함유' }).reason === 'RESIDUE', 'U72-8 ① 표시어 있는 선언은 종전대로 엄격');
+ok(evaluateAllergenAutoGate({ text: '원재료명: 설탕, 바닐\n라향, 스테비아, 토코페롤 우유, 대두 함유' }).pass === true, 'U72-8 ② 표시어 없는 선언의 원재료 꼬리 → 통과');
+// 뮤턴트 회귀: 2음절 이하 이름의 자모 1개 오독을 «같은 줄 원재료+선언»에 넣었을 때 놓치는 수 ≤ 기준선(불용어 충돌만)
+{
+  const CHO = 19, JUNG = 21, JONG = 28;
+  const names = new Set(Object.values(ALLERGEN_NAMES).flat());
+  const muts = (n) => { const out = new Set(); const ch = [...n];
+    ch.forEach((c0, i) => { const c = c0.charCodeAt(0) - 0xAC00; const a = Math.floor(c / 588), b = Math.floor((c % 588) / 28), z = c % 28;
+      const put = (x, y, w) => out.add([...ch.slice(0, i), String.fromCharCode(0xAC00 + x * 588 + y * 28 + w), ...ch.slice(i + 1)].join(''));
+      for (let x = 0; x < CHO; x++) if (x !== a) put(x, b, z);
+      for (let y = 0; y < JUNG; y++) if (y !== b) put(a, y, z);
+      for (let w = 0; w < JONG; w++) if (w !== z) put(a, b, w); });
+    return [...out].filter((t) => !names.has(t)); };
+  let tot = 0, missed = 0;
+  for (const n of ['우유', '메밀', '땅콩', '대두', '밀', '게', '새우', '호두', '잣', '굴']) for (const t of muts(n)) {
+    if (n === '대두' && t.startsWith('대')) continue;
+    tot++;
+    if (evaluateAllergenAutoGate({ text: `원재료명: 설탕, 정제소금, 토코페롤 ${t}, 대두 함유` }).pass) missed++;
+  }
+  ok(missed <= fx._baseline_session72.mut1_glued_max_missed, `U72-8 뮤턴트(같은 줄) 놓침 ${missed}/${tot} ≤ ${fx._baseline_session72.mut1_glued_max_missed} (v1: 974/975)`);
+}
 
 console.log(fails ? `\n❌ ${fails} 실패` : '\n✅ allergen auto gate 전부 통과');
 process.exit(fails ? 1 : 0);

@@ -2251,11 +2251,68 @@ function _isNameTok(t) {
   const s = t.replace(_RESIDUE_PART, '');
   return !!s && _ALL_NAME_TOKENS.has(s);
 }
+// ★★ 세션72 U72-8 — residue v2 (제이 승인 2026-09-29 「진행」 · eval: IP/eval_allergen_auto_v1/rescore_v3_u72-8.js)
+//   ① 표시어(알레르기·유발물질)가 «있는» 선언 세그먼트: v1 그대로(표시어 뒤는 전부 알레르겐이라 19종 밖 짧은 토큰 = 오독).
+//   ② 표시어가 «없는» 선언 세그먼트: 원재료 꼬리가 섞일 수 있다(실물 306268: `바닐⏎라향, 스테비아, 토코페롤 우유, 대두, 밀 함유`).
+//      → 19종 이름(별칭 포함)과 «자모 편집거리 ≤ 2» 인 토큰만 오독 흔적으로 본다(`일`↔`밀`=1 · `라향`↔`난황`=3).
+//   ③ 경계 검사(새로 닫은 구멍): 원재료 세그먼트와 선언 세그먼트가 «같은 줄»에서 쪼개지면(U59-1 분할) 분할 직전 항목의
+//      마지막 낱말을 v1 은 아예 보지 않았다 → `원재료명: …, 토코페롤 일, 대두 함유` 가 밀 누락 채로 자동 반영될 수 있었다
+//      (뮤턴트 975건 중 974건 통과). 그 낱말이 이름과 가까운 짧은 토큰이면 오독 흔적으로 본다.
+//   ⚠ 남은 한계(v1 과 동일 · U72-9): 불용어와 겹치는 오독(`밀`→`및`, `게`→`제`/`과`, `호두`→`모두` 등)은 못 잡는다.
+const _RESIDUE_MARK = /알레르기|알러지|알레르겐|유발\s*물질/;
+const _RESIDUE_NEAR_MAX = 2;
+const _J_CHO = 'ㄱㄲㄴㄷㄸㄹㅁㅂㅃㅅㅆㅇㅈㅉㅊㅋㅌㅍㅎ';
+const _J_JUNG = 'ㅏㅐㅑㅒㅓㅔㅕㅖㅗㅘㅙㅚㅛㅜㅝㅞㅟㅠㅡㅢㅣ';
+const _J_JONG = ' ㄱㄲㄳㄴㄵㄶㄷㄹㄺㄻㄼㄽㄾㄿㅀㅁㅂㅄㅅㅆㅇㅈㅊㅋㅌㅍㅎ';
+function _jamo(str) {
+  const o = [];
+  for (const ch of str) {
+    const c = ch.charCodeAt(0) - 0xAC00;
+    if (c < 0 || c > 11171) { o.push(ch); continue; }
+    o.push(_J_CHO[Math.floor(c / 588)], _J_JUNG[Math.floor((c % 588) / 28)]);
+    if (c % 28) o.push(_J_JONG[c % 28]);
+  }
+  return o;
+}
+function _lev(a, b) {
+  let prev = Array.from({ length: b.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= a.length; i++) {
+    const cur = [i];
+    for (let j = 1; j <= b.length; j++) cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    prev = cur;
+  }
+  return prev[b.length];
+}
+let _NAME_JAMO = null;
+function _nearNameDist(tok) {
+  if (!_NAME_JAMO) _NAME_JAMO = [..._ALL_NAME_TOKENS].map((n) => _jamo(n));
+  const tj = _jamo(tok);
+  let best = Infinity;
+  for (const nj of _NAME_JAMO) { const d = _lev(tj, nj); if (d < best) best = d; }
+  return best;
+}
+
 function declarationResidue(text) {
   const out = [];
-  for (const seg of _splitSegments(text || '')) {
+  const segs = _splitSegments(text || '');
+  // ③ 경계 검사 — 같은 줄에서 [원재료][선언(표시어 없음)] 로 쪼개진 곳
+  let cur = 0;
+  const pos = segs.map((sg) => { const i = (text || '').indexOf(sg, cur); if (i >= 0) cur = i + sg.length; return i; });
+  for (let i = 0; i + 1 < segs.length; i++) {
+    if (_classifySegment(segs[i]) !== 'ingredients' || _classifySegment(segs[i + 1]) !== 'contains') continue;
+    if (_RESIDUE_MARK.test(segs[i + 1])) continue;
+    if (pos[i] < 0 || pos[i + 1] < 0 || /\n/.test(text.slice(pos[i] + segs[i].length, pos[i + 1]))) continue;
+    const items = segs[i].split(/[,，、·ㆍ\/()（）\[\]:：;]+/).map((x) => x.trim()).filter(Boolean);
+    for (const it of items.slice(-2)) {
+      const w = it.split(/\s+/).pop();
+      if (!/^[가-힣]{1,2}$/.test(w) || _isNameTok(w) || _RESIDUE_STOP.has(w)) continue;
+      if (_nearNameDist(w) <= _RESIDUE_NEAR_MAX && out.length < 20) out.push({ tok: w, kind: 'boundary', seg: segs[i].slice(-70) });
+    }
+  }
+  for (const seg of segs) {
     const kind = _classifySegment(seg);
     if (kind !== 'contains' && kind !== 'mayContain') continue;
+    const marked = _RESIDUE_MARK.test(seg);   // ① / ②
     const segM = _rejoinSplitNames(seg);
     const list = segM.split(/함유|사용한|사용하|혼입|같은\s*(?:제조)?시설|제조시설|포함된/)[0];
     if (_matchSet(list, ALLERGEN_NAMES).size === 0) continue;   // 이름 없는 세그먼트(예: 뼈 혼입 고지)는 목록이 아니다
@@ -2273,7 +2330,9 @@ function declarationResidue(text) {
       }
       for (const tok of words) {
         if (!/^[가-힣]+$/.test(tok) || _isNameTok(tok) || _RESIDUE_STOP.has(tok)) continue;
-        if (tok.length <= 2 && out.length < 20) out.push({ tok, kind, seg: seg.slice(0, 70) });
+        if (tok.length > 2 || out.length >= 20) continue;
+        if (!marked && _nearNameDist(tok) > _RESIDUE_NEAR_MAX) continue;   // ② 원재료 꼬리로 본다
+        out.push({ tok, kind, seg: seg.slice(0, 70) });
       }
     });
   }

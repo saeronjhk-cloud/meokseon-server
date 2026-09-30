@@ -30,13 +30,24 @@ const { verifyEligibility } = require('../services/collapseClassify');
 const router = express.Router();
 
 // ============================================================
-// Admin 인증 미들웨어 — Authorization: Bearer <ADMIN_TOKEN>
-// ADMIN_TOKEN 환경변수 미설정 시 모든 요청 차단 (의도적 fail-safe).
+// Admin 인증 미들웨어 — 두 길(세션72d · 제이 결정 2026-09-30)
+//   ① `Authorization: Bearer <ADMIN_TOKEN>` — 종전 그대로(콘솔·스크립트·기존 contribution-review.html).
+//   ② `Authorization: Bearer <Supabase 로그인 토큰>` — 앱(web) /admin 화면. 토큰 이메일이
+//      ADMIN_EMAILS(Railway 환경변수 · 쉼표 구분)에 있을 때만 통과. 익명 로그인은 거부.
+//   ★ 일반 사용자에게 화면을 «숨기는» 것은 보조 수단일 뿐이다. 판정은 «여기(서버)» 한 곳에서 한다.
+//   ⚠ 둘 다 미설정이면 503(의도적 fail-safe · 종전과 같은 코드).
 // ============================================================
-function requireAdmin(req, res, next) {
+const { verifySupabaseToken, getJwksUrl, getSecret } = require('../middleware/supabaseAuth');
+
+function adminEmails(env = process.env) {
+  return (env.ADMIN_EMAILS || '').split(/[,;\s]+/).map((s) => s.trim().toLowerCase()).filter(Boolean);
+}
+
+async function requireAdmin(req, res, next) {
   const adminToken = process.env.ADMIN_TOKEN;
-  if (!adminToken) {
-    logger.warn('ADMIN_TOKEN 미설정 — admin 요청 차단', { ip: req.ip, path: req.path });
+  const emails = adminEmails();
+  if (!adminToken && emails.length === 0) {
+    logger.warn('ADMIN_TOKEN·ADMIN_EMAILS 미설정 — admin 요청 차단', { ip: req.ip, path: req.path });
     return res.status(503).json({
       success: false,
       error: { code: 'ADMIN_NOT_CONFIGURED', message: 'ADMIN_TOKEN 환경변수가 설정되어 있지 않습니다.' },
@@ -44,18 +55,50 @@ function requireAdmin(req, res, next) {
   }
   const auth = req.headers.authorization || '';
   const match = auth.match(/^Bearer\s+(.+)$/i);
-  if (!match || match[1] !== adminToken) {
-    logger.warn('admin 인증 실패', { ip: req.ip, path: req.path });
-    return res.status(401).json({
-      success: false,
-      error: { code: 'UNAUTHORIZED', message: '관리자 인증이 필요합니다.' },
-    });
+  if (match && adminToken && match[1] === adminToken) {
+    req.admin = { via: 'token', email: null };
+    return next();
   }
-  next();
+  if (match && emails.length > 0) {
+    let r = null;
+    try {
+      r = await verifySupabaseToken(match[1].trim(), { jwksUrl: getJwksUrl(), secret: getSecret() });
+    } catch (e) {
+      r = { ok: false, kind: 'unavailable', reason: e.message };
+    }
+    if (r && r.ok) {
+      const email = (r.auth.email || '').toLowerCase();
+      if (!r.auth.isAnonymous && email && emails.includes(email)) {
+        req.admin = { via: 'supabase', email };
+        return next();
+      }
+      logger.warn('admin 권한 없음(로그인 사용자)', { path: req.path });
+      return res.status(403).json({
+        success: false,
+        error: { code: 'ADMIN_FORBIDDEN', message: '관리자 권한이 없는 계정입니다.' },
+      });
+    }
+    if (r && (r.kind === 'unavailable' || r.kind === 'not_configured')) {
+      return res.status(503).json({
+        success: false,
+        error: { code: 'ADMIN_AUTH_UNAVAILABLE', message: '로그인 확인을 잠시 할 수 없습니다. 잠시 후 다시 시도해 주세요.' },
+      });
+    }
+  }
+  logger.warn('admin 인증 실패', { ip: req.ip, path: req.path });
+  return res.status(401).json({
+    success: false,
+    error: { code: 'UNAUTHORIZED', message: '관리자 인증이 필요합니다.' },
+  });
 }
 
 // 모든 admin 라우트에 인증 적용
 router.use(requireAdmin);
+
+// ★ 세션72d — 앱 /admin 화면이 «들어갈 수 있는가»를 묻는 곳. requireAdmin 을 통과해야 200.
+router.get('/whoami', (req, res) => {
+  res.json({ success: true, data: { admin: true, via: req.admin?.via || 'token', email: req.admin?.email || null } });
+});
 
 // ============================================================
 // GET /api/admin/pending — 미검증 데이터 목록
@@ -302,8 +345,9 @@ router.post('/verify/:productId', async (req, res) => {
   // ⚠ `cr_approve_human_chk` 가 `reviewed_by IS NOT NULL` 을 요구한다(024).
   //   admin 인증은 공용 Bearer 토큰이라 개인 식별자가 없다 — 본문 값이 있으면 그것을 쓰고,
   //   없으면 `'admin'` 을 쓴다. **자동 승인이 아니라는 사실**을 DB 가 강제하는 것이 그 제약의 뜻이다.
+  // ★ 세션72d — 로그인 관리자면 그 이메일이 기본값(누가 승인했는지 남는다).
   const reviewedBy = (typeof body.reviewed_by === 'string' && body.reviewed_by.trim())
-    || 'admin';
+    || (req.admin && req.admin.email) || 'admin';
   const rejectReason = (typeof body.reject_reason === 'string' && body.reject_reason.trim()) || null;
   const askedReviewIds = Array.isArray(body.review_ids)
     ? body.review_ids.map(Number).filter((n) => Number.isFinite(n))
@@ -904,7 +948,7 @@ router.post('/review/contributions/:reviewId/basis', async (req, res) => {
     }
   }
 
-  const reviewedBy = (typeof body.reviewed_by === 'string' && body.reviewed_by.trim()) || 'admin';
+  const reviewedBy = (typeof body.reviewed_by === 'string' && body.reviewed_by.trim()) || (req.admin && req.admin.email) || 'admin';   // 세션72d
 
   try {
     const out = await db.transaction(async (client) => {
@@ -1033,7 +1077,7 @@ router.post('/review/contributions/:reviewId/override', async (req, res) => {
       },
     });
   }
-  const reviewedBy = (typeof body.reviewed_by === 'string' && body.reviewed_by.trim()) || 'admin';
+  const reviewedBy = (typeof body.reviewed_by === 'string' && body.reviewed_by.trim()) || (req.admin && req.admin.email) || 'admin';   // 세션72d
 
   try {
     const out = await db.transaction(async (client) => {

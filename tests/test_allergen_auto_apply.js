@@ -94,6 +94,10 @@ async function main() {
   require.cache[loggerPath] = { id: loggerPath, filename: loggerPath, loaded: true,
     exports: { info: () => {}, debug: () => {}, error: () => {}, warn: (m, meta) => warnLog.push({ m, meta }) } };
 
+  // ★ 세션72d — 관리자 알림 호출을 가로채 확인한다(실제 메일은 보내지 않는다).
+  const notifyCalls = [];
+  const nPath = require.resolve('../src/services/adminNotify');
+  require.cache[nPath] = { id: nPath, filename: nPath, loaded: true, exports: { notifyNewContribution: (x) => { notifyCalls.push(x); return Promise.resolve({ sent: false }); } } };
   process.env.ADMIN_TOKEN = 'S72-AUTO-ADMIN';
   const crowdsource = require('../src/services/crowdsourceService');
   const productService = require('../src/services/productService');
@@ -169,6 +173,13 @@ async function main() {
       const c = Number((await cur.query(`SELECT count(*)::int c FROM ${tb} WHERE product_id=$1`, [pid1])).rows[0].c);
       assert.strictEqual(c, 0, `${tb} 에 ${c}행`);
     }
+  });
+  await t('§1-6 (세션72d) 커밋 뒤 관리자 알림 1회 — 알레르기(자동반영)는 대기 축에서 빠진다 · 개인정보 없음', () => {
+    const c = notifyCalls.find((x) => x.barcode === 'S72A_1');
+    assert.ok(c, '알림이 호출되지 않았다');
+    assert.strictEqual(c.allergenAutoApplied, true);
+    assert.ok(!c.pendingAxes.includes('allergens') && c.pendingAxes.includes('nutrition'), JSON.stringify(c.pendingAxes));
+    assert.ok(!('deviceId' in c) && !('userId' in c));
   });
   await t('§1-5 data_inspection 알레르기 1행(found_count 3)', async () => {
     const r = await cur.query(`SELECT found_count FROM data_inspection WHERE product_id=$1 AND axis='allergens'`, [pid1]);

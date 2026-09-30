@@ -54,6 +54,8 @@ const { countDetected } = require('./additiveResolver');
 //   정본: IP/결정_알레르기자동반영_2026-09-29.md. 판정은 게이트, 쓰기는 contributionApply «한 곳».
 const { evaluateAllergenAutoGate } = require('./allergenAutoGate');
 const { applyAutoAllergens } = require('./contributionApply');
+// ★ 세션72d — 관리자 제보 알림 메일(Resend · 즉시+10분 묶음). 트랜잭션 «뒤»에만 부른다.
+const { notifyNewContribution } = require('./adminNotify');
 // ★ 세션65 C2-a — 022(`products.additive_detected_count`) 배포순서 방어 판정에만 쓴다.
 const productModel = require('../models/productModel');
 
@@ -909,6 +911,19 @@ async function saveOcrContribution(params) {
         : null,
     };
   }).then(async (txResult) => {
+    // ★ 세션72d — 관리자 알림. 커밋된 제보만 알린다(롤백된 것을 알리면 거짓 알림).
+    //   ⚠ await 하지 않는다 — 메일 지연이 사용자 응답을 늦추면 안 된다. notify 는 throw 하지 않는다.
+    if (txResult && txResult.saved) {
+      notifyNewContribution({
+        productId: txResult.productId,
+        barcode: barcode || null,
+        productName,
+        isNewProduct: !!txResult.isNewProduct,
+        pendingAxes: (txResult.review_candidates || []).filter((c) => !c.auto_applied).map((c) => c.axis),
+        allergenAutoApplied: !!txResult.allergen_auto_applied,
+        allergenAutoReason: txResult.allergen_auto_reason || null,
+      });
+    }
     // 트랜잭션 종료 후 자동 merge 호출 (트랜잭션 안에서 호출하면 nested 발생).
     // merge 자체는 자체 트랜잭션을 사용함.
     if (txResult.saved && txResult.mergeResult?.trigger) {

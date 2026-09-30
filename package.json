@@ -6,7 +6,7 @@
   "scripts": {
     "start": "node src/server.js",
     "dev": "cross-env NODE_ENV=development node src/server.js",
-    "test": "cross-env NODE_ENV=test node tests/test_traffic_light.js && cross-env NODE_ENV=test node tests/test_racc_policy.js && cross-env NODE_ENV=test node tests/test_100_products.js && cross-env NODE_ENV=test node tests/test_ocr_parser.js && cross-env NODE_ENV=test node tests/test_api.js && cross-env NODE_ENV=test node tests/test_firebase_auth.js && cross-env NODE_ENV=test node tests/test_pulse_consent_service.js && cross-env NODE_ENV=test node tests/test_user_routes.js && cross-env NODE_ENV=test node tests/test_scan_routes.js && npm run test:allergen-auto && npm run test:contracts",
+    "test": "cross-env NODE_ENV=test node tests/test_traffic_light.js && cross-env NODE_ENV=test node tests/test_racc_policy.js && cross-env NODE_ENV=test node tests/test_100_products.js && cross-env NODE_ENV=test node tests/test_ocr_parser.js && cross-env NODE_ENV=test node tests/test_api.js && cross-env NODE_ENV=test node tests/test_firebase_auth.js && cross-env NODE_ENV=test node tests/test_pulse_consent_service.js && cross-env NODE_ENV=test node tests/test_user_routes.js && cross-env NODE_ENV=test node tests/test_scan_routes.js && npm run test:allergen-auto && npm run test:admin-access && npm run test:contracts",
     "test:unit": "cross-env NODE_ENV=test node tests/test_traffic_light.js",
     "test:integration": "node tests/test_100_products.js",
     "test:api": "node tests/test_api.js",
@@ -68,6 +68,8 @@
     "test:allergen": "cross-env NODE_ENV=test node tests/test_allergen_v2.js && cross-env NODE_ENV=test node tests/test_allergen_declared.js && cross-env NODE_ENV=test node tests/test_allergen_evidence_level.js && cross-env NODE_ENV=test node tests/test_allergen_name_normalize.js && npm run test:parse-allergy",
     "test:allergen-auto": "cross-env NODE_ENV=test node tests/test_allergen_auto_gate.js && cross-env NODE_ENV=test node tests/test_allergen_auto_apply.js",
     "_note:test:allergen-auto": "★ 세션72 — 알레르기 «자동 반영»(C6 첫 예외 · 알레르기 축 · 게이트 통과분만 · 정본 IP/결정_알레르기자동반영_2026-09-29.md). ① gate eval: IP/eval_allergen_auto_v1 32건(제이 사진 GT 29)을 운영 게이트로 채점 — 자동 반영 치명 0 · 경미 0 · 자동 ≥23 이 아니면 빨강. ② 배선: 029(auto_applied) 체인·멱등 · crowd_auto 행 · 다른 축 candidate 유지 · 소비자 신호(allergens_crowd_auto · allergens_may_unconfirmed) · confirmed/admin_verified 비강등 · undo · 029 미적용 DB 에서 제보 보존(SAVEPOINT). 뮤테이션 2건(비강등 CASE · SAVEPOINT 롤백) 잡힘 확인.",
+    "test:admin-access": "cross-env NODE_ENV=test node tests/test_admin_access_notify.js",
+    "_note:test:admin-access": "★ 세션72d — 관리자 접근(ADMIN_TOKEN 종전 + Supabase 로그인 이메일 ∈ ADMIN_EMAILS · 일반 사용자 403 · 익명 403 · 위조 401) + 제보 알림 메일(Resend · 즉시+10분 묶음 · 개인정보 없음 · 실패해도 제보 무영향). 제이 결정 2026-09-30.",
     "test:allergen-level": "cross-env NODE_ENV=test node tests/test_allergen_evidence_level.js",
     "test:allergen-names": "cross-env NODE_ENV=test node tests/test_allergen_name_normalize.js",
     "test:parse-allergy": "cross-env NODE_ENV=test node tests/test_parse_allergy.js",

@@ -392,4 +392,7 @@ module.exports = {
   verifySupabaseToken,
   // 테스트·진단용. 라우트가 쓰지 않는다.
   getJwksUrl,
+  // ★ 세션72d — adminRoutes 의 «로그인 관리자» 판정이 같은 검증을 쓴다(규칙 두 벌 금지).
+  getSecret,
+  extractBearer,
 };

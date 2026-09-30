@@ -23,6 +23,14 @@ const { saveOcrContribution, reportError } = require('../services/crowdsourceSer
 // ★ 세션64 — 분석과 저장을 두 번의 왕복으로 가른다. 그 사이를 이 캐시가 잇는다.
 //   사진을 다시 보내지 않으므로 Vision 은 «한 번만» 호출된다(비용 축 U60-1).
 const { putAnalysis, getAnalysis } = require('../services/analysisCache');
+// ★ 세션72f — 제보 라벨 사진 축소본 보관(U69-1). 저장 실패가 제보를 막지 않는다(모듈이 throw 안 함).
+const contributionPhotos = require('../services/contributionPhotos');
+/** db 는 늦게 부른다 — 라우트 모듈만 올리는 테스트가 DB 설정을 끌어오지 않게. */
+async function persistContributionPhotos(productId, photos) {
+  if (!photos || !photos.length || !productId) return 0;
+  const db = require('../config/database');
+  return contributionPhotos.persist(db, { productId, photos });
+}
 // ★ 세션64 — `/confirm` 의 바코드 불일치 경고에 쓴다. 이 파일의 나머지는 console.log 관용구지만,
 //   이건 **공격 신호일 수 있는 사건**이라 날짜별 로그 파일에 남아야 한다(console 은 재배포하면 사라진다).
 const logger = require('../config/logger');
@@ -626,6 +634,9 @@ router.post(
   upload.fields([
     { name: 'label_image', maxCount: 1 },
     { name: 'nutrition_image', maxCount: 1 },
+    // ★ 세션72f — 관리자 검토용 축소본(앱이 긴 변 1600px JPEG 로 만든다). OCR 에는 쓰지 않는다.
+    { name: 'label_archive', maxCount: 1 },
+    { name: 'nutrition_archive', maxCount: 1 },
   ]),
   async (req, res) => {
     const labelFile = req.files?.label_image?.[0];
@@ -806,6 +817,8 @@ router.post(
           nutritionAnalysis?._avg_confidence || 0,
         ),
       });
+      // ★ 세션72f — 확정(/confirm) 전까지 사진 축소본은 메모리에만 둔다.
+      contributionPhotos.stash(analysisToken, contributionPhotos.archivesFromRequest(req.files));
     }
 
     if (shouldSave) {
@@ -846,6 +859,9 @@ router.post(
         userId: mpUserId,
         deviceId: req.body.device_id || null,
       });
+      if (saveResult && saveResult.saved) {
+        await persistContributionPhotos(saveResult.productId, contributionPhotos.archivesFromRequest(req.files));
+      }
     }
 
     // ─── 6. 응답 ───
@@ -1071,6 +1087,10 @@ router.post('/confirm', supabaseAuth, async (req, res) => {
 
   // ★ 토큰은 **소모하지 않는다.** 이유는 `analysisCache.getAnalysis` 주석 참조
   //   (400 뒤의 재시도가 410 이 되면 앱이 재촬영 → Vision 2배가 된다).
+  // ★ 세션72f — 저장된 제보만 사진을 보관한다. 거부된 제보의 사진은 여기서 버린다(take 가 지운다).
+  const photos = contributionPhotos.take(token);
+  if (saveResult && saveResult.saved) await persistContributionPhotos(saveResult.productId, photos);
+
   res.json({ success: true, data: { save_result: saveResult } });
 });
 

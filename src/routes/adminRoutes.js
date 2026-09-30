@@ -15,7 +15,10 @@ const {
 const {
   applyApprovedContribution, undoAppliedContribution, CONTRIBUTION_BASIS_OK,
   CROWD_NUTRIENT_KEYS,   // 세션68 U67-11 — 값 정정의 키 어휘
+  ALLERGEN_CANONICAL,    // 세션72f — 알레르기 정정 어휘(19종)
 } = require('../services/contributionApply');
+// ★ 세션72f — 제보 사진 축소본(관리자만). 규칙은 서비스 한 곳.
+const contributionPhotos = require('../services/contributionPhotos');
 // ★★ 세션67 U66-3 — `contribution_review` 를 «목록으로» 읽는 유일한 곳(계약 §4 Q5).
 //   ⛔ 이 라우터에 조회 SQL 을 다시 적지 말 것. adminRoutes 는 이미 1200줄이 넘는다.
 const { listReviewQueue, getReviewDetail } = require('../services/reviewQueueRead');
@@ -1043,8 +1046,43 @@ router.post('/review/contributions/:reviewId/override', async (req, res) => {
       error: { code: 'OVERRIDE_VALUES_REQUIRED', message: 'values 객체가 필요합니다(예: {"total_fat": 3.2}).' },
     });
   }
+  // ★ 세션72f — 정정 «형태»를 값 모양으로 가른다. 축과 맞는지는 트랜잭션 안에서 행을 읽고 본다.
+  //   allergens  : { allergens: { contains: [19종], may_contain: [19종] } }
+  //   ingredients: { ingredients_text: '원문' }   (원재료·첨가물 축 — 첨가물은 원재료에서 다시 검출)
+  //   nutrition  : { total_fat: 3.2, … }          (종전 그대로)
+  const form = Object.prototype.hasOwnProperty.call(values, 'allergens') ? 'allergens'
+    : Object.prototype.hasOwnProperty.call(values, 'ingredients_text') ? 'ingredients' : 'nutrition';
   const clean = {};
-  for (const [k, v] of Object.entries(values)) {
+  if (form === 'allergens') {
+    const a = values.allergens;
+    const lists = a && typeof a === 'object' && !Array.isArray(a) ? a : null;
+    const bad = [];
+    const pick = (xs) => {
+      if (xs === undefined || xs === null) return [];
+      if (!Array.isArray(xs)) { bad.push(String(xs)); return []; }
+      for (const n of xs) if (!ALLERGEN_CANONICAL.includes(n)) bad.push(String(n));
+      return [...new Set(xs.filter((n) => ALLERGEN_CANONICAL.includes(n)))];
+    };
+    const contains = lists ? pick(lists.contains) : [];
+    const may = lists ? pick(lists.may_contain).filter((n) => !contains.includes(n)) : [];
+    if (!lists || bad.length) {
+      return res.status(400).json({
+        success: false,
+        error: { code: 'INVALID_ALLERGEN_NAME', message: `알레르기는 19종 정본 이름만 받습니다(틀린 값: ${bad.join(', ') || '형식'}).` },
+      });
+    }
+    clean.allergens = { contains, may_contain: may };
+  } else if (form === 'ingredients') {
+    const text = typeof values.ingredients_text === 'string' ? values.ingredients_text.trim() : '';
+    if (!text || text.length > 5000) {
+      return res.status(400).json({
+        success: false,
+        error: { code: 'INVALID_INGREDIENTS_TEXT', message: '원재료명 원문을 1~5000자로 적어 주세요.' },
+      });
+    }
+    clean.ingredients_text = text;
+  }
+  for (const [k, v] of Object.entries(form === 'nutrition' ? values : {})) {
     if (!CROWD_NUTRIENT_KEYS.includes(k)) {
       return res.status(400).json({
         success: false,
@@ -1089,9 +1127,12 @@ router.post('/review/contributions/:reviewId/override', async (req, res) => {
         e.code = 'REVIEW_NOT_FOUND'; throw e;
       }
       const review = rv.rows[0];
-      if (review.axis !== 'nutrition') {
-        const e = new Error(`값 정정은 nutrition 축에만 있습니다(이 행은 ${review.axis}).`);
-        e.code = 'AXIS_NOT_NUTRITION'; throw e;
+      const formAxes = { nutrition: ['nutrition'], allergens: ['allergens'], ingredients: ['ingredients', 'additives'] }[form];
+      if (!formAxes.includes(review.axis)) {
+        const e = new Error(form === 'nutrition'
+          ? `영양값 정정은 nutrition 축에만 있습니다(이 행은 ${review.axis}).`
+          : `${form} 정정은 ${formAxes.join('/')} 축에만 있습니다(이 행은 ${review.axis}).`);
+        e.code = form === 'nutrition' ? 'AXIS_NOT_NUTRITION' : 'AXIS_MISMATCH'; throw e;
       }
       if (review.applied_at !== null && review.applied_at !== undefined) {
         const e = new Error('이미 반영된 행입니다. undo 로 되돌린 뒤 정정하십시오 — 반영된 값을 조용히 바꾸지 않습니다.');
@@ -1105,7 +1146,24 @@ router.post('/review/contributions/:reviewId/override', async (req, res) => {
                     'values', $2::jsonb, 'by', $3::text, 'note', $4::text, 'at', to_jsonb(now())))
           WHERE review_id = $1`,
         [reviewId, JSON.stringify(clean), reviewedBy, note]);
+      // ★ 세션72f — 원재료 정정은 같은 제보의 «첨가물» 축에도 얹는다(첨가물은 원재료에서 검출한다 — 한쪽만 고치면 둘이 갈린다).
+      //   이미 반영된 형제 행은 건드리지 않는다(되돌린 뒤 다시).
+      let siblings = [];
+      if (form === 'ingredients') {
+        const sib = await client.query(
+          `UPDATE contribution_review
+              SET evidence = COALESCE(evidence, '{}'::jsonb) || jsonb_build_object(
+                    'admin_override', jsonb_build_object(
+                      'values', $3::jsonb, 'by', $4::text, 'note', $5::text, 'at', to_jsonb(now())))
+            WHERE contribution_id = (SELECT contribution_id FROM contribution_review WHERE review_id = $1)
+              AND review_id <> $1 AND axis IN ('ingredients', 'additives') AND axis <> $2
+              AND applied_at IS NULL
+          RETURNING review_id`,
+          [reviewId, review.axis, JSON.stringify(clean), reviewedBy, note]);
+        siblings = sib.rows.map((x) => Number(x.review_id));
+      }
       return {
+        siblings,
         review_id: reviewId,
         axis: review.axis,
         status: review.status,
@@ -1117,11 +1175,36 @@ router.post('/review/contributions/:reviewId/override', async (req, res) => {
     return res.json({ success: true, data: out });
   } catch (e) {
     const status = e.code === 'REVIEW_NOT_FOUND' ? 404
-      : (e.code === 'ALREADY_APPLIED' || e.code === 'AXIS_NOT_NUTRITION') ? 409 : 500;
+      : (e.code === 'ALREADY_APPLIED' || e.code === 'AXIS_NOT_NUTRITION' || e.code === 'AXIS_MISMATCH') ? 409 : 500;
     logger.error('review override 입력 실패', { reviewId, error: e.message, code: e.code });
     return res.status(status).json({
       success: false, error: { code: e.code || 'OVERRIDE_UPDATE_FAILED', message: e.message },
     });
+  }
+});
+
+// ── ★ 세션72f — 제보 사진 축소본 (관리자만 · 이 라우터 전체가 requireAdmin 뒤) ──
+//   목록은 메타만(바이트·user_id 없음). 바이트는 photo_id 로 한 장씩 — 캐시 금지(private, no-store).
+router.get('/review/contributions/:productId/photos', async (req, res) => {
+  try {
+    return res.json({ success: true, data: { photos: await contributionPhotos.listForProduct(db, req.params.productId) } });
+  } catch (e) {
+    logger.error('제보 사진 목록 실패', { productId: req.params.productId, error: e.message });
+    return res.status(500).json({ success: false, error: { code: 'PHOTO_LIST_FAILED', message: e.message } });
+  }
+});
+
+router.get('/photos/:photoId', async (req, res) => {
+  try {
+    const p = await contributionPhotos.getPhoto(db, req.params.photoId);
+    if (!p) return res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: '사진이 없습니다(파기됐거나 없는 번호).' } });
+    res.set('Content-Type', p.mime);
+    res.set('Cache-Control', 'private, no-store');
+    res.set('X-Content-Type-Options', 'nosniff');
+    return res.send(p.bytes);
+  } catch (e) {
+    logger.error('제보 사진 읽기 실패', { photoId: req.params.photoId, error: e.message });
+    return res.status(500).json({ success: false, error: { code: 'PHOTO_READ_FAILED', message: e.message } });
   }
 });
 

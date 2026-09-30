@@ -22,6 +22,14 @@ const N = require('../src/services/adminNotify');
 (async () => {
   console.log('\n── §1 순수 함수 ──');
   const one = { productId: 1, barcode: '880', productName: '하루단백<쫀쿠>', isNewProduct: true, pendingAxes: ['nutrition', 'ingredients'], allergenAutoApplied: true };
+  await t('§1-0 사유 코드 → 한국어 · 자동반영 없으면 각주 없음 (72e)', () => {
+    const m = N.buildMail([{ ...one, allergenAutoApplied: false, allergenAutoReason: 'RESIDUE' }], {});
+    assert.ok(!m.html.includes('RESIDUE') && m.html.includes('판독 불명'), m.html);
+    assert.ok(!m.html.includes('미검증'), '자동반영 0건인데 각주');
+    assert.ok(N.buildMail([one], {}).html.includes('미검증'), '자동반영 1건이면 각주');
+    assert.strictEqual(N.reasonKo('AUTO_APPLY_FAILED:x'), '보류 · AUTO_APPLY_FAILED:x');
+    assert.strictEqual(N.reasonKo(null), '-');
+  });
   await t('§1-1 1건 제목에 제품명 + 자동반영 표시 · HTML 이스케이프', () => {
     const m = N.buildMail([one], { ADMIN_PAGE_URL: 'https://x/admin' });
     assert.ok(m.subject.includes('하루단백<쫀쿠>') && m.subject.includes('자동반영'));

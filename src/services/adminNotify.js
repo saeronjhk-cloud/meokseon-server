@@ -27,6 +27,21 @@ function recipients(env = process.env) {
 
 const AXIS_KO = { nutrition: '영양', ingredients: '원재료', allergens: '알레르기', additives: '첨가물' };
 
+// ★ 세션72e — 게이트 사유 코드를 관리자가 읽을 말로(메일에 RESIDUE 같은 코드가 그대로 보였다).
+const REASON_KO = {
+  NO_TEXT: '보류 · 사진 글자 없음',
+  NO_DECLARATION: '보류 · 표시문 못 찾음',
+  NO_NAMES: '보류 · 알레르기명 없음',
+  RESIDUE: '보류 · 판독 불명 글자',
+  INFERRED_PRESENT: '보류 · 추정값 섞임',
+  STORED_MISMATCH: '보류 · 저장값 불일치',
+};
+function reasonKo(code) {
+  if (!code) return '-';
+  const base = String(code).split(':')[0];
+  return REASON_KO[base] || `보류 · ${code}`;
+}
+
 function esc(s) {
   return String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
@@ -41,7 +56,7 @@ function buildMail(items, env = process.env) {
   const rows = items.slice(0, MAX_ITEMS_IN_MAIL).map((i) => {
     const pending = (i.pendingAxes || []).map((a) => AXIS_KO[a] || a).join('·') || '없음';
     return `<tr><td>${esc(i.productName || '(이름 없음)')}</td><td>${esc(i.barcode || '-')}</td>`
-      + `<td>${esc(pending)}</td><td>${i.allergenAutoApplied ? '자동반영' : (i.allergenAutoReason ? esc(i.allergenAutoReason) : '-')}</td>`
+      + `<td>${esc(pending)}</td><td>${i.allergenAutoApplied ? '자동반영' : esc(reasonKo(i.allergenAutoReason))}</td>`
       + `<td>${i.isNewProduct ? '신규' : '기존'}</td></tr>`;
   }).join('');
   const more = n > MAX_ITEMS_IN_MAIL ? `<p>외 ${n - MAX_ITEMS_IN_MAIL}건</p>` : '';
@@ -50,7 +65,9 @@ function buildMail(items, env = process.env) {
     + `<p>검토가 필요한 제보가 도착했습니다.</p>`
     + `<table border="1" cellpadding="6" cellspacing="0" style="border-collapse:collapse">`
     + `<tr><th>제품명</th><th>바코드</th><th>검토 대기 축</th><th>알레르기</th><th>구분</th></tr>${rows}</table>`
-    + `${more}${link}<p style="color:#888;font-size:12px">알레르기 «자동반영»은 관리자 미검증 상태입니다. 관리자 화면에서 되돌릴 수 있습니다.</p></div>`;
+    + `${more}${link}`
+    + (autoN ? `<p style="color:#888;font-size:12px">알레르기 «자동반영»은 관리자 미검증 상태입니다. 관리자 화면에서 되돌릴 수 있습니다.</p>` : '')
+    + `</div>`;
   const text = items.map((i) => `- ${i.productName || '(이름 없음)'} (${i.barcode || '-'}) 대기: ${(i.pendingAxes || []).map((a) => AXIS_KO[a] || a).join('·') || '없음'}${i.allergenAutoApplied ? ' · 알레르기 자동반영' : ''}`).join('\n')
     + (env.ADMIN_PAGE_URL ? `\n\n관리자 화면: ${env.ADMIN_PAGE_URL}` : '');
   return { subject, html, text };
@@ -126,6 +143,7 @@ function createNotifier(opts = {}) {
 const defaultNotifier = createNotifier();
 
 module.exports = {
+  reasonKo,
   notifyNewContribution: (item) => defaultNotifier.notify(item),
   createNotifier, buildMail, recipients, sendViaResend,
 };

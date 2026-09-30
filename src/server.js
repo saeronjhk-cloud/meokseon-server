@@ -19,6 +19,9 @@ async function startServer() {
   // 사전 데이터 캐시 로드
   await dictionaryCache.loadFromDB();
 
+  // ★ 세션72f — 제보 사진 90일 파기(하루 한 번 · 부팅 1분 뒤 첫 실행). 실패해도 서버는 뜬다.
+  require('./services/contributionPhotos').startPurgeTimer(require('./config/database'));
+
   app.listen(PORT, () => {
     logger.info('먹선(吃選) API 서버 가동', { env: config.env, port: PORT });
     console.log(`\n🍽️  먹선(吃選) API 서버 가동`);

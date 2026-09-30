@@ -64,6 +64,8 @@
 //   · strongerLevel          — 등급 서열. 「내리지 않는다」의 JS 쪽 본문
 const { deriveBasis, sanityCheck } = require('./nutritionTrafficLight');
 const { normalizeAllergenNames, strongerLevel } = require('./allergenName');
+// ★ 세션72f — 관리자 원재료 정정 텍스트를 «같은 파서»로 쪼갠다(규칙 두 벌 금지).
+const { parseIngredients, ALLERGEN_NAMES } = require('./ocrParser');
 const {
   upsertProductAdditives, detectFromIngredientNames, countDetected,
 } = require('./additiveResolver');
@@ -456,6 +458,49 @@ function applyAdminOverride(parsedNutrition, reviewEvidence) {
  * 저장용 키 → 엔진(`nutritionTrafficLight`) 판정용 키. 엔진은 `sugars`/`sat_fat`/`fiber` 를 쓴다(세션42 주석).
  * ★ 이 매핑은 `crowdsourceService.js` 의 저장 게이트(`:209~215`)와 같은 뜻이다 — 새 규칙이 아니다.
  */
+/** 19종 정본 이름(ocrParser.ALLERGEN_NAMES 의 키). 관리자 알레르기 정정의 어휘. */
+const ALLERGEN_CANONICAL = Object.keys(ALLERGEN_NAMES);
+
+/**
+ * ★★ 세션72f — 관리자 «값 정정»을 영양 외 축에도 연다(사진 보며 정정 → 승인 · 제이 결정 2026-09-30).
+ *   `admin_override.values` 모양:
+ *     allergens              → { allergens: { contains: [19종], may_contain: [19종] } }
+ *     ingredients · additives → { ingredients_text: '원재료명 원문' }
+ *   ⛔ `contributions.data` 는 건드리지 않는다(사용자 원본) — 반영 직전에 «사본»을 만들어 얹는다.
+ *   ⛔ 영양 축은 여기서 다루지 않는다(`applyAdminOverride` 가 그 축의 규칙이다).
+ *   정정이 없거나 모양이 틀리면 data 를 «그대로» 돌려준다(부분 적용 없음).
+ * @returns {{ data: object, from: string|null }}
+ */
+function applyAxisOverride(axis, data, reviewEvidence) {
+  const base = (data && typeof data === 'object') ? data : {};
+  const rev = asObject(reviewEvidence);
+  const ov = rev && asObject(rev.admin_override);
+  const values = ov && asObject(ov.values);
+  if (!values) return { data: base, from: null };
+  if (axis === 'allergens') {
+    const a = asObject(values.allergens);
+    if (!a) return { data: base, from: null };
+    const pick = (xs) => (Array.isArray(xs) ? xs : []).filter((n) => ALLERGEN_CANONICAL.includes(n));
+    const contains = [...new Set(pick(a.contains))];
+    const may = [...new Set(pick(a.may_contain))].filter((n) => !contains.includes(n));
+    return {
+      data: { ...base, allergens: contains, allergens_v2: { contains, mayContain: may, inferred: [] } },
+      from: 'review.evidence.admin_override',
+    };
+  }
+  if (axis === 'ingredients' || axis === 'additives') {
+    const text = typeof values.ingredients_text === 'string' ? values.ingredients_text.trim() : '';
+    if (!text) return { data: base, from: null };
+    const ui = asObject(base.user_input) || {};
+    return {
+      // additives: 명시 목록을 지워야 정정된 원재료로 «다시» 검출한다.
+      data: { ...base, parsed_ingredients: parseIngredients(text), user_input: { ...ui, ingredients_text: text }, additives: undefined },
+      from: 'review.evidence.admin_override',
+    };
+  }
+  return { data: base, from: null };
+}
+
 function toEngineKeys(n) {
   const src = n || {};
   return {
@@ -1038,7 +1083,10 @@ async function applyApprovedContribution(client, reviewId, opts = {}) {
     throw fail('NOTHING_TO_APPLY',
       `원본 제보(contribution_id=${review.contribution_id})가 없습니다.`);
   }
-  const data = asObject(cr.rows[0].data) || {};
+  // ★ 세션72f — 영양 외 축은 관리자 정정을 «사본»에 얹는다(영양은 핸들러 안 applyAdminOverride).
+  const data = review.axis === 'nutrition'
+    ? (asObject(cr.rows[0].data) || {})
+    : applyAxisOverride(review.axis, asObject(cr.rows[0].data) || {}, review.evidence).data;
 
   // ★ 세션67 — 이미 위 SELECT 가 가져온 `evidence` 를 축 핸들러까지 «흘려보낸다».
   //   여기에 관리자가 채운 `admin_basis` 가 있다(계약 §4 Q1 — `contributions.data` 는 안 건드린다).
@@ -1391,6 +1439,8 @@ module.exports = {
   resolveBasis,
   computeConvertFactor,
   scaleNutrition,
+  applyAxisOverride,    // 세션72f — 영양 외 축 관리자 정정(순수)
+  ALLERGEN_CANONICAL,
   applyAdminOverride,   // 세션68 U67-11 — 순수 함수. 읽기 API 가 «예고»에 같은 규칙을 쓴다(두 벌 금지)
   overrideCriticalWarnings,
   toEngineKeys,

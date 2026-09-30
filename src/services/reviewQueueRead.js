@@ -60,6 +60,7 @@ const {
   pickNutritionObject,
   pickIngredientNames,
   buildAllergenList,
+  applyAxisOverride,    // 세션72f — 영양 외 축 관리자 정정(승인 경로와 같은 함수)
   applyAdminOverride,   // 세션68 U67-11 — 상세의 «반영 예고»에 승인 경로와 같은 규칙을 쓴다
   toEngineKeys,         // 세션68 — 정정 뒤 flags 재판정에 엔진을 «부르기» 위한 키 매핑
   CROWD_NUTRIENT_KEYS,
@@ -566,7 +567,7 @@ function buildAxisSummary(row, productRow) {
     // ★ 세션68 `U67-12` — nutrition 축만. 다른 축은 null(«그 축에 없는 개념»).
     flags,
     // ★ 세션68 `U67-11` — 관리자 값 정정이 있는가(목록은 «있다/없다»와 키만. 값은 상세에서).
-    override: row.axis === 'nutrition' ? overrideSummary(row.evidence) : null,
+    override: row.axis === 'nutrition' ? overrideSummary(row.evidence) : axisOverrideSummary(row.axis, row.evidence),
   };
 }
 
@@ -597,6 +598,29 @@ function buildOverrideDetail(evidence, data) {
       from: applied.from,
     },
   };
+}
+
+/**
+ * ★ 세션72f — 영양 외 축의 override(값 포함) + effective(= 승인하면 쓰일 proposed).
+ *   effective 는 `applyAxisOverride` 를 «호출»해 만든다 — 규칙 두 벌 금지(Q6).
+ */
+function buildAxisOverrideDetail(axis, evidence, data) {
+  const ev = asObject(evidence);
+  const ov = ev && asObject(ev.admin_override);
+  const r = applyAxisOverride(axis, asObject(data) || {}, evidence);
+  if (!ov || !r.from) return { override: null, effective: null };
+  return {
+    override: { values: asObject(ov.values) || {}, by: ov.by ?? null, at: ov.at ?? null, note: ov.note ?? null },
+    effective: { proposed: buildProposed(axis, r.data), from: r.from },
+  };
+}
+
+/** 목록용 — 영양 외 축 override 가 «있는가»(값은 상세에서). */
+function axisOverrideSummary(axis, evidence) {
+  const ev = asObject(evidence);
+  const ov = ev && asObject(ev.admin_override);
+  if (!ov || !applyAxisOverride(axis, {}, evidence).from) return null;
+  return { keys: [axis], by: ov.by ?? null, at: ov.at ?? null, note: ov.note ?? null };
 }
 
 /** `evidence.admin_override` 요약. 없으면 null. ⛔ 값을 해석하지 않는다 — `applyAdminOverride` 가 한다. */
@@ -781,7 +805,7 @@ async function getReviewDetail(client, productId) {
       flags: row.axis === 'nutrition' ? buildNutritionFlags(row.evidence, data) : null,
       // ★ 세션68 U67-11 — 관리자 값 정정(있으면 값까지) + 「승인하면 실제로 저장될 값」(effective).
       //   effective 는 `applyAdminOverride` 를 «호출»해 만든다 — 화면이 덮어쓰기 규칙을 다시 짜지 않는다(Q6).
-      ...(row.axis === 'nutrition' ? buildOverrideDetail(row.evidence, data) : { override: null, effective: null }),
+      ...(row.axis === 'nutrition' ? buildOverrideDetail(row.evidence, data) : buildAxisOverrideDetail(row.axis, row.evidence, data)),
       // ★ merge 판정(median·기기 «수»·이상치)은 **살려서** 내보낸다.
       //   개인 식별자만 키째 지운다 — `EVIDENCE_PII_KEYS` 주석 참조.
       evidence: scrubEvidence(asObject(row.evidence)),

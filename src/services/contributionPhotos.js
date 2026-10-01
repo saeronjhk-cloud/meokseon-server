@@ -31,21 +31,29 @@ function sniffMime(buf) {
   return null;
 }
 
-/** multer 파일 하나 → {kind, mime, bytes} 또는 null(사유 로그). 선언된 mimetype 이 아니라 «바이트»를 믿는다. */
-function acceptArchive(kind, file) {
-  if (!file || !KINDS.includes(kind)) return null;
+/**
+ * multer 파일 하나 → `{ photo, reason }`. 선언된 mimetype 이 아니라 «바이트»를 믿는다.
+ *   reason: null(받음) | 'EMPTY' | 'TOO_LARGE' | 'NOT_IMAGE'  — 로그 판정용 코드(U72-15).
+ */
+function inspectArchive(kind, file) {
+  if (!file || !KINDS.includes(kind)) return { photo: null, reason: 'EMPTY' };
   const buf = file.buffer;
-  if (!Buffer.isBuffer(buf) || buf.length === 0) return null;
+  if (!Buffer.isBuffer(buf) || buf.length === 0) return { photo: null, reason: 'EMPTY' };
   if (buf.length > MAX_PHOTO_BYTES) {
     logger.warn('제보 사진 축소본 거부 — 너무 큼', { kind, bytes: buf.length });
-    return null;
+    return { photo: null, reason: 'TOO_LARGE' };
   }
   const mime = sniffMime(buf);
   if (!mime) {
     logger.warn('제보 사진 축소본 거부 — 이미지 아님', { kind });
-    return null;
+    return { photo: null, reason: 'NOT_IMAGE' };
   }
-  return { kind, mime, bytes: buf };
+  return { photo: { kind, mime, bytes: buf }, reason: null };
+}
+
+/** 하위 호환 — 받은 축소본 또는 null. */
+function acceptArchive(kind, file) {
+  return inspectArchive(kind, file).photo;
 }
 
 /**
@@ -57,16 +65,55 @@ function enabled(env = process.env) {
   return String(env.CONTRIBUTION_PHOTOS_ENABLED || '').trim().toLowerCase() === 'true';
 }
 
-/** req.files → 받아들인 축소본 배열(0~2). 스위치가 꺼져 있으면 []. */
-function archivesFromRequest(files, env = process.env) {
-  if (!enabled(env)) return [];
-  const out = [];
+/**
+ * ★ 세션73 U72-15 — 받은 것·받아들인 것·버린 이유를 한 덩어리로 돌려준다.
+ *   종전 `archivesFromRequest` 는 스위치 꺼짐·앱 미전송을 «조용히» [] 로 만들어
+ *   「사진 없음」의 원인을 로그로 가를 수 없었다(09-30 실제 사례).
+ * @returns {{enabled:boolean, received:string[], accepted:string[], rejected:{kind:string,reason:string}[], photos:object[]}}
+ */
+function intakeArchives(files, env = process.env) {
+  const on = enabled(env);
+  const out = { enabled: on, received: [], accepted: [], rejected: [], photos: [] };
   for (const kind of KINDS) {
-    const f = files && files[`${kind}_archive`] && files[`${kind}_archive`][0];
-    const a = acceptArchive(kind, f);
-    if (a) out.push(a);
+    const file = files && files[`${kind}_archive`] && files[`${kind}_archive`][0];
+    if (!file) continue;
+    out.received.push(kind);
+    if (!on) { out.rejected.push({ kind, reason: 'DISABLED' }); continue; }
+    const { photo, reason } = inspectArchive(kind, file);
+    if (photo) { out.accepted.push(kind); out.photos.push(photo); }
+    else out.rejected.push({ kind, reason });
   }
   return out;
+}
+
+/** req.files → 받아들인 축소본 배열(0~2). 스위치가 꺼져 있으면 []. (하위 호환) */
+function archivesFromRequest(files, env = process.env) {
+  return intakeArchives(files, env).photos;
+}
+
+/**
+ * ★ 세션73 U72-15 — `/multi-photo` 한 요청당 info 한 줄. 사진·사용자 식별자는 남기지 않는다.
+ *   판정: received=[] → 앱이 축소본을 안 보냄(옛 JS 탭 · 축소 실패) / enabled=false → 스위치 꺼짐
+ *         rejected[].reason → TOO_LARGE·NOT_IMAGE / stashed·persisted → 그 뒤 단계.
+ *   throw 하지 않는다.
+ */
+function logIntake(intake, extra = {}) {
+  try {
+    const i = intake || { enabled: enabled(), received: [], accepted: [], rejected: [] };
+    logger.info('제보 사진 축소본 수신', {
+      enabled: i.enabled,
+      archives_received: i.received.length,
+      accepted: i.accepted.length,
+      received_kinds: i.received,
+      rejected: i.rejected,
+      ...extra,
+    });
+  } catch (_) { /* 로그 실패가 제보를 막지 않는다 */ }
+}
+
+/** ★ 세션73 U72-15 — `/confirm` 한 요청당 info 한 줄. taken=0 이면 «임시 보관 없음/만료(15분)». */
+function logConfirm(extra = {}) {
+  try { logger.info('제보 사진 축소본 확정', { ...extra }); } catch (_) { /* 무시 */ }
 }
 
 // ── 메모리 임시 보관 (확정 전) ──
@@ -196,7 +243,8 @@ function startPurgeTimer(db, intervalMs = 24 * 60 * 60 * 1000) {
 
 module.exports = {
   MAX_PHOTO_BYTES, RETAIN_DAYS, HARD_RETAIN_DAYS, STASH_TTL_MS,
-  enabled, sniffMime, acceptArchive, archivesFromRequest, stash, take, persist,
+  enabled, sniffMime, inspectArchive, acceptArchive, intakeArchives, archivesFromRequest, logIntake, logConfirm,
+  stash, take, persist,
   listForProduct, getPhoto, purgeExpired, startPurgeTimer,
   _stashState: () => ({ size: stashStore.size, bytes: stashBytes }),
 };

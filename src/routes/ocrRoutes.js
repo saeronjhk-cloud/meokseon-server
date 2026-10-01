@@ -818,7 +818,10 @@ router.post(
         ),
       });
       // ★ 세션72f — 확정(/confirm) 전까지 사진 축소본은 메모리에만 둔다.
-      contributionPhotos.stash(analysisToken, contributionPhotos.archivesFromRequest(req.files));
+      // ★ 세션73 U72-15 — 받은 것·버린 이유를 한 줄 남긴다(조용히 버리는 경로 제거).
+      const photoIntake = contributionPhotos.intakeArchives(req.files);
+      const stashed = contributionPhotos.stash(analysisToken, photoIntake.photos);
+      contributionPhotos.logIntake(photoIntake, { path: 'stash', stashed });
     }
 
     if (shouldSave) {
@@ -859,9 +862,13 @@ router.post(
         userId: mpUserId,
         deviceId: req.body.device_id || null,
       });
+      // ★ 세션73 U72-15 — 저장 경로도 같은 한 줄(저장 안 된 제보면 saved=false · persisted=0).
+      const photoIntake = contributionPhotos.intakeArchives(req.files);
+      let persisted = 0;
       if (saveResult && saveResult.saved) {
-        await persistContributionPhotos(saveResult.productId, contributionPhotos.archivesFromRequest(req.files));
+        persisted = await persistContributionPhotos(saveResult.productId, photoIntake.photos);
       }
+      contributionPhotos.logIntake(photoIntake, { path: 'save', saved: !!(saveResult && saveResult.saved), persisted });
     }
 
     // ─── 6. 응답 ───
@@ -1089,7 +1096,10 @@ router.post('/confirm', supabaseAuth, async (req, res) => {
   //   (400 뒤의 재시도가 410 이 되면 앱이 재촬영 → Vision 2배가 된다).
   // ★ 세션72f — 저장된 제보만 사진을 보관한다. 거부된 제보의 사진은 여기서 버린다(take 가 지운다).
   const photos = contributionPhotos.take(token);
-  if (saveResult && saveResult.saved) await persistContributionPhotos(saveResult.productId, photos);
+  let persistedPhotos = 0;
+  if (saveResult && saveResult.saved) persistedPhotos = await persistContributionPhotos(saveResult.productId, photos);
+  // ★ 세션73 U72-15 — taken=0 = 임시 보관 없음(앱 미전송·스위치 꺼짐·15분 만료). /multi-photo 줄과 맞춰 본다.
+  contributionPhotos.logConfirm({ taken: photos.length, saved: !!(saveResult && saveResult.saved), persisted: persistedPhotos });
 
   res.json({ success: true, data: { save_result: saveResult } });
 });

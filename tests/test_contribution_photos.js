@@ -5,6 +5,7 @@
  *   §3 보관 → 관리자 목록(메타만)·바이트(no-store)  §4 파기 규칙(90일·대기 보호·365일 무조건)
  *   §5 030 미적용 DB — 조용히 건너뜀  §6 알레르기 정정 → 승인 = 정정값 반영
  *   §7 원재료 정정 → 첨가물 형제 행에도 · 승인 = 정정 원문  §8 라우트 배선(정적)
+ *   §9 (세션73 U72-15) 사진을 버린 이유 로그 — DISABLED·미전송·TOO_LARGE·NOT_IMAGE · stash/save/confirm 한 줄
  */
 const assert = require('assert');
 const fs = require('fs');
@@ -254,11 +255,67 @@ async function main() {
     const src = fs.readFileSync(path.join(SRV, 'src', 'routes', 'ocrRoutes.js'), 'utf8');
     assert.ok(/name: 'label_archive'/.test(src) && /name: 'nutrition_archive'/.test(src));
     assert.ok(/contributionPhotos\.stash\(analysisToken/.test(src));
-    assert.ok(/const photos = contributionPhotos\.take\(token\);\s*\n\s*if \(saveResult && saveResult\.saved\) await persistContributionPhotos\(saveResult\.productId, photos\)/.test(src));
+    assert.ok(/const photos = contributionPhotos\.take\(token\);[\s\S]{0,120}?if \(saveResult && saveResult\.saved\) persistedPhotos = await persistContributionPhotos\(saveResult\.productId, photos\)/.test(src));
   });
   await t('§8-2 server.js 가 파기 타이머를 켠다', () => {
     assert.ok(/startPurgeTimer\(/.test(fs.readFileSync(path.join(SRV, 'src', 'server.js'), 'utf8')));
   });
+
+  section('§9  U72-15 — 사진을 버린 이유가 로그에 남는다');
+  const L = require('../src/config/logger');
+  const cap = []; const origInfo = L.info;
+  L.info = (msg, meta) => cap.push({ msg, meta });
+  const BIG = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(P.MAX_PHOTO_BYTES + 1, 1)]);
+  await t('§9-1 스위치 꺼짐 — 받은 2장 모두 DISABLED · photos=[]', () => {
+    const i = P.intakeArchives({ label_archive: [f(JPEG)], nutrition_archive: [f(PNG, 'image/png')] }, {});
+    assert.strictEqual(i.enabled, false);
+    assert.deepStrictEqual(i.received, ['label', 'nutrition']);
+    assert.deepStrictEqual(i.photos, []);
+    assert.deepStrictEqual(i.rejected, [{ kind: 'label', reason: 'DISABLED' }, { kind: 'nutrition', reason: 'DISABLED' }]);
+  });
+  await t('§9-2 앱 미전송 — received=[] (원본 label_image 만 와도 0)', () => {
+    const i = P.intakeArchives({ label_image: [f(JPEG)] }, { CONTRIBUTION_PHOTOS_ENABLED: 'true' });
+    assert.deepStrictEqual([i.received, i.accepted, i.rejected], [[], [], []]);
+  });
+  await t('§9-3 켜짐 — 정상 1 · 너무 큼 TOO_LARGE · 이미지 아님 NOT_IMAGE', () => {
+    const env = { CONTRIBUTION_PHOTOS_ENABLED: 'true' };
+    const a = P.intakeArchives({ label_archive: [f(JPEG)], nutrition_archive: [f(BIG)] }, env);
+    assert.deepStrictEqual(a.accepted, ['label']); assert.strictEqual(a.photos.length, 1);
+    assert.deepStrictEqual(a.rejected, [{ kind: 'nutrition', reason: 'TOO_LARGE' }]);
+    const b = P.intakeArchives({ label_archive: [f(Buffer.alloc(300, 65))] }, env);
+    assert.deepStrictEqual(b.rejected, [{ kind: 'label', reason: 'NOT_IMAGE' }]);
+  });
+  await t('§9-4 archivesFromRequest 는 intake.photos 와 같다(하위 호환)', () => {
+    const files = { label_archive: [f(JPEG)], nutrition_archive: [f(PNG, 'image/png')] };
+    assert.strictEqual(P.archivesFromRequest(files, { CONTRIBUTION_PHOTOS_ENABLED: 'true' }).length, 2);
+    assert.deepStrictEqual(P.archivesFromRequest(files, {}), []);
+  });
+  await t('§9-5 logIntake — info 한 줄 · 판정 필드 전부 · 사진 바이트 없음 · null 에도 throw 없음', () => {
+    cap.length = 0;
+    const i = P.intakeArchives({ label_archive: [f(JPEG)] }, {});
+    P.logIntake(i, { path: 'stash', stashed: false });
+    P.logIntake(null);
+    assert.strictEqual(cap.length, 2);
+    const m = cap[0].meta;
+    assert.strictEqual(cap[0].msg, '제보 사진 축소본 수신');
+    assert.deepStrictEqual([m.enabled, m.archives_received, m.accepted, m.path, m.stashed], [false, 1, 0, 'stash', false]);
+    assert.deepStrictEqual(m.rejected, [{ kind: 'label', reason: 'DISABLED' }]);
+    assert.ok(!JSON.stringify(cap).includes('bytes'), '로그에 바이트가 섞였다');
+  });
+  await t('§9-6 logConfirm — taken·saved·persisted', () => {
+    cap.length = 0;
+    P.logConfirm({ taken: 0, saved: true, persisted: 0 });
+    assert.strictEqual(cap[0].msg, '제보 사진 축소본 확정');
+    assert.deepStrictEqual(cap[0].meta, { taken: 0, saved: true, persisted: 0 });
+  });
+  await t('§9-7 라우트 배선 — stash·save 두 경로 모두 logIntake · /confirm 은 logConfirm', () => {
+    const src = fs.readFileSync(path.join(SRV, 'src', 'routes', 'ocrRoutes.js'), 'utf8');
+    assert.ok(/logIntake\(photoIntake, \{ path: 'stash', stashed \}\)/.test(src), 'stash 경로');
+    assert.ok(/logIntake\(photoIntake, \{ path: 'save',/.test(src), 'save 경로');
+    assert.ok(/contributionPhotos\.logConfirm\(\{ taken: photos\.length/.test(src), 'confirm');
+    assert.ok(!/archivesFromRequest\(req\.files\)/.test(src), '조용히 버리는 옛 호출이 남아 있다');
+  });
+  L.info = origInfo;
 
   server.close();
   console.log(`\n════ 통과 ${pass} · 실패 ${fail}`);

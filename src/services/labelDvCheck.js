@@ -252,4 +252,47 @@ function unitFillFromDv(nutrition, text) {
   return filled;
 }
 
-module.exports = { dvCheck, applyDvCheck, unitFillFromDv, extractTriples, consistent, hypotheses, DV };
+/**
+ * ★★ 세션73 U71-3 — 라벨에 «인쇄된» %(제조사 계산)와 우리 계산 %를 나란히 낸다 (제이 방향 「병기」 · 세션71).
+ *
+ * 왜: 라벨 %와 값이 서로 안 맞는 제품이 있다(호두정과 실물: 지방 43g · 83% — 43/54 = 79.6%).
+ *   값은 라벨 원문대로 두고(P1), «라벨이 적은 %»도 사용자에게 그대로 보여 준다. 판단은 사용자 몫.
+ *
+ * 입력:
+ *   dvCheck — 기여 원본 `contributions.data.parsed_nutrition._dv_check`({checked:{key:{pct,status,…}}})
+ *   crowd   — `nutrition_data_crowd` 행(저장값 = 원본 × convert_factor · basis_original = 라벨 기준)
+ * 규칙:
+ *   · weak(%열 덤프 · 0%) 는 «라벨 %»로 믿지 않는다 → 제외.
+ *   · 우리 값 = 저장값 ÷ convert_factor (= 라벨 기준으로 되돌린 값 · 관리자 정정이 있으면 정정값이 반영돼 있다).
+ *     factor 가 없거나 0 이하이면 우리 % 는 null(모르면 계산하지 않는다).
+ *   · our_pct 는 정수 반올림(라벨 인쇄 관행). agree = consistent(라벨 % 반올림 · 라벨 값이 정수면 ±0.5) — dvCheck 와 같은 판정.
+ *   · 실측(전사 61제품 · 328항목): 불일치 1건(086 「당류 0 g 2%」 = 라벨 자체 모순) + 호두정과 지방.
+ * @returns {{basis:string|null, items:Object<string,{label_pct:number, our_pct:number|null, agree:boolean|null}>}|null}
+ *   라벨 %가 하나도 없으면 null(「라벨에 %가 없다」와 「일치」를 섞지 않는다).
+ */
+function buildLabelDv(dvCheck, crowd) {
+  const checked = dvCheck && dvCheck.checked;
+  if (!checked || typeof checked !== 'object' || !crowd) return null;
+  const f = Number(crowd.convert_factor);
+  const factorOk = Number.isFinite(f) && f > 0;
+  const items = {};
+  for (const key of Object.keys(DV)) {
+    const c = checked[key];
+    if (!c || c.status === 'weak' || !Number.isFinite(Number(c.pct))) continue;
+    const labelPct = Number(c.pct);
+    const stored = crowd[key] === null || crowd[key] === undefined ? NaN : Number(crowd[key]);
+    let ourPct = null; let agree = null;
+    if (factorOk && Number.isFinite(stored)) {
+      const v = stored / f;
+      ourPct = Math.round((v / DV[key]) * 100);
+      // 라벨 값 표기가 정수(「4g 8%」)면 반올림 폭이 ±0.5 — dvCheck 와 같은 허용(092 실측: 4/55=7.3% 를 라벨이 8% 로 인쇄).
+      const dec = Number.isFinite(Number(c.value)) ? decimalsOf(String(c.value)) : 1;
+      agree = !!consistent(key, Math.round(v * 100) / 100, labelPct, dec);
+    }
+    items[key] = { label_pct: labelPct, our_pct: ourPct, agree };
+  }
+  if (!Object.keys(items).length) return null;
+  return { basis: crowd.basis_original || null, items };
+}
+
+module.exports = { dvCheck, applyDvCheck, unitFillFromDv, buildLabelDv, extractTriples, consistent, hypotheses, DV };

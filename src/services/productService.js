@@ -17,7 +17,8 @@ const { getRaccPolicy } = require('./raccPolicy');
 const { NotFoundError } = require('../middleware/errorHandler');
 const { getContext } = require('../utils/foodCategory');
 const logger = require('../config/logger');   // 세션45: 알레르기 조회 실패를 삼키지 않고 남긴다
-const { flattenAllergensV2 } = require('./ocrParser');   // 세션45: flat 규칙 단일화(중대4)
+const { flattenAllergensV2 } = require('./ocrParser');
+const { getLabelDv } = require('./labelDvRead');   // 세션73 U71-3 — 라벨 인쇄 % 병기   // 세션45: flat 규칙 단일화(중대4)
 
 // 4색 우선순위 — 가장 위험한 색이 dominant_color
 const COLOR_RANK = { red: 4, orange: 3, yellow: 2, green: 1, gray: 0 };
@@ -291,6 +292,12 @@ async function getProductWithTrafficLight(barcode) {
   //   trafficLight 가 null(영양정보 없음)이면 그 3키는 false 가 아니라 **null**(=판정 없음)이다.
   const context = getContext(product.food_type, trafficLight);
 
+  // ★ 세션73 U71-3 — 제보 영양이면 라벨에 인쇄된 %와 우리 계산 %를 함께 싣는다(없으면 null · 실패해도 null).
+  let labelDv = null;
+  if (product.calories !== null && product.nutrition_source === 'ocr_crowdsource') {
+    labelDv = await getLabelDv(require('../config/database'), product.product_id);
+  }
+
   return {
     product: {
       product_id: product.product_id,
@@ -326,6 +333,8 @@ async function getProductWithTrafficLight(barcode) {
       confidence: product.confidence || null,
       source_license: product.source_license || null,
       basis_confident: (product.basis_confident === undefined ? null : product.basis_confident),
+      // ★ 세션73 U71-3 — {basis, items:{key:{label_pct, our_pct, agree}}} | null. 키 추가만(기존 키 무변경).
+      label_dv: labelDv,
     } : null,
     traffic_light: trafficLight,
     mfras,

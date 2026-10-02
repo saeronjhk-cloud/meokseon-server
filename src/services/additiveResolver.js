@@ -88,6 +88,40 @@ function detectFromIngredientNames(ingredientNames) {
 }
 
 /**
+ * ★ 세션73 (U71-2 후속) — 기여에 저장된 `parsed_ingredients` «객체»로 검출한다(경로 ①과 같은 규칙).
+ *
+ * 왜: `crowdsourceService` 는 `analysis.ingredients`(= parseIngredients 결과 · raw·detail·sub_ingredients 포함)를
+ *   `contributions.data.parsed_ingredients` 에 «통째로» 저장한다. 그런데 승인 경로(contributionApply)는
+ *   거기서 이름만 뽑아 `detectFromIngredientNames` 로 검출해 detail·sub 스캔을 잃었다.
+ *   실례(호두정과 306264 · 10-02): 화면엔 아스파탐·향료 → 승인 뒤 product_additives 엔 향료만
+ *   (「초코파우더-S[… 아스파탐 감미료 …]」의 괄호 안이 버려짐).
+ *   ⇒ 객체가 있으면 객체 그대로 `identifyAdditives` 에 넣는다. 문자열만 있으면(구형 기여) 종전 경로.
+ * @returns {Array|null} 검출 결과 · 입력이 배열이 아니면 null(「원재료를 안 봤다」 — 호출부가 판정)
+ */
+function detectFromParsedIngredients(parsedIngredients) {
+  if (!Array.isArray(parsedIngredients)) return null;
+  const hasObjects = parsedIngredients.some((i) => i && typeof i === 'object'
+    && (typeof i.detail === 'string' || Array.isArray(i.sub_ingredients) || typeof i.raw === 'string'));
+  if (!hasObjects) return detectFromIngredientNames(parsedIngredients);
+  const list = parsedIngredients
+    .map((i) => {
+      if (typeof i === 'string') return { name: normalizeName(i), raw: normalizeName(i), sub_ingredients: [], detail: '' };
+      if (!i || typeof i !== 'object') return null;
+      const name = normalizeName(i.name);
+      if (!name) return null;
+      return {
+        name,
+        raw: normalizeName(i.raw) || name,
+        detail: typeof i.detail === 'string' ? i.detail : '',
+        sub_ingredients: Array.isArray(i.sub_ingredients) ? i.sub_ingredients.filter((x) => typeof x === 'string') : [],
+      };
+    })
+    .filter(Boolean);
+  if (list.length === 0) return [];
+  return identifyAdditives(list);
+}
+
+/**
  * 저장 후보(합집합)와 `detected_name`(= 라벨 원문) 대응표를 만든다.
  *
  * @returns {{names: string[], rawByName: Map<string,string>}}
@@ -175,4 +209,5 @@ module.exports = {
   buildAdditiveCandidates,
   countDetected,
   detectFromIngredientNames,
+  detectFromParsedIngredients,
 };

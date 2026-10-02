@@ -19,5 +19,25 @@ for (const c of cases) {
   fail++;
   console.log(`  ❌ ${c.id} [${c.kind}]\n     기대 ${JSON.stringify(c.expected)}\n     실제 ${JSON.stringify(got)}${c.why ? `\n     근거 ${c.why}` : ''}`);
 }
-console.log(`\n[ingredient section eval v1] 통과 ${pass}/${cases.length} · 기준선 ${by.baseline.join('/')} · 정답 변경 ${by.fix.join('/')}`);
+// ── ★ 세션73 — 승인 경로(contributionApply → additiveResolver.detectFromParsedIngredients)가
+//   제보 직후 화면(경로 ① identifyAdditives)과 «같은» 첨가물을 낸다(호두정과: 승인 뒤 아스파탐 누락 사고).
+{
+  const { detectFromParsedIngredients } = require('../src/services/additiveResolver');
+  const bad = [];
+  for (const c of cases) {
+    const ings = P.parseIngredients(P.extractIngredientSection(c.text));
+    // 저장 왕복(JSON)을 거친 모양으로 — contributions.data 는 jsonb 다
+    const stored = JSON.parse(JSON.stringify(ings));
+    const a = P.identifyAdditives(ings).map((x) => x.name);
+    const b = (detectFromParsedIngredients(stored) || []).map((x) => x.name);
+    if (JSON.stringify(a) !== JSON.stringify(b)) bad.push(`${c.id}: 화면 ${JSON.stringify(a)} · 승인 ${JSON.stringify(b)}`);
+  }
+  // 배선: contributionApply 의 첨가물 축이 이 함수를 «먼저» 쓴다(이름만 쓰는 경로로 되돌아가지 않게)
+  const ca = fs.readFileSync(path.join(__dirname, '..', 'src', 'services', 'contributionApply.js'), 'utf8');
+  if (!/const detected = explicit \|\| detectFromParsedIngredients\(data && data\.parsed_ingredients\)/.test(ca)) bad.push('contributionApply 배선 없음');
+  if (bad.length) { fail++; console.log(`  ❌ 승인 경로 ≠ 화면 경로 ${bad.length}건\n     ${bad.slice(0, 5).join('\n     ')}`); }
+  else { pass++; console.log(`  ✅ 승인 경로 = 화면 경로 (첨가물 · ${cases.length}건 전부)`); }
+}
+
+console.log(`\n[ingredient section eval v1] 통과 ${pass}/${cases.length + 1} · 기준선 ${by.baseline.join('/')} · 정답 변경 ${by.fix.join('/')}`);
 process.exit(fail ? 1 : 0);

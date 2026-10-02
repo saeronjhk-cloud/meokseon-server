@@ -67,7 +67,7 @@ const { normalizeAllergenNames, strongerLevel } = require('./allergenName');
 // ★ 세션72f — 관리자 원재료 정정 텍스트를 «같은 파서»로 쪼갠다(규칙 두 벌 금지).
 const { parseIngredients, ALLERGEN_NAMES } = require('./ocrParser');
 const {
-  upsertProductAdditives, detectFromIngredientNames, countDetected,
+  upsertProductAdditives, detectFromIngredientNames, detectFromParsedIngredients, countDetected,
 } = require('./additiveResolver');
 
 // ============================================================================
@@ -978,7 +978,9 @@ async function applyAdditivesAxis(client, ctxArgs) {
   // ⚠ `contributions.data` 에는 `analysis.additives` 가 «저장되지 않는다»
   //   (`additiveResolver.js` 헤더가 그 비대칭을 명시했다). 그래서 이름으로 다시 검출한다.
   //   ★ 검출 규칙은 새로 쓰지 않는다 — `additiveResolver` 의 함수를 그대로 부른다.
-  const detected = explicit || detectFromIngredientNames(names || []);
+  // ★ 세션73 — 저장된 원재료 «객체»(detail·sub 포함)로 검출한다. 이름만 쓰면 괄호 안 첨가물이 사라진다
+  //   (호두정과 아스파탐 · additiveResolver.detectFromParsedIngredients 주석). 구형(문자열) 기여는 종전대로.
+  const detected = explicit || detectFromParsedIngredients(data && data.parsed_ingredients) || detectFromIngredientNames(names || []);
   const detectedTotal = countDetected(detected);
 
   const before = await readAdditiveIds(client, productId);

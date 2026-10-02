@@ -36,7 +36,9 @@ function extractIngredientSection(text) {
   const endKeywords = '(?=영양(?:정보|성분)|유통기한|보관방법|내용량|포장재질|' +
     '품목보고|※|주의사항|직사광선|부정\\s*[·.]|반품|고객상담|' +
     '업소명|제조원|판매원|유통전문판매원|소분원|소비자상담|' +
-    '함유|알레르기|[♥⚠★◆■▲]|\\d{10,})';
+    // ★ 세션73 U71-2 — 「페닐알라닌 함유」(아스파탐 법정 병기)의 「함유」는 알레르기 선언이 아니다.
+    //   여기서 구간을 끊으면 그 뒤 원재료(물엿·소금·향료 …)가 통째로 사라진다(호두정과 실물).
+    '(?<!페닐알라닌\\s{0,2})함유|알레르기|[♥⚠★◆■▲]|\\d{10,})';
 
   // ★★★ 세션44 서브에이전트 검증 — 여기가 이 파일에서 가장 느린 ReDoS 였다(치명, 선재 결함).
   //   실측(수정 전): 9,900자 입력에 `extractIngredientSection` 단독 **369 ms**.
@@ -215,7 +217,10 @@ function _stripAllergenSuffix(text) {
 function parseIngredients(ingredientText) {
   if (!ingredientText) return [];
 
-  let text = ingredientText.replace(/\s+/g, ' ').trim();
+  // ★ 세션73 U71-2 — 닫는 괄호와 다음 글자 사이가 «같은 줄의 공백»이면 표지(\u0001)로 남긴다(아래 분해 루프가 쓴다).
+  //   접속어(또는·및·등·외)가 오면 문장이지 새 원재료가 아니다 — 표지를 남기지 않는다.
+  //   줄바꿈이 낀 간격은 표지를 남기지 않는다 — 문단이 바뀐 곳(알레르기 줄·안내문)을 원재료로 쪼개 내지 않기 위해(025·035·058 실측).
+  let text = ingredientText.replace(/([)\]）])[ \t]+(?=[가-힣A-Za-z])(?!(?:또는|및|등|외)(?:\s|$))/g, '$1\u0001').replace(/\s+/g, ' ').trim();
 
   // 함유 표시 제거
   text = text.replace(/[,，\s]{0,8}(함유|포함|사용)\s{0,4}$/, '');   // 세션44: 상한(ReDoS)
@@ -229,13 +234,25 @@ function parseIngredients(ingredientText) {
   let current = '';
   let depth = 0;
 
-  for (const char of text) {
+  // ★ 세션73 U71-2 — 닫는 괄호로 깊이 0 이 된 «직후» 공백 뒤에 바로 글자(한글·영문)가 오면 쉼표 누락으로 보고 나눈다.
+  //   실물(호두정과): 「초코파우더-S[…페닐알라닌함유)] 물엿, 트레살고운소금…」 → 종전엔 「물엿」이 앞 항목 꼬리로 사라졌다.
+  //   숫자(함량 「70%」)·괄호(「(…)(…)」)·쉼표가 오면 종전 그대로다. «같은 줄»일 때만(위 표지 \u0001).
+  const chars = [...text];
+  for (let ci = 0; ci < chars.length; ci++) {
+    const char = chars[ci];
     if ('(（['.includes(char)) {
       depth++;
       current += char;
     } else if (')）]'.includes(char)) {
       depth = Math.max(0, depth - 1);
       current += char;
+      if (depth === 0 && chars[ci + 1] === '\u0001') {
+        if (current.trim()) ingredients.push(current.trim());
+        current = '';
+        ci++;   // 표지 건너뜀
+      }
+    } else if (char === '\u0001') {
+      current += ' ';   // 깊이 0 이 아닌 곳의 표지는 그냥 공백
     } else if (char === ',' && depth === 0) {
       if (current.trim()) ingredients.push(current.trim());
       current = '';
@@ -414,6 +431,9 @@ const ADDITIVE_KEYWORDS = {
  * @param {Array} ingredients - parseIngredients() 결과
  * @returns {Array<Object>}
  */
+/** ★ 세션73 U71-2 — 이름이 «정확히» 같을 때만 첨가물로 보는 일반 명칭(부분 일치·상세 스캔 대상 아님). */
+const GENERIC_EXACT_ADDITIVES = Object.freeze({ '향료': '향료' });
+
 function identifyAdditives(ingredients) {
   const found = [];
   const seen = new Set();
@@ -423,6 +443,14 @@ function identifyAdditives(ingredients) {
     if (name.length < 2 || seen.has(name)) return;
 
     // 정확 매칭
+    // ★ 세션73 U71-2 — 「향료(○○향)」처럼 합성/천연 구분 없이 «향료» 만 적힌 항목도 첨가물(향료)이다.
+    //   «정확히 같은 이름»일 때만 — 부분 일치에 넣으면 「바닐린향료」 같은 더 구체적인 이름을 가로챈다(096 실측).
+    if (GENERIC_EXACT_ADDITIVES[name]) {
+      seen.add(name);
+      found.push({ name, category: GENERIC_EXACT_ADDITIVES[name], raw, match_type: `exact(${source})` });
+      return;
+    }
+
     if (ADDITIVE_KEYWORDS[name]) {
       seen.add(name);
       found.push({

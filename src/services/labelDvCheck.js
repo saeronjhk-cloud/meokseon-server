@@ -208,4 +208,48 @@ function applyDvCheck(nutrition, text) {
   return nutrition;
 }
 
-module.exports = { dvCheck, applyDvCheck, extractTriples, consistent, hypotheses, DV };
+/**
+ * ★★ 세션73 U71-1 — «단위만 빠진» 값을 %열로 확인해 채운다 (제이 결정 2026-10-02 「엄격 조건으로 채움」).
+ *
+ * 실례: 호두정과 영양표 컷 「포화지방4.30 29%」 — OCR 이 «g» 를 «0» 으로 읽었다. 파서 정규식은 단위(g)가
+ *   없으면 값을 버리고, %열 검증만 4.30 = 4.3g ↔ 29% (4.3/15=28.7%) 가 맞다고 확인했다 → 포화지방 누락.
+ *
+ * ⛔ 숫자를 «바꾸지» 않는다. 원문 토큰 숫자를 그대로 쓴다. 영양소마다 단위가 하나로 고정돼 있으므로
+ *   (나트륨·콜레스테롤 = mg · 나머지 = g) 단위만 보탠다. 449→4.4 같은 «가설»은 여전히 사람 몫(P1 유지).
+ * 채우는 조건(전부 만족):
+ *   ① 파서가 그 키를 못 읽었다(값 없음) — 읽은 값은 절대 덮지 않는다
+ *   ② 같은 키의 «첫» 삼중항(dvCheck 와 같은 규칙)이 weak 가 아니다(%열 덤프 아님)
+ *   ③ 표기 % > 0 (0% 는 검증력 없음)
+ *   ④ 원문 숫자가 %와 맞는다(consistent · 반올림 허용 dvCheck 와 동일)
+ *   ⑤ 원문에 단위가 적혀 있다면 그 영양소의 단위와 같다(「나트륨 60g」 같은 모순은 채우지 않음)
+ * 채운 키는 `nutrition._dv_unit_fill = [{key, token, pct}]` 로 남긴다(추적 · 검토 화면 근거).
+ * eval: IP/eval_dv_unit_fill_v1 (실물 전사 68 기준선 동결 + 운영 1 + 합성 9).
+ */
+const UNIT_OF = Object.freeze({
+  sodium: 'mg', cholesterol: 'mg',
+  total_carbs: 'g', total_sugars: 'g', total_fat: 'g', saturated_fat: 'g', protein: 'g',
+});
+function unitFillFromDv(nutrition, text) {
+  if (!nutrition || typeof nutrition !== 'object') return [];
+  const filled = [];
+  const seen = new Set();
+  for (const t of extractTriples(text)) {
+    if (seen.has(t.key)) continue;
+    seen.add(t.key);
+    const cur = nutrition[t.key];
+    if (typeof cur === 'number' && Number.isFinite(cur)) continue;          // ①
+    if (cur !== undefined && cur !== null) continue;
+    if (t.weak) continue;                                                   // ②
+    if (!(t.pct > 0)) continue;                                             // ③
+    if (t.unit && t.unit.toLowerCase() !== UNIT_OF[t.key]) continue;        // ⑤
+    const v = toNum(t.raw);
+    if (!Number.isFinite(v)) continue;
+    if (!consistent(t.key, v, t.pct, decimalsOf(t.raw))) continue;          // ④
+    nutrition[t.key] = v;
+    filled.push({ key: t.key, token: t.raw, pct: t.pct });
+  }
+  if (filled.length) nutrition._dv_unit_fill = filled;
+  return filled;
+}
+
+module.exports = { dvCheck, applyDvCheck, unitFillFromDv, extractTriples, consistent, hypotheses, DV };

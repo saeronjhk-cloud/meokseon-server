@@ -2477,7 +2477,7 @@ const META_END_LOOKAHEAD = `(?=(?:${META_END_KEYWORDS.join('|')})|\\n|$)`;
  * @param {string} text - OCR 텍스트
  * @param {string[]} labels - 매칭할 라벨 후보들 (예: ['제품명','상품명'])
  */
-function extractByLabels(text, labels) {
+function extractByLabels(text, labels, opts = {}) {
   for (const label of labels) {
     // 라벨 + (콜론/슬래시/공백) + 값 + (다음 라벨 또는 줄바꿈)
     // ★★★ 세션44 — 여기가 ReDoS 였다(치명, 선재 결함). 실측: 9,900자 입력에 **339 ms**,
@@ -2490,14 +2490,44 @@ function extractByLabels(text, labels) {
     //     뒤쪽 `\s*` 는 제거한다 — 아래에서 어차피 꼬리 공백을 잘라낸다(중복이자 모호성).
     //     `\s*[:\/\-]?\s*` 도 단일 문자클래스로 합친다.
     const labelEsc = label.replace(/\s/g, '\\s{0,4}');
-    const re = new RegExp(`${labelEsc}[:\\/\\-\\s]{0,8}(.{1,200}?)${META_END_LOOKAHEAD}`, 's');
-    const m = text.match(re);
-    if (m && m[1] && m[1].trim().length > 0) {
-      // 트리밍 + 끝의 쉼표·공백·콜론 정리
-      return m[1].replace(/[\s,:.\/\-]+$/, '').trim();
+    const re = new RegExp(`${labelEsc}[:\\/\\-\\s]{0,8}(.{1,200}?)${META_END_LOOKAHEAD}`, 'gs');
+    // ★ 세션73 U72-6 — «첫 출현»만 보지 않는다. `opts.reject` 가 그 출현을 버리면 «다음 출현»을 본다.
+    //   버린 출현의 값이 다음 줄의 진짜 라벨을 삼켰을 수 있으므로 라벨 시작 «바로 다음»부터 다시 찾는다.
+    //   (값 길이 상한 200 은 그대로 — 세션44 ReDoS 방어 유지. 출현 수만큼 선형.)
+    let m;
+    while ((m = re.exec(text)) !== null) {
+      if (m[1] && m[1].trim().length > 0) {
+        // 트리밍 + 끝의 쉼표·공백·콜론 정리
+        const val = m[1].replace(/[\s,:.\/\-]+$/, '').trim();
+        if (!opts.reject || !opts.reject(text, m.index, val)) return val;
+      }
+      re.lastIndex = m.index + 1;
     }
   }
   return null;
+}
+
+/**
+ * ★ 세션73 U72-6 — 회사 칸(판매원·제조원)에 «반품·교환 문장»이 들어가는 결함 방어.
+ *   실측(전사 28건): 「반품 및 교환 판매원 및 구입처」 → brand 「및 구입처」(운영 306268 「및 구입처 내」 같은 형태) ·
+ *   「구입처 또는 판매원」 → 「■」 · 「구입처 및 판매원\t소비자상담실…」 → 「소비자상담실 1577-…」 ·
+ *   「제조원 및 판매원 X」 → manufacturer 「및」.
+ *   이 값은 products.brand/manufacturer 에 COALESCE 로 «영구» 저장된다(한번 들어가면 다음 제보가 못 고친다).
+ *   버리는 조건(셋 중 하나):
+ *     ① 그 출현이 있는 «줄»에 반품·교환·구입처(OCR 「그입처」 포함)가 있다 — 회사 표기가 아니라 안내 문장이다.
+ *     ② 값이 접속어(및·또는·에서)로 시작한다.
+ *     ③ 값에 한글·영문·숫자가 하나도 없다(기호 잔해).
+ *   eval: IP/eval_product_meta_v1 (전사 28 + 합성 3 · 정답 변경 7 · 나머지 기준선 동결).
+ */
+const COMPANY_RETURN_LINE_RE = /반품|교환|구입처|그입처/;
+function rejectCompanyValue(text, index, val) {
+  const ls = text.lastIndexOf('\n', index) + 1;
+  const le0 = text.indexOf('\n', index);
+  const line = text.slice(ls, le0 < 0 ? text.length : le0);
+  if (COMPANY_RETURN_LINE_RE.test(line)) return true;
+  if (/^(및|또는|에서)(\s|$)/.test(val)) return true;
+  if (!/[가-힣A-Za-z0-9]/.test(val)) return true;
+  return false;
 }
 
 /**
@@ -2547,15 +2577,16 @@ function extractProductMeta(text) {
 
   // 유통전문판매원 (브랜드 소유자) — 사용자에게 의미 있는 식별자
   // \"유통전문판매원\" → \"판매원\" 순서로 시도 (긴 라벨 먼저)
+  // ★ 세션73 U72-6 — 「제조원 및 판매원 X」 복합 라벨을 먼저 본다(제조원 칸이 「및」이 되던 결함) · 반품 문장은 버린다.
   const brand = extractByLabels(text, [
-    '유통전문판매원', '유통판매원', '판매원',
-  ]);
+    '제조원 및 판매원', '제조 및 판매원', '유통전문판매원', '유통판매원', '판매원',
+  ], { reject: rejectCompanyValue });
   if (brand) meta.brand = brand;
 
   // 제조원 (실제 제조 공장)
   const manufacturer = extractByLabels(text, [
-    '제조원', '제조사', '제조/소분원', '제조 / 소분원', '소분원', '수입원',
-  ]);
+    '제조원 및 판매원', '제조 및 판매원', '제조원', '제조사', '제조/소분원', '제조 / 소분원', '소분원', '수입원',
+  ], { reject: rejectCompanyValue });
   if (manufacturer) meta.manufacturer = manufacturer;
 
   // 내용량 (g, mL, kg, L, 개)

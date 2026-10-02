@@ -49,6 +49,23 @@ router.get(
   }
 );
 
+// ★ 세션73 U71-5 — GET /api/products/name-suggest?name=… — 제품명 «한 글자 오독» 제안(AI 아님 · 제품 DB 사전 대조)
+//   응답 { name, suggested|null, tokens:[{text, known, suggestion}] } · 사전을 못 만들면 suggested null(종전 화면).
+router.get(
+  '/name-suggest',
+  [checkQuery('name').trim().isLength({ min: 1, max: 200 }).withMessage('name 은 1~200자입니다.')],
+  async (req, res) => {
+    validate(req);
+    const { suggestName } = require('../services/nameSuggest');
+    const { getDictionary } = require('../services/nameSuggestDict');
+    const dict = await getDictionary(require('../config/database'));
+    const name = req.query.name;
+    if (!dict) return res.json({ success: true, data: { name, suggested: null, tokens: [], dictionary: false } });
+    const r = suggestName(name, dict);
+    res.json({ success: true, data: { name, suggested: r.suggested, tokens: r.tokens, dictionary: true } });
+  }
+);
+
 // GET /api/products/:barcode — 서비스 계층 위임
 router.get(
   '/:barcode',

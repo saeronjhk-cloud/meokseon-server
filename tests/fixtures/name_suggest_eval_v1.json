@@ -1,0 +1,120 @@
+{
+ "version": "name_suggest_eval_v1",
+ "created": "2026-10-02",
+ "source": "운영 contributions 22건 중 OCR 제품명이 있는 13건(제이 콘솔 덤프 10-02) — cid 4~8·13·14·19·20 은 OCR 이름 없음",
+ "dictionary_note": "테스트 사전 = 로컬 공공 제품명(scripts/output c003+haccp 약 4.5만) + prod_known(운영 DB 에 있는 이름 — 다른 제품/이 제품의 확정명)",
+ "prod_known": [
+  "머거본 초코맛 호두정과"
+ ],
+ "synthetic_thresholds": {
+  "correct_min_ratio": 0.95,
+  "wrong_max": 0,
+  "holdout_false_suggest_max_ratio": 0.01
+ },
+ "cases": [
+  {
+   "cid": 1,
+   "barcode": "8809390650817",
+   "confirmed": "내몸에당당한당",
+   "ocr": "내몸에 당당한 당",
+   "expected_suggested": null,
+   "kind": "control"
+  },
+  {
+   "cid": 2,
+   "barcode": "8801007917320",
+   "confirmed": "비비고 순살 삼치구이",
+   "ocr": "비비고 군살 삼치구이",
+   "expected_suggested": "비비고 순살 삼치구이",
+   "kind": "misread"
+  },
+  {
+   "cid": 3,
+   "barcode": "8801005014342",
+   "confirmed": "질러 클래식 육포",
+   "ocr": "질리 클래식 육포",
+   "expected_suggested": "질러 클래식 육포",
+   "kind": "misread"
+  },
+  {
+   "cid": 9,
+   "barcode": "8801133013460",
+   "confirmed": "머거본 초코맛 호두정과",
+   "ocr": "초코맛 호두정고",
+   "expected_suggested": "초코맛 호두정과",
+   "kind": "misread"
+  },
+  {
+   "cid": 10,
+   "barcode": "8801133013460",
+   "confirmed": "머거본 초코맛 호두정과",
+   "ocr": "초코맛 호두정고",
+   "expected_suggested": "초코맛 호두정과",
+   "kind": "misread"
+  },
+  {
+   "cid": 11,
+   "barcode": "8002720001321",
+   "confirmed": "퍼프페스튜리 바이트 치즈향",
+   "ocr": "퍼프페스튜리 바이트 치즈향",
+   "expected_suggested": null,
+   "kind": "control"
+  },
+  {
+   "cid": 12,
+   "barcode": "15882394",
+   "confirmed": "콘킥 마늘킥 갈릭맛",
+   "ocr": "콘킥 마늘킥 갈릭맛",
+   "expected_suggested": null,
+   "kind": "control"
+  },
+  {
+   "cid": 15,
+   "barcode": "8809843330884",
+   "confirmed": "하루단백쫀쿠맛",
+   "ocr": "하루단백쫀쿠맛",
+   "expected_suggested": null,
+   "kind": "control"
+  },
+  {
+   "cid": 16,
+   "barcode": "8800252770087",
+   "confirmed": "콘킥 마늘킥 갈릭맛",
+   "ocr": "콘킥 마늘킥 갈릭맛",
+   "expected_suggested": null,
+   "kind": "control"
+  },
+  {
+   "cid": 17,
+   "barcode": "4002212001321",
+   "confirmed": "퍼프페스튜리 바이트 치즈향",
+   "ocr": "퍼프페스튜리 바이트 치즈향",
+   "expected_suggested": null,
+   "kind": "control"
+  },
+  {
+   "cid": 18,
+   "barcode": "8800252770087",
+   "confirmed": "콘킥 마늘킥 갈릭맛",
+   "ocr": "콘킥 마늘킥 갈릭맛",
+   "expected_suggested": null,
+   "kind": "control"
+  },
+  {
+   "cid": 21,
+   "barcode": "8809431510179",
+   "confirmed": "연하도움식 야채죽",
+   "ocr": "연하도움식 야채죽",
+   "expected_suggested": null,
+   "kind": "control"
+  },
+  {
+   "cid": 22,
+   "barcode": "8809431510193",
+   "confirmed": "연하도움식 삼계죽",
+   "ocr": "연하도움식 삼계죽",
+   "expected_suggested": null,
+   "kind": "control"
+  }
+ ]
+}

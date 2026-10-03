@@ -77,6 +77,37 @@ router.get(
   }
 );
 
+// ★ 2026-10-03 — GET /api/products/:barcode/portion?kind=pack|serving|gram&qty=
+//   영양공식 식사 기록용 «먹은 양 × 영양». 계산은 portionService 한 곳(웹·Edge 산식 금지).
+//   kind 없으면 portion=null 로 단위별 가능 여부(options)만 준다. 무인증 GET(제품 조회와 같은 등급).
+router.get(
+  '/:barcode/portion',
+  [
+    param('barcode').trim().matches(/^\d{8,14}$/).withMessage('바코드는 8~14자리 숫자입니다.'),
+    checkQuery('kind').optional().isIn(['pack', 'serving', 'gram']).withMessage('kind 는 pack|serving|gram 입니다.'),
+    checkQuery('qty').optional().isFloat({ gt: 0, max: 5000 }).toFloat(),
+  ],
+  async (req, res) => {
+    validate(req);
+    const { computePortion, portionOptions } = require('../services/portionService');
+    const { NotFoundError } = require('../middleware/errorHandler');
+    const row = await productModel.findForPortion(req.params.barcode);
+    if (!row) throw new NotFoundError('제품');
+    const product = {
+      product_id: row.product_id, barcode: row.barcode, product_name: row.product_name, brand: row.brand,
+      serving_size: row.serving_size, total_content: row.total_content, content_unit: row.content_unit,
+      servings_per_container: row.servings_per_container,
+    };
+    const { deriveBasis } = require('../services/nutritionTrafficLight');
+    const hasNut = row.calories !== null && row.calories !== undefined;
+    const basis = hasNut ? deriveBasis(row.nutrition_serving_size) : null;
+    const options = portionOptions(product, row);
+    const { kind, qty } = req.query;
+    const portion = kind ? computePortion(product, row, { kind, qty: qty == null ? 1 : qty }) : null;
+    res.json({ success: true, data: { product, basis, options, portion } });
+  }
+);
+
 // GET /api/products/:barcode/additives — 서비스 계층 위임
 router.get(
   '/:barcode/additives',

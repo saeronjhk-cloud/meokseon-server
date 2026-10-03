@@ -140,6 +140,30 @@ async function findByBarcode(barcode) {
 }
 
 /**
+ * ★ 2026-10-03 영양공식 웹앱트랙 — 가공식품 «먹은 양» 계산용 조회(`/api/products/:barcode/portion`).
+ *   왜 `findByBarcode` 를 넓히지 않나: 그건 가장 뜨거운 경로다(getAdditiveDetectedCount 머리말과 같은 이유).
+ *   `servings_per_container` 는 000_baseline.sql:147 부터 있는 컬럼이고 adminRoutes·crowdsource 가 이미 읽는다.
+ * @param {string} barcode
+ * @returns {Promise<Object|null>}
+ */
+async function findForPortion(barcode) {
+  const result = await db.query(
+    `SELECT
+       p.product_id, p.barcode, p.product_name, p.brand,
+       p.serving_size, p.total_content, p.content_unit, p.servings_per_container,
+       r.calories, r.total_fat, r.saturated_fat, r.trans_fat, r.cholesterol, r.sodium,
+       r.total_carbs, r.total_sugars, r.dietary_fiber, r.protein,
+       r.serving_size AS nutrition_serving_size
+     FROM products p
+     LEFT JOIN product_nutrition_resolved r ON r.product_id = p.product_id
+     WHERE p.barcode = $1
+     LIMIT 1`,
+    [barcode]
+  );
+  return numify(result.rows[0] || null, [...NUM_PRODUCTS, ...NUM_NUTRITION]);
+}
+
+/**
  * 제품 통합 검색 (search_text 정규화 컬럼 기반)
  *
  * Migration 009 의 products.search_text 컬럼을 사용하여
@@ -644,6 +668,7 @@ async function getRecent(limit = 20) {
 
 module.exports = {
   findByBarcode,
+  findForPortion,
   searchByName,
   getNutrition,
   getAdditives,

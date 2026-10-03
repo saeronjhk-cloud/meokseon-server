@@ -335,6 +335,8 @@ async function getProductWithTrafficLight(barcode) {
       basis_confident: (product.basis_confident === undefined ? null : product.basis_confident),
       // ★ 세션73 U71-3 — {basis, items:{key:{label_pct, our_pct, agree}}} | null. 키 추가만(기존 키 무변경).
       label_dv: labelDv,
+      // ★ 2026-10-03 영양공식 — 저장 영양의 기준(per_100g|per_100ml|per_100_unknown|per_serving). 키 추가만.
+      basis: deriveBasis(product.nutrition_serving_size),
     } : null,
     traffic_light: trafficLight,
     mfras,

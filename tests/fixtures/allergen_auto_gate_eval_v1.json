@@ -554,5 +554,6 @@
   "critical": 0,
   "minor": 0,
   "mut1_glued_max_missed": 5
- }
+ },
+ "_baseline_session74": {"mut1_glued_max_missed": 0, "_why": "세션74 U72-9 residue v3 — 분할 직전 불용어(및·제·과·모두) 검사로 5/975 → 0/975"}
 }

@@ -162,7 +162,7 @@ async function main() {
     assert.strictEqual(a.status, 'auto_applied');
     assert.ok(a.applied_at);
     assert.strictEqual(a.reviewed_by, null);
-    assert.strictEqual(a.evidence.auto_gate.gate_version, 'allergen_auto_gate_v2');   // 세션72 U72-8
+    assert.strictEqual(a.evidence.auto_gate.gate_version, 'allergen_auto_gate_v3');   // 세션72 U72-8 · 세션74 U72-9 v3
     assert.strictEqual(a.evidence.applied_by, 'auto:allergen_auto_gate_v1');
     assert.ok(Array.isArray(a.evidence.before.rows) && a.evidence.after.detected_via === 'contribution_auto');
   });

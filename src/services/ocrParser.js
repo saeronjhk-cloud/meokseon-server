@@ -2289,7 +2289,9 @@ function _isNameTok(t) {
 //   ③ 경계 검사(새로 닫은 구멍): 원재료 세그먼트와 선언 세그먼트가 «같은 줄»에서 쪼개지면(U59-1 분할) 분할 직전 항목의
 //      마지막 낱말을 v1 은 아예 보지 않았다 → `원재료명: …, 토코페롤 일, 대두 함유` 가 밀 누락 채로 자동 반영될 수 있었다
 //      (뮤턴트 975건 중 974건 통과). 그 낱말이 이름과 가까운 짧은 토큰이면 오독 흔적으로 본다.
-//   ⚠ 남은 한계(v1 과 동일 · U72-9): 불용어와 겹치는 오독(`밀`→`및`, `게`→`제`/`과`, `호두`→`모두` 등)은 못 잡는다.
+//   ★ 세션74 U72-9 — residue v3 (eval: IP/eval_allergen_residue_v1 · 결정: IP/결정_U72-9_잔여토큰v3_2026-10-03.md)
+//      (a) 글머리표 떼기 (b) 이름 없는 선언(`일 함유`) (c) 3~6음절 이름 오독(v2 는 2음절 이하만 봤다 — 돼지고기·쇠고기·오징어 등 오독 «전부» 통과)
+//      (d) 불용어가 쉼표 항목 전체·쉼표 앞 낱말(`및, 대두`) (e) 원재료 줄의 `○○ 함유` 오독.
 const _RESIDUE_MARK = /알레르기|알러지|알레르겐|유발\s*물질/;
 const _RESIDUE_NEAR_MAX = 2;
 const _J_CHO = 'ㄱㄲㄴㄷㄸㄹㅁㅂㅃㅅㅆㅇㅈㅉㅊㅋㅌㅍㅎ';
@@ -2323,6 +2325,23 @@ function _nearNameDist(tok) {
   return best;
 }
 
+// ★ 세션74 U72-9 (a) — 목록 첫 낱말에 붙은 글머리표(`・무유` · `•제밀`)를 떼고 본다. v2 는 한글이 아니라고 건너뛰었다.
+function _residueClean(w) { return String(w || '').replace(/^[^가-힣A-Za-z0-9]+|[^가-힣A-Za-z0-9]+$/g, ''); }
+// ★ 세션74 U72-9 (c) — 3~6음절 낱말(조사 떼고)이 19종 이름과 자모 2 이내면 오독 흔적. `_RESIDUE_LONG_NEAR` 는 eval 로 정함.
+const _RESIDUE_LONG_NEAR = 2;
+// 19종 이름과 자모 1~2 거리로 «겹치는» 불용어 — 밀↔및 · 게↔제/과 · 호두↔모두 · (와: 과의 짝)
+const _RESIDUE_STOP_COLLIDE = new Set(['및', '제', '과', '와', '모두']);
+function _longNear(t) {
+  if (!/^[가-힣]{3,6}$/.test(t)) return false;
+  if (_isNameTok(t)) return false;
+  // 2음절 이상 이름을 «통째로» 품은 낱말(`대두유` · `기조개`)은 파서가 그 이름을 이미 읽는다 — 잃는 것이 없으니 흔적이 아니다.
+  for (const n of _ALL_NAME_TOKENS) if (n.length >= 2 && t.includes(n)) return false;
+  // 조사를 뗀 꼴과 안 뗀 꼴 둘 다 본다 — `쇠고가`·`오징이` 는 끝 글자가 조사(가·이)처럼 보이는 오독이다.
+  if (_nearNameDist(t) <= _RESIDUE_LONG_NEAR) return true;
+  const s = t.replace(_RESIDUE_PART, '');
+  return s.length >= 3 && s !== t && _nearNameDist(s) <= _RESIDUE_LONG_NEAR;
+}
+
 function declarationResidue(text) {
   const out = [];
   const segs = _splitSegments(text || '');
@@ -2336,32 +2355,76 @@ function declarationResidue(text) {
     const items = segs[i].split(/[,，、·ㆍ\/()（）\[\]:：;]+/).map((x) => x.trim()).filter(Boolean);
     for (const it of items.slice(-2)) {
       const w = it.split(/\s+/).pop();
+      // ★ 세션74 U72-9 (d') — 분할 직전 낱말이 이름과 겹치는 불용어(`토코페롤 및, 대두 함유` = 밀→및)면 흔적.
+      if (_RESIDUE_STOP_COLLIDE.has(w) && out.length < 20) { out.push({ tok: w, kind: 'boundary:stop', seg: segs[i].slice(-70) }); continue; }
       if (!/^[가-힣]{1,2}$/.test(w) || _isNameTok(w) || _RESIDUE_STOP.has(w)) continue;
       if (_nearNameDist(w) <= _RESIDUE_NEAR_MAX && out.length < 20) out.push({ tok: w, kind: 'boundary', seg: segs[i].slice(-70) });
     }
   }
   for (const seg of segs) {
     const kind = _classifySegment(seg);
+    if (kind === 'ingredients') {
+      // ★ 세션74 U72-9 (e) — 원재료 줄 안의 `○○ 함유` 에서 ○○ 가 오독이면 U59-1 분할이 일어나지 않아 선언째 사라진다
+      //   (실물 055 우유: `…(세균수 기준) 우유 함유` → `무유 함유` 면 원재료로 남음). 이름과 자모 1 거리인 낱말만 본다.
+      const re = /(?:^|[\s,，、·ㆍ()（）:：])([가-힣]{1,6})\s*함유/g; let m;
+      while ((m = re.exec(seg)) && out.length < 20) {
+        const w = m[1];
+        if (_isNameTok(w) || _RESIDUE_STOP.has(w)) continue;
+        if (_nearNameDist(w) <= 1) out.push({ tok: w, kind: 'ingredients:decl', seg: seg.slice(0, 70) });
+      }
+      continue;
+    }
     if (kind !== 'contains' && kind !== 'mayContain') continue;
     const marked = _RESIDUE_MARK.test(seg);   // ① / ②
     const segM = _rejoinSplitNames(seg);
     const list = segM.split(/함유|사용한|사용하|혼입|같은\s*(?:제조)?시설|제조시설|포함된/)[0];
-    if (_matchSet(list, ALLERGEN_NAMES).size === 0) continue;   // 이름 없는 세그먼트(예: 뼈 혼입 고지)는 목록이 아니다
+    if (_matchSet(list, ALLERGEN_NAMES).size === 0) {
+      // ★ 세션74 U72-9 (b) — 이름이 «하나도» 안 읽힌 선언(`일 함유`·`래두 함유`)은 v2 가 목록이 아니라고 건너뛰었다.
+      //   선언 안 유일한 이름이 오독되면 바로 여기로 온다. 목록 부분이 낱말 1~3개뿐이고 그중 이름과 자모 1 거리인 것이 있으면 흔적.
+      //   (뼈 혼입 고지 같은 산문은 낱말이 많거나 이름과 멀어서 걸리지 않는다 — eval 음성 98건으로 확인)
+      const ws = list.split(/[\s,，、·ㆍ\/()（）\[\]:：;]+/).map(_residueClean).filter(Boolean);
+      if (ws.length === 1 && _RESIDUE_STOP_COLLIDE.has(ws[0]) && out.length < 20) out.push({ tok: ws[0], kind: kind + ':noname-stop', seg: seg.slice(0, 70) });   // `및 함유`
+      if (ws.length >= 1 && ws.length <= 3) {
+        for (const w of ws) {
+          if (!/^[가-힣]{1,6}$/.test(w) || _isNameTok(w) || _RESIDUE_STOP.has(w)) continue;
+          if (_nearNameDist(w) <= 1 && out.length < 20) out.push({ tok: w, kind: kind + ':noname', seg: seg.slice(0, 70) });
+        }
+      }
+      continue;   // 이름 없는 세그먼트(예: 뼈 혼입 고지)는 목록이 아니다
+    }
+    // ★ 세션74 U72-9 (d) — 불용어가 «쉼표 사이 항목 전체»면 이름 자리다(`밀`→`및` · `게`→`제`/`과` · `호두`→`모두`).
+    //   정상 문장의 불용어는 항목 «안»에 섞인다(`우유 및 대두`). 괄호 뒤 조사(`조개류(굴, 홍합 포함)를`)와
+    //   섞이지 않게 «쉼표»로만 자른다. 첫 항목은 `:` 뒤가 있을 때만 본다(`알레르기 유발물질: 및, 대두`).
+    //   첫 항목·중간 항목은 «쉼표 바로 앞 낱말»이 이름과 겹치는 불용어(`_RESIDUE_STOP_COLLIDE`)면 흔적(`이 제품은 및, 대두를`).
+    const citems = list.split(/[,，、]/);
+    citems.forEach((ci, cidx) => {
+      const hasColon = /[:：]/.test(ci);
+      const whole = _residueClean(ci.split(/[:：]/).pop().trim());
+      const lastW = _residueClean(ci.trim().split(/\s+/).pop());
+      let hit = null;
+      if ((cidx > 0 || hasColon) && _RESIDUE_STOP.has(whole)) hit = whole;
+      else if (cidx < citems.length - 1 && _RESIDUE_STOP_COLLIDE.has(lastW)) hit = lastW;
+      if (hit && out.length < 20) out.push({ tok: hit, kind: kind + ':stop', seg: seg.slice(0, 70) });
+    });
     const items = list.split(/[,，、·ㆍ\/()（）\[\]:：;]+/);
     items.forEach((it, idx) => {
-      let words = it.trim().split(/\s+/).filter(Boolean);
+      let words = it.trim().split(/\s+/).map(_residueClean).filter(Boolean);
       if (idx === 0) {   // 첫 항목은 산문 꼬리(「이 제품은 알레르기 유발물질」)가 붙는다 — 뒤에서부터 목록 부분만
         const keep = [];
         for (let w = words.length - 1; w >= 0; w--) {
           const t = words[w];
-          if (_isNameTok(t) || (t.length <= 2 && !_RESIDUE_STOP.has(t))) { keep.unshift(t); continue; }
+          if (_isNameTok(t) || (t.length <= 2 && !_RESIDUE_STOP.has(t)) || _longNear(t)) { keep.unshift(t); continue; }
           break;
         }
         words = keep;
       }
       for (const tok of words) {
         if (!/^[가-힣]+$/.test(tok) || _isNameTok(tok) || _RESIDUE_STOP.has(tok)) continue;
-        if (tok.length > 2 || out.length >= 20) continue;
+        if (out.length >= 20) continue;
+        if (tok.length > 2) {   // ★ 세션74 U72-9 (c) — 3음절 이상 이름의 오독(`돼지고기`→`돼지고가` · `쇠고기`→`쇠과기`)
+          if (_longNear(tok)) out.push({ tok, kind: kind + ':long', seg: seg.slice(0, 70) });
+          continue;
+        }
         if (!marked && _nearNameDist(tok) > _RESIDUE_NEAR_MAX) continue;   // ② 원재료 꼬리로 본다
         out.push({ tok, kind, seg: seg.slice(0, 70) });
       }

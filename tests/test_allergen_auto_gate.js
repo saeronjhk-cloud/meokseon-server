@@ -90,7 +90,7 @@ ok(evaluateAllergenAutoGate({ text: '원재료명: 설탕, 바닐\n라향, 스�
     tot++;
     if (evaluateAllergenAutoGate({ text: `원재료명: 설탕, 정제소금, 토코페롤 ${t}, 대두 함유` }).pass) missed++;
   }
-  ok(missed <= fx._baseline_session72.mut1_glued_max_missed, `U72-8 뮤턴트(같은 줄) 놓침 ${missed}/${tot} ≤ ${fx._baseline_session72.mut1_glued_max_missed} (v1: 974/975)`);
+  ok(missed <= fx._baseline_session74.mut1_glued_max_missed, `U72-8 뮤턴트(같은 줄) 놓침 ${missed}/${tot} ≤ ${fx._baseline_session74.mut1_glued_max_missed} (v1: 974/975 · v2: 5/975 · v3 세션74 U72-9: 0)`);
 }
 
 console.log(fails ? `\n❌ ${fails} 실패` : '\n✅ allergen auto gate 전부 통과');

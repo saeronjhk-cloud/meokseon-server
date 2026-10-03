@@ -22,7 +22,9 @@ const { analyzeText, declarationResidue } = require('./ocrParser');
 
 // ★ 세션72 U72-8 — v2: residue v2(표시어 없는 선언은 이름과 가까운 토큰만 · 같은 줄 경계 검사). 판정 규칙이 바뀌면 올린다(감사 추적).
 //   ⚠ `contributionApply.AUTO_APPLIED_BY`('auto:allergen_auto_gate_v1')는 «행위자 이름»이라 그대로 둔다.
-const GATE_VERSION = 'allergen_auto_gate_v2';
+// ★ 세션74 U72-9 — v3: residue v3(불용어 겹침 오독 · 3음절 이상 이름 오독 · 글머리표 · 이름 없는 선언 · 원재료 줄 `○○ 함유`).
+//   eval: IP/eval_allergen_residue_v1(양성 4,743 놓침 0 · 실물 음성 98 변화 0) + HACCP 알레르기 표기 12,078 보류 검증(새 큐 18종 전부 실제 오타·깨짐).
+const GATE_VERSION = 'allergen_auto_gate_v3';
 
 function sortedSet(arr) {
   return [...new Set((Array.isArray(arr) ? arr : []).map(String))].sort();

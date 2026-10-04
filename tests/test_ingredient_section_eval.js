@@ -21,6 +21,9 @@ for (const c of cases) {
 }
 // ── ★ 세션73 — 승인 경로(contributionApply → additiveResolver.detectFromParsedIngredients)가
 //   제보 직후 화면(경로 ① identifyAdditives)과 «같은» 첨가물을 낸다(호두정과: 승인 뒤 아스파탐 누락 사고).
+//   ★ 세션75e — 화면 경로는 이제 analyzeText → additiveDetect(v2 · 구간 원문). 승인 경로도 v2(raw 이어 붙이기).
+//     위 루프의 `identifyAdditives` 비교는 v1 «동결 기준선»(이 셋의 정답 additives 가 v1 출력이라)으로 남긴다 —
+//     첨가물 «정확도»의 정답 셋은 IP/eval_additive_detect_v1 (tests/test_additive_detect_eval.js).
 {
   const { detectFromParsedIngredients } = require('../src/services/additiveResolver');
   const bad = [];
@@ -28,7 +31,7 @@ for (const c of cases) {
     const ings = P.parseIngredients(P.extractIngredientSection(c.text));
     // 저장 왕복(JSON)을 거친 모양으로 — contributions.data 는 jsonb 다
     const stored = JSON.parse(JSON.stringify(ings));
-    const a = P.identifyAdditives(ings).map((x) => x.name);
+    const a = P.analyzeText(c.text).additives.map((x) => x.name);
     const b = (detectFromParsedIngredients(stored) || []).map((x) => x.name);
     if (JSON.stringify(a) !== JSON.stringify(b)) bad.push(`${c.id}: 화면 ${JSON.stringify(a)} · 승인 ${JSON.stringify(b)}`);
   }

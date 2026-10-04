@@ -15,6 +15,7 @@
 //   그것이 P4(원재료표에 `밀` 단독 추가)를 한 세션 동안 막아 세운 직접 원인이었다.
 //   ⚠ 가드 규칙을 여기에 «복사»하지 말 것. 고칠 일이 있으면 `allergenGuards.js` 를 고친다.
 const allergenGuards = require('./allergenGuards');
+const { detectAdditives } = require('./additiveDetect');   // ★ 세션75e 첨가물 검출기 v2
 const { applyDvCheck, unitFillFromDv } = require('./labelDvCheck');   // 세션68 U67-15 — %열 교차검증(값을 고치지 않는다) · 세션69 U68-6 재계산 헬퍼
 
 // ============================================================
@@ -2732,7 +2733,10 @@ function analyzeText(correctedText) {
   const ingredients = ingredientSection ? parseIngredients(ingredientSection) : [];
 
   // 첨가물 식별
-  const additives = identifyAdditives(ingredients);
+  // ★ 세션75e — 검출기 v2(additiveDetect: 공전 665 완전일치 + 별칭 + 용도명 단독). 원재료 «구간 원문»을 직접 읽는다.
+  //   v1(identifyAdditives · 손 사전 + 부분일치)은 eval_additive_detect_v1 에서 재현율 48.6% · 정밀도 56.3% 였다(v2 100%/100%).
+  //   구간이 없으면 v1 과 같은 결과(빈 목록)다.
+  const additives = ingredientSection ? detectAdditives(ingredientSection) : identifyAdditives(ingredients);
 
   // 영양정보
   const nutrition = parseNutrition(correctedText);

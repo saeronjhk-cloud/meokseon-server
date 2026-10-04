@@ -43,6 +43,7 @@
  */
 
 const { identifyAdditives } = require('./ocrParser');
+const { detectAdditives } = require('./additiveDetect');   // ★ 세션75e — 검출 규칙 v2 «한 곳»(경로 ①·② 동일)
 
 function normalizeName(s) {
   return typeof s === 'string' ? s.trim() : '';
@@ -84,7 +85,8 @@ function detectFromIngredientNames(ingredientNames) {
     .filter(Boolean)
     .map((name) => ({ name, raw: name, sub_ingredients: [], detail: '' }));
   if (list.length === 0) return [];
-  return identifyAdditives(list);
+  // ★ 세션75e — v2: 이름들을 원재료 구간처럼 이어 붙여 같은 검출기에 넣는다(경로 ①과 같은 규칙).
+  return detectAdditives(list.map((i) => i.name).join(', '));
 }
 
 /**
@@ -118,7 +120,8 @@ function detectFromParsedIngredients(parsedIngredients) {
     })
     .filter(Boolean);
   if (list.length === 0) return [];
-  return identifyAdditives(list);
+  // ★ 세션75e — v2: `raw`(= «이름(괄호 속 …)» 원문)를 이어 붙여 구간을 되살린다 → 괄호 속 첨가물도 경로 ①과 같이 잡힌다.
+  return detectAdditives(list.map((i) => i.raw || i.name).join(', '));
 }
 
 /**

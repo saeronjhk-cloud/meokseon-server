@@ -34,6 +34,7 @@ const express = require('express');
 const db = require('../config/database');
 const { supabaseAuth } = require('../middleware/supabaseAuth');
 const { findUserId, handleStoreNotReady } = require('../services/authUserService');
+const { buildReadback } = require('../services/contributionReadback');
 
 const router = express.Router();
 
@@ -167,6 +168,50 @@ router.get('/mine', supabaseAuth, async (req, res, next) => {
     });
   } catch (err) {
     // ★ 021 미적용(users.supabase_uid 없음)이면 500 스택이 아니라 503 + 원인 코드.
+    if (handleStoreNotReady(err, res)) return;
+    return next(err);
+  }
+});
+
+/**
+ * ★ 세션75d — `GET /api/contributions/mine/:id` — 내 제보 «한 건»의 내용(읽힌 그대로).
+ *   승인 전 제보는 제품 화면에 없다 → 사용자가 자기가 보낸 것을 볼 길이 이것뿐이다.
+ *   · 남의 제보·없는 번호는 둘 다 404(존재 여부를 흘리지 않는다) · 번호 형식이 틀리면 400.
+ *   · 응답 내용은 `contributionReadback.buildReadback` 화이트리스트만(원문·device_id 없음).
+ */
+router.get('/mine/:id', supabaseAuth, async (req, res, next) => {
+  const id = readInt(req.params?.id, null);
+  if (id === null || id < 1) {
+    return res.status(400).json({ success: false, error: { code: 'CONTRIBUTION_ID_INVALID', message: '제보 번호가 올바르지 않아요.' } });
+  }
+  try {
+    const userId = await findUserId(req.auth.supabaseUid);
+    const notFound = () => res.status(404).json({ success: false, error: { code: 'CONTRIBUTION_NOT_FOUND', message: '제보를 찾을 수 없어요.' } });
+    if (userId === null) return notFound();
+    const q = await db.query(
+      `SELECT c.contribution_id, c.created_at, c.status, c.product_id, c.data, p.barcode, p.product_name
+         FROM contributions c
+         LEFT JOIN products p ON p.product_id = c.product_id
+        WHERE c.contribution_id = $1 AND c.user_id = $2`,
+      [id, userId]
+    );
+    const r = q.rows[0];
+    if (!r) return notFound();
+    let data = r.data;
+    if (typeof data === 'string') { try { data = JSON.parse(data); } catch { data = null; } }
+    return res.json({
+      success: true,
+      data: {
+        contribution_id: Number(r.contribution_id),
+        created_at: r.created_at,
+        status: r.status ?? null,
+        product_id: r.product_id === null || r.product_id === undefined ? null : Number(r.product_id),
+        barcode: r.barcode ?? null,
+        product_name: r.product_name ?? null,
+        readback: buildReadback(data),
+      },
+    });
+  } catch (err) {
     if (handleStoreNotReady(err, res)) return;
     return next(err);
   }

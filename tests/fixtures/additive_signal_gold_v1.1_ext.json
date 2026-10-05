@@ -1,0 +1,72 @@
+{
+ "version": "gold_v1.1_ext",
+ "created": "2026-10-05",
+ "base": "gold_v1.json(30 · 동결) 위에 추가 — gold_v1 은 그대로",
+ "why": "75g-4 빈도 21~60위 근거 수집 중 드러난 규칙 공백: 영양강화 성분(첨가물 ADI 평가 없음 · UL 로 관리). 제이 결정 10-05 «별도의 색» → 🔵 R6n",
+ "items": [
+  {
+   "additive": "비타민D3",
+   "final": "🔵",
+   "rule": "R6n",
+   "status": "jay_decided"
+  },
+  {
+   "additive": "비타민B6염산염",
+   "final": "🔵",
+   "rule": "R6n",
+   "status": "jay_decided"
+  },
+  {
+   "additive": "비타민B1염산염",
+   "final": "🔵",
+   "rule": "R6n",
+   "status": "jay_decided",
+   "note": "UL 미설정"
+  },
+  {
+   "additive": "엽산",
+   "final": "🔵",
+   "rule": "R6n",
+   "status": "jay_decided"
+  },
+  {
+   "additive": "니코틴산아미드",
+   "final": "🔵",
+   "rule": "R6n",
+   "status": "jay_decided"
+  },
+  {
+   "additive": "산화아연",
+   "final": "🔵",
+   "rule": "R6n",
+   "status": "jay_decided"
+  },
+  {
+   "additive": "비타민E",
+   "final": "🟢",
+   "rule": "R6",
+   "status": "rule_resolved",
+   "note": "첨가물 평가(EFSA 2015 E306–309)가 있으면 R6n 보다 R5/R6 우선"
+  },
+  {
+   "additive": "젖산칼슘",
+   "final": "🟢",
+   "rule": "R6",
+   "status": "rule_resolved",
+   "note": "칼슘 UL 행이 있어도 첨가물 평가(JECFA not limited) 우선"
+  },
+  {
+   "additive": "혼합제제",
+   "final": "⚪",
+   "rule": "R0",
+   "status": "rule_resolved"
+  },
+  {
+   "additive": "카복시메틸셀룰로스나트륨",
+   "final": "🟢",
+   "rule": "R6",
+   "status": "rule_resolved",
+   "note": "EU 2025/666 철회는 영유아 특수의료식품 한정 → R2 아님(배지)"
+  }
+ ]
+}

@@ -1,0 +1,517 @@
+{
+ "version": "gold_v1",
+ "created": "2026-10-05",
+ "based_on": [
+  "gold_v1_draft.json",
+  "회신_R1_검토자A.md",
+  "회신_R1_검토자B.md"
+ ],
+ "summary": {
+  "agreed": 28,
+  "rule_resolved": 1,
+  "jay_decided": 1
+ },
+ "items": [
+  {
+   "additive": "향료",
+   "group": "freq",
+   "freq_rank": 1,
+   "claude_draft": "⚪",
+   "draft_reason": "«향료»는 개별 물질이 아닌 분류명 — 평가 대상 특정 불가",
+   "question": "평가 불가 처리 방식",
+   "final": "⚪",
+   "sources": "회신_R1_검토자A/B.md 의 출처 — ⚠ 근거 DB 적재 전 Claude 가 URL 로 직접 확인(미검증)",
+   "reviewer_A": "⚪",
+   "reviewer_B": "⚪",
+   "status": "agreed",
+   "badges": [
+    "성분 특정 불가"
+   ],
+   "fact_correction": null
+  },
+  {
+   "additive": "L-글루탐산나트륨",
+   "group": "freq",
+   "freq_rank": 2,
+   "claude_draft": "🟢/🟡",
+   "draft_reason": "JECFA ADI not specified(1987) vs EFSA 2017 글루탐산류 그룹 ADI 30 mg/kg — 기관 간 결론 다름",
+   "question": "기관 충돌 시 규칙",
+   "final": "🟡",
+   "sources": "회신_R1_검토자A/B.md 의 출처 — ⚠ 근거 DB 적재 전 Claude 가 URL 로 직접 확인(미검증)",
+   "reviewer_A": "🟡",
+   "reviewer_B": "🟡",
+   "status": "agreed",
+   "badges": [
+    "기관 결론 불일치(JECFA 1987 not specified · EFSA 2017 ADI 30)"
+   ],
+   "fact_correction": null
+  },
+  {
+   "additive": "구연산",
+   "group": "freq",
+   "freq_rank": 3,
+   "claude_draft": "🟢",
+   "draft_reason": "ADI 제한 없음(JECFA) · 대사 성분",
+   "question": "",
+   "final": "🟢",
+   "sources": "회신_R1_검토자A/B.md 의 출처 — ⚠ 근거 DB 적재 전 Claude 가 URL 로 직접 확인(미검증)",
+   "reviewer_A": "🟢",
+   "reviewer_B": "🟢",
+   "status": "agreed",
+   "badges": [
+    "오래된 평가"
+   ],
+   "fact_correction": null
+  },
+  {
+   "additive": "비타민C",
+   "group": "freq",
+   "freq_rank": 4,
+   "claude_draft": "🟢",
+   "draft_reason": "영양소 · ADI not specified",
+   "question": "",
+   "final": "🟢",
+   "sources": "회신_R1_검토자A/B.md 의 출처 — ⚠ 근거 DB 적재 전 Claude 가 URL 로 직접 확인(미검증)",
+   "reviewer_A": "🟢",
+   "reviewer_B": "🟢",
+   "status": "agreed",
+   "badges": [],
+   "fact_correction": null
+  },
+  {
+   "additive": "변성전분",
+   "group": "freq",
+   "freq_rank": 5,
+   "claude_draft": "🟢",
+   "draft_reason": "JECFA ADI not specified · EFSA 2017 재평가 우려 없음(그룹)",
+   "question": "변성전분은 여러 품목의 묶음",
+   "final": "🟢",
+   "sources": "회신_R1_검토자A/B.md 의 출처 — ⚠ 근거 DB 적재 전 Claude 가 URL 로 직접 확인(미검증)",
+   "reviewer_A": "🟢",
+   "reviewer_B": "🟢",
+   "status": "agreed",
+   "badges": [
+    "영아 특수용도 별도"
+   ],
+   "fact_correction": null
+  },
+  {
+   "additive": "구연산삼나트륨",
+   "group": "freq",
+   "freq_rank": 6,
+   "claude_draft": "🟢",
+   "draft_reason": "ADI 제한 없음",
+   "question": "",
+   "final": "🟢",
+   "sources": "회신_R1_검토자A/B.md 의 출처 — ⚠ 근거 DB 적재 전 Claude 가 URL 로 직접 확인(미검증)",
+   "reviewer_A": "🟢",
+   "reviewer_B": "🟢",
+   "status": "agreed",
+   "badges": [
+    "오래된 평가"
+   ],
+   "fact_correction": null
+  },
+  {
+   "additive": "레시틴",
+   "group": "freq",
+   "freq_rank": 7,
+   "claude_draft": "🟢",
+   "draft_reason": "ADI not specified · 식품 성분",
+   "question": "",
+   "final": "🟢",
+   "sources": "회신_R1_검토자A/B.md 의 출처 — ⚠ 근거 DB 적재 전 Claude 가 URL 로 직접 확인(미검증)",
+   "reviewer_A": "🟢",
+   "reviewer_B": "🟢",
+   "status": "agreed",
+   "badges": [
+    "오래된 평가"
+   ],
+   "fact_correction": null
+  },
+  {
+   "additive": "카라기난",
+   "group": "freq",
+   "freq_rank": 8,
+   "claude_draft": "🟡",
+   "draft_reason": "EFSA 2018 잠정 ADI 75 mg/kg · JECFA 영아용 조제유 관련 언급",
+   "question": "잠정 ADI 처리",
+   "final": "🟡",
+   "sources": "회신_R1_검토자A/B.md 의 출처 — ⚠ 근거 DB 적재 전 Claude 가 URL 로 직접 확인(미검증)",
+   "reviewer_A": "🟡",
+   "reviewer_B": "🟡",
+   "status": "agreed",
+   "badges": [
+    "기관 결론 불일치(JECFA not specified · EFSA 잠정 ADI 75)",
+    "잠정 평가"
+   ],
+   "fact_correction": null
+  },
+  {
+   "additive": "잔탄검",
+   "group": "freq",
+   "freq_rank": 9,
+   "claude_draft": "🟢",
+   "draft_reason": "ADI not specified",
+   "question": "",
+   "final": "🟢",
+   "sources": "회신_R1_검토자A/B.md 의 출처 — ⚠ 근거 DB 적재 전 Claude 가 URL 로 직접 확인(미검증)",
+   "reviewer_A": "🟢",
+   "reviewer_B": "🟢",
+   "status": "agreed",
+   "badges": [],
+   "fact_correction": null
+  },
+  {
+   "additive": "아질산나트륨",
+   "group": "freq",
+   "freq_rank": 10,
+   "claude_draft": "🟠/🔴",
+   "draft_reason": "ADI 0.07 mg/kg(JECFA) · IARC 2A «체내 니트로소화 조건의 섭취 질산·아질산»(2010) · 가공육 IARC 1군(2015)",
+   "question": "IARC 2A 가 «물질 자체»인지 — 규칙 3 적용 범위",
+   "final": "🟠",
+   "sources": "회신_R1_검토자A/B.md 의 출처 — ⚠ 근거 DB 적재 전 Claude 가 URL 로 직접 확인(미검증)",
+   "reviewer_A": "🟠",
+   "reviewer_B": "🟡",
+   "status": "jay_decided",
+   "badges": [
+    "조건부(체내 니트로소화 · 가공육) — IARC 2A 는 노출 조건 분류"
+   ],
+   "fact_correction": null,
+   "resolution_note": "A 🟠 (섭취 조건과 분리 불가) vs B 🟡 (IARC 2A 대상은 «노출 조건» — 물질 등급 아님). ⚠ B 자신의 Q1 🟠 정의에 «특정 섭취 형태: 니트로소화 조건»이 들어 있어 B 판정과 B 규칙이 서로 어긋남. Claude 권고: 🟠(조건부 주의) + 문구 «가공육 등 체내 니트로소화 조건에서 발암물질 형성 우려 — IARC 2A 는 이 노출 조건에 대한 분류이며 물질 자체 등급 아님». → 제이 확정 2026-10-05: 🟠 (R4 «섭취 형태·노출 조건» · R3 물질 자체 정확 일치 원칙은 유지).",
+   "display_note": "IARC 2A 는 가공육 등 체내 니트로소화 조건에 대한 분류이며 물질 자체 등급은 아니에요. 수치 기준(ADI 0.07 mg/kg) 안에서 사용이 허용돼 있어요."
+  },
+  {
+   "additive": "구아검",
+   "group": "freq",
+   "freq_rank": 11,
+   "claude_draft": "🟢",
+   "draft_reason": "ADI not specified",
+   "question": "",
+   "final": "🟢",
+   "sources": "회신_R1_검토자A/B.md 의 출처 — ⚠ 근거 DB 적재 전 Claude 가 URL 로 직접 확인(미검증)",
+   "reviewer_A": "🟢",
+   "reviewer_B": "🟢",
+   "status": "agreed",
+   "badges": [
+    "영아 특수용도 별도"
+   ],
+   "fact_correction": null
+  },
+  {
+   "additive": "효소처리스테비아",
+   "group": "freq",
+   "freq_rank": 12,
+   "claude_draft": "🟡",
+   "draft_reason": "스테비올배당체 ADI 4 mg/kg(스테비올 환산)",
+   "question": "",
+   "final": "🟡",
+   "sources": "회신_R1_검토자A/B.md 의 출처 — ⚠ 근거 DB 적재 전 Claude 가 URL 로 직접 확인(미검증)",
+   "reviewer_A": "🟡",
+   "reviewer_B": "🟡",
+   "status": "agreed",
+   "badges": [],
+   "fact_correction": null
+  },
+  {
+   "additive": "비타민B2",
+   "group": "freq",
+   "freq_rank": 13,
+   "claude_draft": "🟢",
+   "draft_reason": "영양소",
+   "question": "",
+   "final": "🟢",
+   "sources": "회신_R1_검토자A/B.md 의 출처 — ⚠ 근거 DB 적재 전 Claude 가 URL 로 직접 확인(미검증)",
+   "reviewer_A": "🟢",
+   "reviewer_B": "🟢",
+   "status": "agreed",
+   "badges": [],
+   "fact_correction": "JECFA 2021 리보플라빈 그룹 ADI not specified (검토자 B)"
+  },
+  {
+   "additive": "카라멜색소",
+   "group": "freq",
+   "freq_rank": 14,
+   "claude_draft": "🟡",
+   "draft_reason": "번호 미상 — I~IV 중 III·IV 는 4-MEI 관련(IARC 2B 는 4-MEI 물질) · 수치 ADI 있음",
+   "question": "번호 미상 계열의 처리 · 불순물 근거를 첨가물 색에 반영할지",
+   "final": "🟡",
+   "sources": "회신_R1_검토자A/B.md 의 출처 — ⚠ 근거 DB 적재 전 Claude 가 URL 로 직접 확인(미검증)",
+   "reviewer_A": "🟡",
+   "reviewer_B": "🟡",
+   "status": "agreed",
+   "badges": [
+    "불순물 규격 관리(4-MEI · III/IV)",
+    "번호(I~IV) 미상"
+   ],
+   "fact_correction": null
+  },
+  {
+   "additive": "폴리인산나트륨",
+   "group": "freq",
+   "freq_rank": 15,
+   "claude_draft": "🟡",
+   "draft_reason": "EFSA 2019 인산염 그룹 ADI 40 mg/kg(인 환산)",
+   "question": "",
+   "final": "🟡",
+   "sources": "회신_R1_검토자A/B.md 의 출처 — ⚠ 근거 DB 적재 전 Claude 가 URL 로 직접 확인(미검증)",
+   "reviewer_A": "🟡",
+   "reviewer_B": "🟡",
+   "status": "agreed",
+   "badges": [],
+   "fact_correction": null
+  },
+  {
+   "additive": "피로인산나트륨",
+   "group": "freq",
+   "freq_rank": 16,
+   "claude_draft": "🟡",
+   "draft_reason": "인산염 그룹 ADI",
+   "question": "",
+   "final": "🟡",
+   "sources": "회신_R1_검토자A/B.md 의 출처 — ⚠ 근거 DB 적재 전 Claude 가 URL 로 직접 확인(미검증)",
+   "reviewer_A": "🟡",
+   "reviewer_B": "🟡",
+   "status": "agreed",
+   "badges": [],
+   "fact_correction": null
+  },
+  {
+   "additive": "글리세린지방산에스테르",
+   "group": "freq",
+   "freq_rank": 17,
+   "claude_draft": "🟢",
+   "draft_reason": "EFSA 수치 ADI 불필요 결론",
+   "question": "",
+   "final": "🟢",
+   "sources": "회신_R1_검토자A/B.md 의 출처 — ⚠ 근거 DB 적재 전 Claude 가 URL 로 직접 확인(미검증)",
+   "reviewer_A": "🟢",
+   "reviewer_B": "🟢",
+   "status": "agreed",
+   "badges": [
+    "불순물 규격 개선 권고(EFSA)"
+   ],
+   "fact_correction": null
+  },
+  {
+   "additive": "D-소비톨",
+   "group": "freq",
+   "freq_rank": 19,
+   "claude_draft": "🟢/🟠",
+   "draft_reason": "ADI not specified · EU «과다 섭취 시 설사» 표시 의무(폴리올 10% 초과)",
+   "question": "효능성 경고 문구도 규칙 4(🟠)로 볼지",
+   "final": "🟢",
+   "sources": "회신_R1_검토자A/B.md 의 출처 — ⚠ 근거 DB 적재 전 Claude 가 URL 로 직접 확인(미검증)",
+   "reviewer_A": "🟢",
+   "reviewer_B": "🟢",
+   "status": "agreed",
+   "badges": [
+    "제품 조건: 폴리올 10% 초과 시 설사 표시"
+   ],
+   "fact_correction": null
+  },
+  {
+   "additive": "소브산칼륨",
+   "group": "freq",
+   "freq_rank": 20,
+   "claude_draft": "🟡",
+   "draft_reason": "EFSA 2019 그룹 ADI 11 mg/kg(소브산 환산)",
+   "question": "",
+   "final": "🟡",
+   "sources": "회신_R1_검토자A/B.md 의 출처 — ⚠ 근거 DB 적재 전 Claude 가 URL 로 직접 확인(미검증)",
+   "reviewer_A": "🟡",
+   "reviewer_B": "🟡",
+   "status": "agreed",
+   "badges": [],
+   "fact_correction": null
+  },
+  {
+   "additive": "탄산수소나트륨",
+   "group": "freq",
+   "freq_rank": 21,
+   "claude_draft": "🟢",
+   "draft_reason": "ADI 제한 없음",
+   "question": "",
+   "final": "🟢",
+   "sources": "회신_R1_검토자A/B.md 의 출처 — ⚠ 근거 DB 적재 전 Claude 가 URL 로 직접 확인(미검증)",
+   "reviewer_A": "🟢",
+   "reviewer_B": "🟢",
+   "status": "agreed",
+   "badges": [
+    "오래된 평가"
+   ],
+   "fact_correction": null
+  },
+  {
+   "additive": "아스파탐",
+   "group": "issue",
+   "freq_rank": null,
+   "claude_draft": "🟠",
+   "draft_reason": "IARC 2B(2023) · JECFA ADI 40 mg/kg 유지(2023) · 페닐케톤뇨증 표시 의무",
+   "question": "",
+   "final": "🟠",
+   "sources": "회신_R1_검토자A/B.md 의 출처 — ⚠ 근거 DB 적재 전 Claude 가 URL 로 직접 확인(미검증)",
+   "reviewer_A": "🟠",
+   "reviewer_B": "🟠",
+   "status": "agreed",
+   "badges": [
+    "IARC 2B — 일상 섭취 위험도를 뜻하지 않음",
+    "페닐케톤뇨증 표시"
+   ],
+   "fact_correction": null
+  },
+  {
+   "additive": "사카린나트륨",
+   "group": "issue",
+   "freq_rank": null,
+   "claude_draft": "🟡",
+   "draft_reason": "IARC 3군(재분류) · ADI 5 mg/kg",
+   "question": "",
+   "final": "🟡",
+   "sources": "회신_R1_검토자A/B.md 의 출처 — ⚠ 근거 DB 적재 전 Claude 가 URL 로 직접 확인(미검증)",
+   "reviewer_A": "🟡",
+   "reviewer_B": "🟡",
+   "status": "agreed",
+   "badges": [],
+   "fact_correction": "사카린 그룹 ADI: EFSA 2024 9 mg/kg (초안 5 → 정정, 검토자 B)"
+  },
+  {
+   "additive": "안식향산나트륨",
+   "group": "issue",
+   "freq_rank": null,
+   "claude_draft": "🟡",
+   "draft_reason": "ADI 5 mg/kg · 비타민C 와 함께 벤젠 생성 가능성 보고",
+   "question": "제품 내 조합 위험(벤젠)을 개별 색에 반영할지 — v3 범위 밖 제안",
+   "final": "🟡",
+   "sources": "회신_R1_검토자A/B.md 의 출처 — ⚠ 근거 DB 적재 전 Claude 가 URL 로 직접 확인(미검증)",
+   "reviewer_A": "🟡",
+   "reviewer_B": "🟡",
+   "status": "agreed",
+   "badges": [
+    "제품 조합: 비타민C+열·빛 → 벤젠",
+    "기관 ADI 다름(EFSA 5 · JECFA 2021 20)"
+   ],
+   "fact_correction": "JECFA 2021 안식향산 ADI 20 mg/kg (검토자 B)"
+  },
+  {
+   "additive": "메타중아황산칼륨",
+   "group": "issue",
+   "freq_rank": null,
+   "claude_draft": "🟠",
+   "draft_reason": "아황산류 — 천식·민감자 반응 · 10 mg/kg 이상 표시 의무(국내·EU)",
+   "question": "",
+   "final": "🟠",
+   "sources": "회신_R1_검토자A/B.md 의 출처 — ⚠ 근거 DB 적재 전 Claude 가 URL 로 직접 확인(미검증)",
+   "reviewer_A": "🟠",
+   "reviewer_B": "🟠",
+   "status": "agreed",
+   "badges": [
+    "민감자(천식) · 고섭취자 우려(EFSA 2022 잠정 ADI 철회)"
+   ],
+   "fact_correction": "EFSA 2022 아황산 잠정 ADI 철회(자료 부족) (검토자 B)"
+  },
+  {
+   "additive": "이산화티타늄",
+   "group": "issue",
+   "freq_rank": null,
+   "claude_draft": "🔴",
+   "draft_reason": "EFSA 2021 «식품첨가물로서 안전하다고 볼 수 없음» · EU 2022 금지 · 국내 허용 여부 확인 필요",
+   "question": "국내 허용 + 해외 금지 처리(규칙 2)",
+   "final": "🔴",
+   "sources": "회신_R1_검토자A/B.md 의 출처 — ⚠ 근거 DB 적재 전 Claude 가 URL 로 직접 확인(미검증)",
+   "reviewer_A": "🔴",
+   "reviewer_B": "🔴",
+   "status": "agreed",
+   "badges": [
+    "국내 기준 병기: 전면 금지 아님(사용금지 식품군 규정) — 확인 필요"
+   ],
+   "fact_correction": null
+  },
+  {
+   "additive": "식용색소적색제40호",
+   "group": "issue",
+   "freq_rank": null,
+   "claude_draft": "🟠",
+   "draft_reason": "EU 경고 문구 대상(어린이 활동·주의력) · ADI 7 mg/kg",
+   "question": "",
+   "final": "🟠",
+   "sources": "회신_R1_검토자A/B.md 의 출처 — ⚠ 근거 DB 적재 전 Claude 가 URL 로 직접 확인(미검증)",
+   "reviewer_A": "🟠",
+   "reviewer_B": "🟠",
+   "status": "agreed",
+   "badges": [
+    "EU 어린이 활동·주의력 경고문"
+   ],
+   "fact_correction": null
+  },
+  {
+   "additive": "식용색소황색제4호",
+   "group": "issue",
+   "freq_rank": null,
+   "claude_draft": "🟠",
+   "draft_reason": "EU 경고 문구 대상 · 과민반응 보고",
+   "question": "",
+   "final": "🟠",
+   "sources": "회신_R1_검토자A/B.md 의 출처 — ⚠ 근거 DB 적재 전 Claude 가 URL 로 직접 확인(미검증)",
+   "reviewer_A": "🟠",
+   "reviewer_B": "🟠",
+   "status": "agreed",
+   "badges": [
+    "EU 어린이 활동·주의력 경고문"
+   ],
+   "fact_correction": "타르트라진 JECFA 2016 ADI 10 mg/kg (검토자 B)"
+  },
+  {
+   "additive": "부틸히드록시아니솔",
+   "group": "issue",
+   "freq_rank": null,
+   "claude_draft": "🟠",
+   "draft_reason": "IARC 2B · ADI 1 mg/kg",
+   "question": "",
+   "final": "🟠",
+   "sources": "회신_R1_검토자A/B.md 의 출처 — ⚠ 근거 DB 적재 전 Claude 가 URL 로 직접 확인(미검증)",
+   "reviewer_A": "🟠",
+   "reviewer_B": "🟠",
+   "status": "agreed",
+   "badges": [
+    "IARC 2B — 일상 섭취 위험도를 뜻하지 않음"
+   ],
+   "fact_correction": "BHA JECFA ADI 0–0.5 mg/kg (초안 1 → 정정, 검토자 A·B)"
+  },
+  {
+   "additive": "터셔리부틸히드로퀴논",
+   "group": "issue",
+   "freq_rank": null,
+   "claude_draft": "🟡",
+   "draft_reason": "ADI 0.7 mg/kg(JECFA)",
+   "question": "국내 사용 제한 범위",
+   "final": "🟡",
+   "sources": "회신_R1_검토자A/B.md 의 출처 — ⚠ 근거 DB 적재 전 Claude 가 URL 로 직접 확인(미검증)",
+   "reviewer_A": "🟡",
+   "reviewer_B": "🟡",
+   "status": "agreed",
+   "badges": [],
+   "fact_correction": null
+  },
+  {
+   "additive": "에리스리톨",
+   "group": "issue",
+   "freq_rank": null,
+   "claude_draft": "🟢/🟡",
+   "draft_reason": "JECFA ADI not specified · 2023 관찰연구(심혈관) 보고 · EFSA 재평가 결론 확인 필요",
+   "question": "관찰연구 1건을 색에 반영할지 · EFSA 2023 결론 수치",
+   "final": "🟡",
+   "sources": "회신_R1_검토자A/B.md 의 출처 — ⚠ 근거 DB 적재 전 Claude 가 URL 로 직접 확인(미검증)",
+   "reviewer_A": "🟢",
+   "reviewer_B": "🟡",
+   "status": "rule_resolved",
+   "badges": [
+    "연구 동향: 심혈관 관찰연구(인과 미확립)",
+    "고섭취자 ADI 초과 가능"
+   ],
+   "fact_correction": "EFSA 2023 에리스리톨 ADI 0.5 g/kg (설사 근거) (A·B 모두 언급)",
+   "resolution_note": "A 는 🟢 를 줬지만 본인도 EFSA 2023 의 0.5 g/kg 수치를 언급 — 합의한 규칙 R5(수치 ADI → 🟡)에 따르면 🟡. 관찰연구는 색이 아닌 «연구 동향» 배지(양쪽 합의 Q4)."
+  }
+ ],
+ "frozen": "2026-10-05 · 제이 확정 · R2 생략(제이 결정) — 이후 정답 변경은 사유 기록 필수"
+}

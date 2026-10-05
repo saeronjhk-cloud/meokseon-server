@@ -30,6 +30,7 @@ const { collapseAction, matchAction, entityAction, profileAction, isBulkAllowed 
 //   ★ `src/`(런타임)는 `scripts/`(배치)를 require 하지 않는다. 배포 경계가 다르다.
 const { verifyEligibility } = require('../services/collapseClassify');
 
+const { notifyDecision } = require('../services/contributorNotify');   // ★ 세션75f 제보자 결과 메일(옵트인)
 const router = express.Router();
 
 // ============================================================
@@ -499,10 +500,12 @@ router.post('/verify/:productId', async (req, res) => {
             WHERE product_id = $1`,
           [productId],
         );
-        await client.query(
-          `UPDATE contributions SET status = 'approved' WHERE product_id = $1 AND status = 'pending'`,
+        // ★ 세션75f — RETURNING: «이번에» pending → approved 로 바뀐 제보만 = 결과 메일 대상(같은 제보에 두 번 안 보냄)
+        const decidedA = await client.query(
+          `UPDATE contributions SET status = 'approved' WHERE product_id = $1 AND status = 'pending' RETURNING contribution_id`,
           [productId],
         );
+        result.decided = { decision: 'approved', contributionIds: decidedA.rows.map((x) => Number(x.contribution_id)) };
         // 공공 영양 행의 「최근 확인」 시각. 종전 동작 그대로다(대시보드의 stale 판정이 읽는다).
         await client.query(
           `UPDATE nutrition_data SET verified_at = NOW() WHERE product_id = $1`,
@@ -545,10 +548,11 @@ router.post('/verify/:productId', async (req, res) => {
             WHERE product_id = $1`,
           [productId],
         );
-        await client.query(
-          `UPDATE contributions SET status = 'rejected' WHERE product_id = $1 AND status = 'pending'`,
+        const decidedR = await client.query(
+          `UPDATE contributions SET status = 'rejected' WHERE product_id = $1 AND status = 'pending' RETURNING contribution_id`,
           [productId],
         );
+        result.decided = { decision: 'rejected', contributionIds: decidedR.rows.map((x) => Number(x.contribution_id)) };
         logger.info('관리자 거부', { productId, reviewedBy, reviews: result.reviews.length });
 
       } else if (action === 'undo') {
@@ -650,6 +654,13 @@ router.post('/verify/:productId', async (req, res) => {
 
       return result;
     });
+
+    // ★ 세션75f — 커밋 «뒤»에만 제보자 결과 메일(신청자만 · 실패해도 응답을 막지 않음 · throw 없음).
+    //   409(일부 축 미반영)여도 제보 상태는 이미 바뀌었으므로 같은 규칙으로 보낸다 — 다음 승인 땐 pending 이 아니라 다시 안 간다.
+    if (out.decided && out.decided.contributionIds.length) {
+      out.contributor_notice = await notifyDecision(out.decided);
+    }
+    delete out.decided;
 
     // ★★ 부분 실패를 «성공»으로 보고하지 않는다. 관리자가 무엇을 채워야 하는지 알아야 한다.
     if (out.failures.length > 0) {

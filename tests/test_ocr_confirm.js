@@ -565,6 +565,22 @@ async function main() {
     assert.ok(parsed.includes('밀가루'), `서버가 읽은 원재료가 저장되지 않았다: ${JSON.stringify(parsed)}`);
   });
 
+  await t('★ 세션75f — notify_result 는 «정확히 true» 일 때만 저장된다(옵트인 · 문자열 "true" 는 아님)', async () => {
+    const dataOf = async (bc) => {
+      const q = await db.query(`SELECT c.data FROM contributions c JOIN products p ON p.product_id = c.product_id
+        WHERE p.barcode = $1 ORDER BY c.contribution_id DESC LIMIT 1`, [bc]);
+      const d = q.rows[0].data; return typeof d === 'string' ? JSON.parse(d) : d;
+    };
+    for (const [bc, val, want] of [['S75FNOTIFY1', true, true], ['S75FNOTIFY2', 'true', false], ['S75FNOTIFY3', undefined, false]]) {
+      const r = await callMultiPhoto({ labelText: LABEL_WITH_NAME, nutritionText: NUTRITION_ONLY, save: 'false', barcode: bc });
+      const body = { analysis_token: r.body.data.analysis_token, product_info: { product_name: '알림테스트' + bc } };
+      if (val !== undefined) body.notify_result = val;
+      const c = await request('POST', '/api/ocr/confirm', { body });
+      assert.strictEqual(c.status, 200, JSON.stringify(c.body));
+      assert.strictEqual((await dataOf(bc)).notify_result, want, `${bc} notify_result`);
+    }
+  });
+
   // ════════════════════════════════════════════════════════════════════════
   section('§4b. ★★★ 바코드는 «토큰이 정본»이다 (제이 확정 2026-08-21)');
   // ────────────────────────────────────────────────────────────────────────

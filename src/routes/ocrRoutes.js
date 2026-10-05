@@ -1090,6 +1090,8 @@ router.post('/confirm', supabaseAuth, async (req, res) => {
     userId: cu.userId,
     // ★★ 토큰 값만. 클라이언트가 보낸 기기 식별자는 위 ③b 에서 버렸다.
     deviceId,
+    // ★ 세션75f — 「확인 결과를 메일로 받기」(옵트인 · 제이 결정 10-04). 정확히 true 일 때만.
+    notifyResult: req.body?.notify_result === true,
   });
 
   // ★ 토큰은 **소모하지 않는다.** 이유는 `analysisCache.getAnalysis` 주석 참조

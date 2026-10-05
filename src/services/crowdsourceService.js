@@ -103,6 +103,7 @@ function scaleStoredNutrition(nutrition, divisor) {
 async function saveOcrContribution(params) {
   const {
     barcode, productInfo = {}, ocrResult, analysis, avgConfidence, userId, deviceId,
+    notifyResult = false,   // ★ 세션75f — 관리자 확인 결과 메일 신청(옵트인)
   } = params;
   const warnings = [];
 
@@ -714,6 +715,8 @@ async function saveOcrContribution(params) {
             bundle_count: productInfo?.bundle_count || null,
           },
           device_id: deviceId || null,
+          // ★ 세션75f — 결과 메일 신청 여부(옵트인). contributorNotify 가 «이 값이 true 인 제보»에만 보낸다.
+          notify_result: notifyResult === true,
           sanity_warnings: sanityWarnings,
         }),
         deviceId || null,

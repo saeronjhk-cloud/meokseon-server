@@ -666,12 +666,32 @@ async function getRecent(limit = 20) {
   return result.rows;
 }
 
+/**
+ * ★ 세션75j — 원재료 원문 1건(자기 것 우선 · 없으면 형제 바코드 채움분).
+ *   반환 { text, source: 'own'|'sibling' } · 원재료 행이 없으면 { text:null, source:null }(= 서버가 «없다»고 말함)
+ *   조회 자체가 실패하면 undefined(= 모름) — 호출자는 응답에 키를 싣지 않는다(웹 readIngredients 'unknown').
+ *   'c005_sibling' = 같은 품목제조번호 형제에서 복사(91-apply-c005-fill · 2026-10-06).
+ */
+async function getIngredientText(productId) {
+  try {
+    const r = await db.query(
+      `SELECT raw_text, source FROM product_ingredients
+        WHERE product_id = $1 AND raw_text IS NOT NULL AND btrim(raw_text) <> ''
+        ORDER BY (source = 'c005_sibling'), id LIMIT 1`, [productId]);
+    if (!r.rows[0]) return { text: null, source: null };
+    return { text: String(r.rows[0].raw_text).trim(), source: r.rows[0].source === 'c005_sibling' ? 'sibling' : 'own' };
+  } catch (e) {
+    return undefined;
+  }
+}
+
 module.exports = {
   findByBarcode,
   findForPortion,
   searchByName,
   getNutrition,
   getAdditives,
+  getIngredientText,            // 세션75j — 원재료 원문(자기 우선·형제 채움)
   getAllergens,                 // 세션45 (세션47: 이름 정규화 필터 포함)
   getAllergensRaw,              // 세션47 — 정규화 전 원본(감사·백필용)
   hasEvidenceLevelColumn,       // 세션45 — 배포 순서 방어(치명1)

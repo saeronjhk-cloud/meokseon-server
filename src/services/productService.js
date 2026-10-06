@@ -18,7 +18,9 @@ const { NotFoundError } = require('../middleware/errorHandler');
 const { getContext } = require('../utils/foodCategory');
 const logger = require('../config/logger');   // 세션45: 알레르기 조회 실패를 삼키지 않고 남긴다
 const { flattenAllergensV2 } = require('./ocrParser');
-const { getLabelDv } = require('./labelDvRead');   // 세션73 U71-3 — 라벨 인쇄 % 병기   // 세션45: flat 규칙 단일화(중대4)
+const { getLabelDv } = require('./labelDvRead');
+const { classifyAdditive } = require('./additiveSignal');     // 세션75j — 첨가물 신호등 v3
+const { detectAdditives } = require('./additiveDetect');      // 세션75j — 첨가물 표가 비면 원재료에서 검출   // 세션73 U71-3 — 라벨 인쇄 % 병기   // 세션45: flat 규칙 단일화(중대4)
 
 // 4색 우선순위 — 가장 위험한 색이 dominant_color
 const COLOR_RANK = { red: 4, orange: 3, yellow: 2, green: 1, gray: 0 };
@@ -255,6 +257,9 @@ async function getProductWithTrafficLight(barcode) {
   const additivesRows = await productModel.getAdditives(product.product_id);
   const mfras = buildMfras(additivesRows);
 
+  // ★ 세션75j — 원재료 원문. undefined(조회 실패)면 키를 싣지 않는다 → 웹은 «모름»으로 둔다.
+  const ingredient = await productModel.getIngredientText(product.product_id);
+
   // ★★ 세션45: 알레르기 조회 (같은 이유로 순차)
   //   이 응답에는 알레르기가 **아예 없었다** — 세션44 §6-2 가 「구분이 없다」고 본 것보다 심하다.
   //
@@ -340,6 +345,8 @@ async function getProductWithTrafficLight(barcode) {
     } : null,
     traffic_light: trafficLight,
     mfras,
+    // ★ 세션75j — 원재료(키 추가만). 'sibling' = 같은 품목제조번호의 다른 바코드(용량만 다른 같은 제품)에서 가져온 원문.
+    ...(ingredient === undefined ? {} : { ingredients_text: ingredient.text, ingredients_source: ingredient.source }),
     // ★ 세션45 — OCR 경로(`analysis.allergens_v2`)와 **같은 키 이름·같은 3분리 형태**로 낸다.
     //   이름을 다르게 하면 클라이언트가 경로별 분기를 두게 되고, 그 분기 중 한쪽이
     //   다음 수정에서 빠진다(세션39 /multi-photo · 세션44 치명B 가 정확히 그 사고였다).
@@ -495,7 +502,23 @@ async function getProductAdditives(barcode) {
     throw new NotFoundError('제품');
   }
 
-  const additives = await productModel.getAdditives(product.product_id);
+  const additivesRaw = await productModel.getAdditives(product.product_id);
+  // ★ 세션75j — 첨가물마다 신호등 v3(근거 기반 · additiveSignal). 기존 필드는 그대로, `signal` 키만 추가.
+  const additives = additivesRaw.map((a) => ({ ...a, signal: classifyAdditive(a.name_ko || a.name) }));
+
+  // ★ 세션75j — 저장된 첨가물이 0개인데 원재료 원문이 있으면, 원문에서 검출(검출기 v2 · 공전 665 완전일치)해
+  //   `derived_additives` 로 «따로» 낸다. `additives`·`risk_summary` 의 뜻은 바꾸지 않는다(저장된 것만).
+  let derivedAdditives = null;
+  if (additives.length === 0) {
+    const ing = await productModel.getIngredientText(product.product_id);
+    if (ing && ing.text) {
+      derivedAdditives = detectAdditives(ing.text).map((d) => ({
+        name: d.name, match_type: d.match_type, raw: d.raw,
+        signal: classifyAdditive(d.name, { matchType: d.match_type }),
+      }));
+      derivedAdditives.source = ing.source;
+    }
+  }
 
   // ★★★ 세션65 C2-b (`U65-2`) — 「불러오지 못한 N종」을 서버가 «계산해서» 내려준다.
   //
@@ -534,6 +557,9 @@ async function getProductAdditives(barcode) {
       },
       with_v2_data: additives.filter(a => a.mfras_total !== null && a.mfras_total !== undefined).length,
     },
+    // ★ 세션75j — 신호등 v3 집계(저장된 첨가물 기준) · 원재료 검출분
+    signal_summary: ['red', 'orange', 'yellow', 'green', 'blue', 'gray'].reduce((o, c) => { o[c] = additives.filter((x) => x.signal.color === c).length; return o; }, {}),
+    derived_additives: derivedAdditives ? { source: derivedAdditives.source, items: derivedAdditives.slice() } : null,
   };
 }
 

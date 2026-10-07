@@ -69,7 +69,8 @@ const adiText = (r) => {
     const v = r.value == null ? '수치' : `${r.value}`;
     return `${r.finding === 'adi_temporary' ? '잠정 ' : ''}ADI ${v}${r.value == null ? '' : ' ' + (r.unit || '')}`.trim();
   }
-  return { adi_not_specified: 'not specified', adi_not_limited: 'not limited', no_safety_concern: '안전성 우려 없음' }[r.finding];
+  // 화면 문구는 한글만(75j 실화면 확인 — «JECFA 1973 not limited» 가 그대로 노출됐다)
+  return { adi_not_specified: 'ADI 설정 불필요', adi_not_limited: 'ADI 제한 불필요', no_safety_concern: '안전성 우려 없음' }[r.finding];
 };
 
 function indexEvidence(ev) {
@@ -125,12 +126,16 @@ function classifyAdditive(name, opt = {}) {
   const asOf = opt.asOfYear || new Date().getFullYear();
   const badges = [];
   const add = (code, text) => { if (!badges.some((b) => b.code === code && b.text === text)) badges.push({ code, text }); };
+  // ⚪ 은 이름을 둘로 나눈다(75j 실화면): R0 = 성분 특정 불가(분류명·용도명) / 그 밖 = 자료 부족
+  const grayLabel = (rule) => (rule === 'R0' ? '성분 특정 불가' : '자료 부족');
   const out = (color, rule, reason, deciding = [], key = null, iarcNote = null) => ({
-    name, evidence_key: key, color, emoji: COLORS[color].emoji, color_label: COLORS[color].label,
-    rule, reason, badges, iarc_note: iarcNote, domestic: domesticOf(key || name, dom), deciding,
+    name, evidence_key: key, color, emoji: COLORS[color].emoji, color_label: color === 'gray' ? grayLabel(rule) : COLORS[color].label,
+    rule, reason, badges, iarc_note: iarcNote,
+    // 용도명만 적힌 표기(class_only)는 공전 «품목»이 아니므로 국내 기준 줄을 내지 않는다
+    domestic: opt.matchType === 'class_only' ? null : domesticOf(key || name, dom), deciding,
   });
 
-  if (opt.matchType === 'class_only') { add('unidentified', '성분 특정 불가'); return out('gray', 'R0', '용도명만 표시돼 어떤 물질인지 특정할 수 없어요'); }
+  if (opt.matchType === 'class_only') { return out('gray', 'R0', '용도명만 표시돼 어떤 물질인지 특정할 수 없어요'); }
 
   const ek = evidenceKey(name, idx);
   if (!ek) return out('gray', 'R1', '평가 근거를 아직 모으지 못했어요');
@@ -138,7 +143,7 @@ function classifyAdditive(name, opt = {}) {
   if (ek.key !== name) add('family_unknown', `번호(I~IV) 미상 — «${ek.key}» 근거로 판정`);
 
   if (rows.some((r) => r.finding === 'category_not_substance')) {
-    add('unidentified', '성분 특정 불가');
+    // 75j: 색 이름이 이미 «성분 특정 불가» — 같은 말의 배지는 내지 않는다
     return out('gray', 'R0', '개별 물질이 아닌 분류명이라 평가 대상을 특정할 수 없어요', [], ek.key);
   }
 

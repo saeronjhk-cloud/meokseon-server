@@ -101,7 +101,8 @@ t('75g-4 — 같은 기관 안 용도별 결론 차이는 불일치 아님(바�
 });
 t('75g-4 — 화면 문구는 한글: 근거 DB 전 물질의 이유·배지에 영어 문장 없음', () => {
   const EV = require('../src/data/additive_evidence.json');
-  const ALLOWED = /\b(IARC|EFSA|JECFA|SCF|FDA|IOM|EU_REG|ADI|MCPD|MEI|mg|kg|bw|day|not|specified|limited)\b/g;
+  // 75j: «not specified/limited» 영어 노출이 실화면에서 발견 → 허용 목록에서 뺐다
+  const ALLOWED = /\b(IARC|EFSA|JECFA|SCF|FDA|IOM|EU_REG|ADI|MCPD|MEI|mg|kg|bw|day)\b/g;
   const bad = [];
   for (const n of new Set(EV.rows.map((r) => r.additive))) {
     const s = classifyAdditive(n, { asOfYear: AS_OF });
@@ -140,6 +141,13 @@ t('gold_v1.1_ext 10종 — 영양강화 🔵(제이 결정 10-05) · 첨가물 �
   assert.ok(bad.length === 0, bad.join('\n     '));
   assert.ok(/성인 상한섭취량 100 µg\/일\(EFSA 2023\)/.test(classifyAdditive('비타민D3').reason), classifyAdditive('비타민D3').reason);
   assert.ok(/상한섭취량 미설정/.test(classifyAdditive('비타민B1염산염').reason));
+});
+
+t('75j — ⚪ 이름 구분(R0 성분 특정 불가 / 그 밖 자료 부족) · 용도명은 국내 기준 줄 없음', () => {
+  assert.strictEqual(classifyAdditive('향료').color_label, '성분 특정 불가');
+  assert.strictEqual(classifyAdditive('없는물질이름').color_label, '자료 부족');
+  assert.strictEqual(classifyAdditive('산도조절제', { matchType: 'class_only' }).domestic, null);
+  assert.ok(/ADI 제한 불필요/.test(classifyAdditive('구연산').reason));
 });
 
 console.log(`\n  결과: ${pass} 통과 · ${fail} 실패`);

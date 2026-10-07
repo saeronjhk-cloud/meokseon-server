@@ -12,6 +12,8 @@ const {
   countNutrientValues,   // 세션70 U69-2 — /multi-photo 영양 폴백은 «값이 있는 컷»으로 고른다(빈 객체 truthy 방어)
 } = require('../services/ocrParser');
 const { applyDvCheck } = require('../services/labelDvCheck');   // 세션69 U68-6 — 사용자 병합 뒤 %열 재검증
+// ★ 세션75l — 제보 화면 첨가물에 신호등 v3 를 «응답에서만» 붙인다(저장·캐시 원본은 그대로 · contributions.data 불변).
+const { attachSignals } = require('../services/additiveSignal');
 // ★ 세션50 D2 — `sanityCheck` 를 **일부러 import 하지 않는다.** 판정은 엔진 한 곳에서만 한다.
 //   (되돌리려면 import 부터 다시 넣어야 하므로, 이 한 줄이 다음 세션에 보내는 신호다)
 const { evaluateNutrition } = require('../services/nutritionTrafficLight');
@@ -591,7 +593,7 @@ router.post('/analyze', supabaseAuthOptional, upload.single('image'), async (req
       analysis: {
         ingredients: analysis.ingredients,
         ingredient_count: analysis.ingredient_count,
-        additives: analysis.additives,
+        additives: attachSignals(analysis.additives),
         additive_count: analysis.additive_count,
         nutrition: analysis.nutrition,
         // ★★ 세션45 중대4 — flat 을 **3분리에서 되짚어** 만든다.
@@ -891,7 +893,7 @@ router.post(
           product_meta: merged.product_meta,
           ingredients: merged.ingredients,
           ingredient_count: merged.ingredient_count,
-          additives: merged.additives,
+          additives: attachSignals(merged.additives),   // ★ 세션75l — 응답에서만 신호 부착
           additive_count: merged.additive_count,
           nutrition: merged.nutrition,
           // ★★ 세션45 중대4 — /analyze 와 **문자 단위로 같은 방식**으로 만든다.

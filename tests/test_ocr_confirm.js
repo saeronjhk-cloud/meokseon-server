@@ -434,6 +434,50 @@ async function main() {
   });
 
   // ════════════════════════════════════════════════════════════════════════
+  section('§3b. ★ 세션75l — 제보 화면 첨가물에 신호등 v3 (응답에서만 부착)');
+  // ════════════════════════════════════════════════════════════════════════
+  const LABEL_ADDITIVES = [
+    '제품명: 신호등확인음료',
+    '식품유형: 탄산음료',
+    '원재료명: 정제수, 설탕, 구연산, 아스파탐(감미료), 향료',
+  ].join('\n');
+  const sigOf = (adds, name) => (adds || []).find((a) => a.name === name)?.signal;
+  let sigToken = null;
+
+  await t('★ /multi-photo 응답의 첨가물마다 signal 이 붙는다 (아스파탐 🟠 · 구연산 🟢 · 향료 ⚪ 성분 특정 불가)', async () => {
+    const r = await callMultiPhoto({ labelText: LABEL_ADDITIVES, nutritionText: NUTRITION_ONLY, save: 'false' });
+    assert.strictEqual(r.status, 200, JSON.stringify(r.body));
+    const adds = r.body.data.analysis.additives;
+    assert.ok(Array.isArray(adds) && adds.length >= 3, `첨가물 인식 결과: ${JSON.stringify(adds)}`);
+    assert.ok(adds.every((a) => a.signal && a.signal.color), `signal 없는 행: ${JSON.stringify(adds.filter((a) => !a.signal))}`);
+    assert.strictEqual(sigOf(adds, '아스파탐')?.color, 'orange', JSON.stringify(sigOf(adds, '아스파탐')));
+    assert.strictEqual(sigOf(adds, '구연산')?.color, 'green', JSON.stringify(sigOf(adds, '구연산')));
+    const hy = adds.find((a) => a.name === '향료');
+    assert.ok(hy, `향료가 인식되지 않았다: ${JSON.stringify(adds.map((a) => a.name))}`);
+    assert.strictEqual(hy.signal.rule, 'R0');
+    assert.strictEqual(hy.signal.color_label, '성분 특정 불가');
+    sigToken = r.body.data.analysis_token;
+  });
+
+  await t('★ 신호는 응답에만 — 분석 캐시(=저장 원본)에는 signal 이 없다', () => {
+    const cached = analysisCache.getAnalysis(sigToken);
+    assert.ok(cached, '토큰이 캐시에 없다');
+    const adds = cached.analysis.additives || [];
+    assert.ok(adds.length >= 3, JSON.stringify(adds));
+    assert.ok(adds.every((a) => !('signal' in a)), '캐시 원본에 signal 이 섞였다 — contributions.data 가 불어난다');
+  });
+
+  await t('★ /analyze(한 장) 응답에도 signal 이 붙는다 (두 엔드포인트가 갈라지지 않는다)', async () => {
+    visionQueue.length = 0;
+    visionQueue.push(LABEL_ADDITIVES);
+    const r = await request('POST', '/api/ocr/analyze', { body: { image: Buffer.alloc(120, 7).toString('base64'), save: false } });
+    assert.strictEqual(r.status, 200, JSON.stringify(r.body));
+    const adds = r.body.data.analysis.additives;
+    assert.strictEqual(sigOf(adds, '아스파탐')?.color, 'orange', JSON.stringify(adds));
+    assert.ok(adds.every((a) => a.signal), JSON.stringify(adds));
+  });
+
+  // ════════════════════════════════════════════════════════════════════════
   section('§4. /confirm — 400 / 410 / 정상 저장 (2단계)');
   // ════════════════════════════════════════════════════════════════════════
   await t('★ product_name 이 빈 문자열이면 400 이고 한국어 사유를 준다', async () => {

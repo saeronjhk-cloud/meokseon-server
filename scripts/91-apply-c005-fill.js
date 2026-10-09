@@ -247,5 +247,5 @@ async function undo(pool, batch) {
   } catch (e) { await c.query('ROLLBACK'); throw e; } finally { c.release(); }
 }
 
-module.exports = { planGroup, basisOf, sameWithin };
+module.exports = { planGroup, basisOf, sameWithin, load }; // 세션76: 94-c005-membership 가 같은 로더를 쓴다(로직 한 벌)
 if (require.main === module) main().catch((e) => { console.error('ERR', e.message); process.exit(1); });

@@ -1,7 +1,7 @@
 /**
  * ★ 세션75g — 첨가물 신호등 v3 규칙 엔진 (순수 함수 · 원칙 5 «엔진이 답한다»)
  *   설계 IP/첨가물신호등_v3/설계_v0.2_2026-10-05.md · 정답 IP/첨가물신호등_v3/gold_v1.json(30 · 동결 10-05)
- *   근거 DB 정본 IP/첨가물신호등_v3/evidence_v1.1.json · 사본 src/data/additive_evidence.json (현재 evidence_v1.1 · 68종)
+ *   근거 DB 정본 IP/첨가물신호등_v3/evidence_v1.2.json · 사본 src/data/additive_evidence.json (현재 evidence_v1.2 · 131종 · 세션76)
  *   국내 기준 사본 src/data/additive_codex_domestic.json (식품첨가물공전 III · 665)
  *
  *   색(위에서부터 첫 일치):
@@ -14,7 +14,8 @@
  *     R5 수치 ADI(잠정 포함)                      → yellow
  *     R6 ADI 불필요 결론                          → green
  *     R6n 첨가물 평가 없이 영양소 상한(UL) 근거만   → blue  (75g-4 제이 결정 · 비타민B2·E 처럼 첨가물 평가가 있으면 R5/R6 우선)
- *     R7 그 밖                                    → gray
+ *     R7 ADI 설정 불가 결론이 가장 최신(세션76 · β-카로틴 JECFA 2019 철회) · 그 밖 → gray
+ *        (R6n 보다 먼저 본다 — 첨가물 평가가 있으면 영양소 상한보다 우선 · 75g-4 원칙)
  *   R5·R6 은 «최신 평가» 우선 · 같은 해 결론이 갈리면 더 보호적인 색 + «기관 결론 불일치» 배지.
  *   배지는 색을 바꾸지 않는다(고섭취자 · 조합 · 불순물 · 영아 · 연구 동향 · 폴리올 제품조건 · 오래된 평가 · 철회 이력).
  *   IARC 행은 route === 'food' 일 때만 색에 쓴다(inhalation · context · impurity → 배지).
@@ -60,6 +61,8 @@ const BADGE_TEXT = {
   reevaluation_ongoing: (r) => `재평가 진행 중(${r.source})`,
   allergy_reports: () => '알레르기 사례 보고',
   allergen_ingredient: () => '알레르기 표시 대상 원료',
+  multi_substance: () => '여러 물질을 포괄하는 품목명 — 가장 엄격한 평가 기준', // 세션76 시클로덱스트린
+  other_use_concern: () => '다른 용도(보충제 등) 평가의 우려 — 이 용도 평가 아님', // 세션76 홍국색소
 };
 const badgeText = (r) => r.badge_ko || BADGE_TEXT[r.finding](r);
 
@@ -158,7 +161,12 @@ function classifyAdditive(name, opt = {}) {
   const iarcNote = foodIarc.some((r) => r.finding !== 'iarc_3') ? IARC_NOTE : null;
 
   // R5·R6 판정용 ADI 행(철회 행 제외) — 배지(불일치 · ADI 다름 · 잠정 · 오래됨)는 색과 무관하게 계산
-  const adiRows = rows.filter((r) => ADI_COLOR[r.finding]);
+  // ★ 세션76: 영양소(UL 행 보유)의 «향료 용도» 평가(basis «flavouring»)는 강화 목적 사용의 색을 정하지 않는다 → 배지
+  //   (비타민B1: JECFA 2002 티아민염산염 향료 평가가 🟢를 만들어 비타민B1염산염 🔵과 어긋났다 · 75g-4 «첨가물 평가 우선»의 «첨가물 평가»에 향료 용도는 포함하지 않음)
+  const isNutrient = rows.some((r) => r.finding === 'nutrient_ul' || r.finding === 'nutrient_ul_not_established');
+  const flavourOnly = (r) => isNutrient && /flavouring/i.test(r.basis || '');
+  for (const r of rows) if (ADI_COLOR[r.finding] && flavourOnly(r)) add('flavouring_use_only', `향료 용도 평가: ${adiText(r)}(${SRC(r)})`);
+  const adiRows = rows.filter((r) => ADI_COLOR[r.finding] && !flavourOnly(r));
   // 기관별 최신 ADI 행(같은 해 여러 결론이면 보호적인 쪽) — 기관 «사이» 결론이 다를 때만 불일치(같은 기관 안 용도별 결론 차이는 제외 · 75g-4 바닐린)
   const latestBySrc = {};
   for (const r of adiRows) {
@@ -184,7 +192,7 @@ function classifyAdditive(name, opt = {}) {
     if (others.length && !badges.some((b) => b.code === 'agency_conflict')) {
       add('agency_conflict', `기관 결론 불일치(${r2.map(SRC).join(' · ')} 안전 결론 불가 · ${others.map((r) => `${SRC(r)} ${adiText(r)}`).join(' · ')})`);
     }
-    const reason = r2.map((r) => (r.finding === 'not_safe_conclusion' ? `${SRC(r)} 안전하다고 결론 내릴 수 없음` : `EU 식품첨가물 승인 철회(${r.year})`)).join(' · ');
+    const reason = r2.map((r) => r.reason_ko || (r.finding === 'not_safe_conclusion' ? `${SRC(r)} 안전하다고 결론 내릴 수 없음` : `EU 식품첨가물 승인 철회(${r.year})`)).join(' · ');
     return out('red', 'R2', reason, r2, ek.key, iarcNote);
   }
 
@@ -208,6 +216,14 @@ function classifyAdditive(name, opt = {}) {
     return out('orange', 'R4', reason, r4, ek.key, iarcNote);
   }
 
+  // ── R7a 가장 최신 결론이 «ADI 설정 불가»(세션76) — 수치·불필요 결론보다 새로우면 그 결론을 따른다(최신 평가 우선) ──
+  const noAdi = rows.filter((r) => r.finding === 'no_adi_allocated').sort((a, b) => b.year - a.year);
+  const maxAdiY = adiRows.length ? Math.max(...adiRows.map((r) => r.year)) : -Infinity;
+  if (noAdi.length && noAdi[0].year > maxAdiY) {
+    if (asOf - noAdi[0].year > OLD_EVAL_YEARS) add('old_evaluation', `오래된 평가(최신 ${noAdi[0].year})`);
+    return out('gray', 'R7', `${noAdi[0].source}가 평가했으나 자료 부족으로 ADI를 정하지 않았어요(${noAdi[0].year})`, [noAdi[0]], ek.key, iarcNote);
+  }
+
   // ── R5 / R6 (최신 평가 우선) ──
   if (adiRows.length) {
     const maxY = Math.max(...adiRows.map((r) => r.year));
@@ -215,7 +231,7 @@ function classifyAdditive(name, opt = {}) {
     const color = latest.some((r) => ADI_COLOR[r.finding] === 'yellow') ? 'yellow' : 'green';
     const deciding = latest.filter((r) => ADI_COLOR[r.finding] === color);
     if (asOf - maxY > OLD_EVAL_YEARS) add('old_evaluation', `오래된 평가(최신 ${maxY})`);
-    const reason = deciding.map((r) => `${SRC(r)} ${adiText(r)}`).join(' · ');
+    const reason = [...new Set(deciding.map((r) => `${SRC(r)} ${adiText(r)}`))].join(' · '); // 세션76: 같은 문구 반복 제거(우유응고효소 키모신 3종)
     return out(color, color === 'yellow' ? 'R5' : 'R6', reason, deciding, ek.key, iarcNote);
   }
 
@@ -233,13 +249,15 @@ function classifyAdditive(name, opt = {}) {
       }
       return out('blue', 'R6n', `영양강화 성분 — ${who}상한섭취량 ${pick.value} ${String(pick.unit || '').replace(/\/day$/, '/일')}(${SRC(pick)})`, [pick], ek.key, iarcNote);
     }
-    return out('blue', 'R6n', `영양강화 성분 — 과잉 섭취 이상반응 근거가 없어 상한섭취량 미설정(${ulNone.map(SRC).join(' · ')})`, ulNone, ek.key, iarcNote);
+    const ko = ulNone.find((r) => r.reason_ko); // 세션76: 아미노산은 «자료 부족»으로 미설정 — 이상반응 없음과 구분
+    return out('blue', 'R6n', ko ? ko.reason_ko : `영양강화 성분 — 과잉 섭취 이상반응 근거가 없어 상한섭취량 미설정(${ulNone.map(SRC).join(' · ')})`, ulNone, ek.key, iarcNote);
   }
 
-  const noAdi = rows.filter((r) => r.finding === 'no_adi_allocated');
-  if (noAdi.length) return out('gray', 'R7', `${noAdi[0].source}가 평가했으나 자료 부족으로 ADI를 정하지 않았어요(${noAdi[0].year})`, noAdi, ek.key, iarcNote);
   if (rows.every((r) => r.finding === 'not_evaluated' || BADGE_TEXT[r.finding])) {
     return out('gray', 'R7', '국제기구(JECFA·EFSA) 첨가물 평가 기록을 찾지 못했어요', [], ek.key, iarcNote);
+  }
+  if (rows.every((r) => r.finding === 'not_evaluated' || r.finding === 'adi_cited' || BADGE_TEXT[r.finding])) {
+    return out('gray', 'R7', '다른 용도·다른 물질의 평가만 있어 색을 정할 근거가 부족해요', [], ek.key, iarcNote); // 세션76 proxy 원칙
   }
   return out('gray', 'R7', '색을 정할 평가 결론이 없어요', [], ek.key, iarcNote);
 }

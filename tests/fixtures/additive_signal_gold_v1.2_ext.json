@@ -1,0 +1,598 @@
+{
+ "version": "gold_v1.2_ext",
+ "created": "2026-10-09",
+ "session": "76",
+ "base": "gold_v1(30·동결) + gold_v1.1_ext(10) 위에 추가 — 둘 다 그대로",
+ "why": "U75-3 ⚪ 자료 부족 줄이기 — 빈도 61~124위 R1 61종(HACCP 슬롯 6,532 · 14.8%)",
+ "protocol": "Eval-First: 근거 수집 전 Claude 사전 기대(prior) 고정. 근거 수집 후 엔진 색이 prior 와 다르면 prior 를 몰래 고치지 않고 final·status(evidence_resolved/jay_needed)·사유를 기록. confidence=high 불일치는 근거 재확인 필수.",
+ "items": [
+  {
+   "additive": "글루코노-δ-락톤",
+   "prior": "🟢",
+   "prior_rule": "R6",
+   "confidence": "high",
+   "status": "prior_confirmed",
+   "final": "🟢",
+   "rule": "R6"
+  },
+  {
+   "additive": "제삼인산칼슘",
+   "prior": "🟡",
+   "prior_rule": "R5",
+   "confidence": "high",
+   "status": "prior_confirmed",
+   "final": "🟡",
+   "rule": "R5"
+  },
+  {
+   "additive": "산성피로인산나트륨",
+   "prior": "🟡",
+   "prior_rule": "R5",
+   "confidence": "high",
+   "status": "prior_confirmed",
+   "final": "🟡",
+   "rule": "R5"
+  },
+  {
+   "additive": "5'-이노신산이나트륨",
+   "prior": "🟢",
+   "prior_rule": "R6",
+   "confidence": "high",
+   "status": "prior_confirmed",
+   "final": "🟢",
+   "rule": "R6"
+  },
+  {
+   "additive": "젤란검",
+   "prior": "🟢",
+   "prior_rule": "R6",
+   "confidence": "high",
+   "status": "prior_confirmed",
+   "final": "🟢",
+   "rule": "R6"
+  },
+  {
+   "additive": "자일리톨",
+   "prior": "🟢",
+   "prior_rule": "R6",
+   "confidence": "high",
+   "status": "prior_confirmed",
+   "final": "🟢",
+   "rule": "R6"
+  },
+  {
+   "additive": "아세설팜칼륨",
+   "prior": "🟡",
+   "prior_rule": "R5",
+   "confidence": "high",
+   "status": "prior_confirmed",
+   "final": "🟡",
+   "rule": "R5"
+  },
+  {
+   "additive": "제이인산칼륨",
+   "prior": "🟡",
+   "prior_rule": "R5",
+   "confidence": "high",
+   "status": "prior_confirmed",
+   "final": "🟡",
+   "rule": "R5"
+  },
+  {
+   "additive": "황산칼슘",
+   "prior": "🟢",
+   "prior_rule": "R6",
+   "confidence": "high",
+   "status": "prior_confirmed",
+   "final": "🟢",
+   "rule": "R6"
+  },
+  {
+   "additive": "염화칼슘",
+   "prior": "🟢",
+   "prior_rule": "R6",
+   "confidence": "high",
+   "status": "prior_confirmed",
+   "final": "🟢",
+   "rule": "R6"
+  },
+  {
+   "additive": "젖산",
+   "prior": "🟢",
+   "prior_rule": "R6",
+   "confidence": "high",
+   "status": "prior_confirmed",
+   "final": "🟢",
+   "rule": "R6"
+  },
+  {
+   "additive": "5'-구아닐산이나트륨",
+   "prior": "🟢",
+   "prior_rule": "R6",
+   "confidence": "high",
+   "status": "prior_confirmed",
+   "final": "🟢",
+   "rule": "R6"
+  },
+  {
+   "additive": "염화칼륨",
+   "prior": "🟢",
+   "prior_rule": "R6",
+   "confidence": "high",
+   "status": "prior_confirmed",
+   "final": "🟢",
+   "rule": "R6"
+  },
+  {
+   "additive": "이산화탄소",
+   "prior": "🟢",
+   "prior_rule": "R6",
+   "confidence": "high",
+   "status": "prior_confirmed",
+   "final": "🟢",
+   "rule": "R6"
+  },
+  {
+   "additive": "염화마그네슘",
+   "prior": "🟢",
+   "prior_rule": "R6",
+   "confidence": "high",
+   "status": "prior_confirmed",
+   "final": "🟢",
+   "rule": "R6"
+  },
+  {
+   "additive": "아미드펙틴",
+   "prior": "🟢",
+   "prior_rule": "R6",
+   "confidence": "high",
+   "status": "prior_confirmed",
+   "final": "🟢",
+   "rule": "R6"
+  },
+  {
+   "additive": "분말비타민A",
+   "prior": "🔵",
+   "prior_rule": "R6n",
+   "confidence": "high",
+   "status": "prior_confirmed",
+   "final": "🔵",
+   "rule": "R6n"
+  },
+  {
+   "additive": "판토텐산칼슘",
+   "prior": "🔵",
+   "prior_rule": "R6n",
+   "confidence": "high",
+   "status": "prior_confirmed",
+   "final": "🔵",
+   "rule": "R6n"
+  },
+  {
+   "additive": "자당지방산에스테르",
+   "prior": "🟡",
+   "prior_rule": "R5",
+   "confidence": "high",
+   "status": "prior_confirmed",
+   "final": "🟡",
+   "rule": "R5"
+  },
+  {
+   "additive": "비타민B12",
+   "prior": "🔵",
+   "prior_rule": "R6n",
+   "confidence": "high",
+   "status": "prior_confirmed",
+   "final": "🔵",
+   "rule": "R6n"
+  },
+  {
+   "additive": "안나토색소",
+   "prior": "🟡",
+   "prior_rule": "R5",
+   "confidence": "high",
+   "status": "prior_confirmed",
+   "final": "🟡",
+   "rule": "R5"
+  },
+  {
+   "additive": "제일인산칼슘",
+   "prior": "🟡",
+   "prior_rule": "R5",
+   "confidence": "high",
+   "status": "prior_confirmed",
+   "final": "🟡",
+   "rule": "R5"
+  },
+  {
+   "additive": "폴리글리시톨시럽",
+   "prior": "🟢",
+   "prior_rule": "R6",
+   "confidence": "high",
+   "status": "prior_confirmed",
+   "final": "🟢",
+   "rule": "R6"
+  },
+  {
+   "additive": "제이인산나트륨",
+   "prior": "🟡",
+   "prior_rule": "R5",
+   "confidence": "high",
+   "status": "prior_confirmed",
+   "final": "🟡",
+   "rule": "R5"
+  },
+  {
+   "additive": "폴리덱스트로스",
+   "prior": "🟢",
+   "prior_rule": "R6",
+   "confidence": "high",
+   "status": "prior_confirmed",
+   "final": "🟢",
+   "rule": "R6"
+  },
+  {
+   "additive": "스테비올배당체",
+   "prior": "🟡",
+   "prior_rule": "R5",
+   "confidence": "high",
+   "status": "prior_confirmed",
+   "final": "🟡",
+   "rule": "R5"
+  },
+  {
+   "additive": "알긴산프로필렌글리콜",
+   "prior": "🟡",
+   "prior_rule": "R5",
+   "confidence": "high",
+   "status": "prior_confirmed",
+   "final": "🟡",
+   "rule": "R5"
+  },
+  {
+   "additive": "알긴산나트륨",
+   "prior": "🟢",
+   "prior_rule": "R6",
+   "confidence": "high",
+   "status": "prior_confirmed",
+   "final": "🟢",
+   "rule": "R6"
+  },
+  {
+   "additive": "초산나트륨",
+   "prior": "🟢",
+   "prior_rule": "R6",
+   "confidence": "high",
+   "status": "prior_confirmed",
+   "final": "🟢",
+   "rule": "R6"
+  },
+  {
+   "additive": "파라옥시안식향산에틸",
+   "prior": "🟡",
+   "prior_rule": "R5",
+   "confidence": "high",
+   "status": "prior_confirmed",
+   "final": "🟡",
+   "rule": "R5"
+  },
+  {
+   "additive": "소르비탄지방산에스테르",
+   "prior": "🟡",
+   "prior_rule": "R5",
+   "confidence": "high",
+   "status": "prior_confirmed",
+   "final": "🟡",
+   "rule": "R5"
+  },
+  {
+   "additive": "환원철",
+   "prior": "🔵",
+   "prior_rule": "R6n",
+   "confidence": "high",
+   "status": "rule_resolved",
+   "final": "🟡",
+   "rule": "R5",
+   "resolution": "JECFA 1983 철 PMTDI 0.8 mg/kg bw = 첨가물 평가 → 75g-4 원칙(첨가물 평가가 UL보다 우선, 비타민B2 선례) · prior 🔵(high)는 원칙 적용 누락"
+  },
+  {
+   "additive": "젖산나트륨",
+   "prior": "🟢",
+   "prior_rule": "R6",
+   "confidence": "high",
+   "status": "prior_confirmed",
+   "final": "🟢",
+   "rule": "R6"
+  },
+  {
+   "additive": "제이인산칼슘",
+   "prior": "🟡",
+   "prior_rule": "R5",
+   "confidence": "high",
+   "status": "prior_confirmed",
+   "final": "🟡",
+   "rule": "R5"
+  },
+  {
+   "additive": "탄산마그네슘",
+   "prior": "🟢",
+   "prior_rule": "R6",
+   "confidence": "high",
+   "status": "prior_confirmed",
+   "final": "🟢",
+   "rule": "R6"
+  },
+  {
+   "additive": "비타민A",
+   "prior": "🔵",
+   "prior_rule": "R6n",
+   "confidence": "high",
+   "status": "prior_confirmed",
+   "final": "🔵",
+   "rule": "R6n"
+  },
+  {
+   "additive": "비타민B1",
+   "prior": "🔵",
+   "prior_rule": "R6n",
+   "confidence": "high",
+   "status": "prior_confirmed",
+   "final": "🔵",
+   "rule": "R6n"
+  },
+  {
+   "additive": "심황색소",
+   "prior": "🟡",
+   "prior_rule": "R5",
+   "confidence": "high",
+   "status": "prior_confirmed",
+   "final": "🟡",
+   "rule": "R5"
+  },
+  {
+   "additive": "비트레드",
+   "prior": "🟢",
+   "prior_rule": "R6",
+   "confidence": "high",
+   "status": "prior_confirmed",
+   "final": "🟢",
+   "rule": "R6"
+  },
+  {
+   "additive": "자몽종자추출물",
+   "prior": "⚪",
+   "prior_rule": "R7",
+   "confidence": "low",
+   "status": "prior_confirmed",
+   "note": "국제기구 첨가물 평가 없음 예상",
+   "final": "⚪",
+   "rule": "R7"
+  },
+  {
+   "additive": "호박산이나트륨",
+   "prior": "🟢",
+   "prior_rule": "R6",
+   "confidence": "low",
+   "status": "prior_confirmed",
+   "note": "JECFA 향료(호박산) 평가 준용 여부 불확실",
+   "final": "🟢",
+   "rule": "R6"
+  },
+  {
+   "additive": "β-카로틴",
+   "prior": "🟡",
+   "prior_rule": "R5",
+   "confidence": "low",
+   "status": "evidence_resolved",
+   "note": "JECFA 그룹 ADI vs EFSA 2012 ADI 미설정",
+   "final": "⚪",
+   "rule": "R7",
+   "resolution": "JECFA 2019(87차) 그룹 ADI 0–5 철회·설정 불가 + EFSA 2012 ADI 설정 불가 → 최신 결론이 «설정 불가»(엔진 R7a 신설) · prior는 철회 전 지식"
+  },
+  {
+   "additive": "젤라틴",
+   "prior": "🟢",
+   "prior_rule": "R6",
+   "confidence": "low",
+   "status": "prior_confirmed",
+   "note": "식품원료 성격 · JECFA 1970 not limited 예상",
+   "final": "🟢",
+   "rule": "R6"
+  },
+  {
+   "additive": "타우린",
+   "prior": "🟢",
+   "prior_rule": "R6",
+   "confidence": "low",
+   "status": "prior_confirmed",
+   "note": "EFSA 2009 에너지음료 수준 우려 없음 예상",
+   "final": "🟢",
+   "rule": "R6"
+  },
+  {
+   "additive": "조제해수염화마그네슘",
+   "prior": "🟢",
+   "prior_rule": "R6",
+   "confidence": "low",
+   "status": "prior_confirmed",
+   "note": "주성분 염화마그네슘 근거 준용 — 제이 판단 항목",
+   "final": "🟢",
+   "rule": "R6"
+  },
+  {
+   "additive": "우유응고효소",
+   "prior": "🟢",
+   "prior_rule": "R6",
+   "confidence": "low",
+   "status": "prior_confirmed",
+   "note": "JECFA 키모신 ADI 불필요 예상 · 동물 레닛 불확실",
+   "final": "🟢",
+   "rule": "R6"
+  },
+  {
+   "additive": "카로틴",
+   "prior": "🟡",
+   "prior_rule": "R5",
+   "confidence": "low",
+   "status": "evidence_resolved",
+   "note": "혼합 카로틴 평가 형태 불확실",
+   "final": "⚪",
+   "rule": "R7",
+   "resolution": "JECFA 2019 그룹 ADI 설정 불가가 1993·2017 결론보다 최신 + EFSA 2012 결론 불가"
+  },
+  {
+   "additive": "dl-α-토코페릴아세테이트",
+   "prior": "🔵",
+   "prior_rule": "R6n",
+   "confidence": "low",
+   "status": "prior_confirmed",
+   "note": "첨가물 평가 적용 여부 불확실",
+   "final": "🔵",
+   "rule": "R6n"
+  },
+  {
+   "additive": "시클로덱스트린",
+   "prior": "⚪",
+   "prior_rule": "R7",
+   "confidence": "low",
+   "status": "evidence_resolved",
+   "note": "α/β/γ 특정 불가 가능성",
+   "final": "🟡",
+   "rule": "R5",
+   "resolution": "공전 품목이 α·β·γ 포괄(공전 원문 확인) → 가장 엄격한 β(EFSA 2016 ADI 5) 기준 · multi_substance 배지"
+  },
+  {
+   "additive": "효소처리루틴",
+   "prior": "⚪",
+   "prior_rule": "R7",
+   "confidence": "low",
+   "status": "prior_confirmed",
+   "note": "국제 평가 없음 예상",
+   "final": "⚪",
+   "rule": "R7"
+  },
+  {
+   "additive": "고량색소",
+   "prior": "⚪",
+   "prior_rule": "R7",
+   "confidence": "low",
+   "status": "prior_confirmed",
+   "note": "국제 평가 없음 예상",
+   "final": "⚪",
+   "rule": "R7"
+  },
+  {
+   "additive": "L-카르니틴",
+   "prior": "⚪",
+   "prior_rule": "R7",
+   "confidence": "low",
+   "status": "evidence_resolved",
+   "note": "첨가물·UL 근거 불확실",
+   "final": "🟢",
+   "rule": "R6",
+   "resolution": "EFSA 2003 AFC 특수영양식품 L-카르니틴-L-타르트레이트 안전성 우려 없음(verified snippet)"
+  },
+  {
+   "additive": "타마린드검",
+   "prior": "🟢",
+   "prior_rule": "R6",
+   "confidence": "low",
+   "status": "prior_confirmed",
+   "note": "JECFA 평가 여부 불확실",
+   "final": "🟢",
+   "rule": "R6"
+  },
+  {
+   "additive": "적양배추색소",
+   "prior": "⚪",
+   "prior_rule": "R7",
+   "confidence": "low",
+   "status": "prior_confirmed",
+   "note": "EFSA 2013 안토시아닌 ADI 설정 불가 예상",
+   "final": "⚪",
+   "rule": "R7"
+  },
+  {
+   "additive": "L-시스틴",
+   "prior": "🟢",
+   "prior_rule": "R6",
+   "confidence": "low",
+   "status": "evidence_resolved",
+   "note": "JECFA 향료(아미노산군) 준용 불확실",
+   "final": "🔵",
+   "rule": "R6n",
+   "resolution": "국제 첨가물 평가 없음 · IOM 2005 개별 아미노산 UL 자료 부족으로 미설정"
+  },
+  {
+   "additive": "L-발린",
+   "prior": "🟢",
+   "prior_rule": "R6",
+   "confidence": "low",
+   "status": "evidence_resolved",
+   "note": "동상",
+   "final": "🔵",
+   "rule": "R6n",
+   "resolution": "향료 용도(DL-발린) 평가는 영양강화 용도 근거 아님 · IOM 2005 UL 미설정"
+  },
+  {
+   "additive": "L-로이신",
+   "prior": "🟢",
+   "prior_rule": "R6",
+   "confidence": "low",
+   "status": "evidence_resolved",
+   "note": "동상",
+   "final": "🔵",
+   "rule": "R6n",
+   "resolution": "향료 용도 평가는 영양강화 용도 근거 아님 · IOM 2005 UL 미설정"
+  },
+  {
+   "additive": "L-이소로이신",
+   "prior": "🟢",
+   "prior_rule": "R6",
+   "confidence": "low",
+   "status": "evidence_resolved",
+   "note": "동상",
+   "final": "🔵",
+   "rule": "R6n",
+   "resolution": "향료 용도 평가는 영양강화 용도 근거 아님 · IOM 2005 UL 미설정"
+  },
+  {
+   "additive": "홍국색소",
+   "prior": "⚪",
+   "prior_rule": "R7",
+   "confidence": "low",
+   "status": "prior_confirmed",
+   "note": "EU 미승인 · 시트리닌 이슈",
+   "final": "⚪",
+   "rule": "R7"
+  },
+  {
+   "additive": "스모크향",
+   "prior": "🔴",
+   "prior_rule": "R2",
+   "confidence": "low",
+   "status": "prior_confirmed",
+   "note": "EFSA 2023 유전독성 우려 배제 불가 → EU 2024 갱신 거부 예상 — 색 영향 커서 제이 확인",
+   "final": "🔴",
+   "rule": "R2"
+  },
+  {
+   "additive": "트랜스글루타미나아제",
+   "prior": "⚪",
+   "prior_rule": "R7",
+   "confidence": "low",
+   "status": "evidence_resolved",
+   "note": "효소 · 국제 평가 불확실",
+   "final": "🟢",
+   "rule": "R6",
+   "resolution": "EFSA 2024(AE-BTG) · 2026(M2020197 재평가) 안전성 우려 없음 · FDA GRAS 무이의"
+  }
+ ],
+ "frozen": "2026-10-09 (세션76) — final 확정 후 동결. 이후 근거 변경으로 색이 바뀌면 사유 기록 후 갱신",
+ "summary": {
+  "items": 61,
+  "prior_confirmed": 51,
+  "evidence_resolved": 9,
+  "rule_resolved": 1
+ }
+}

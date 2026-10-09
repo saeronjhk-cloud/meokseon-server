@@ -9,6 +9,7 @@ const assert = require('assert');
 const { classifyAdditive, attachSignals, IARC_NOTE, _indexEvidence } = require('../src/services/additiveSignal');
 const G = require('./fixtures/additive_signal_gold_v1.json');
 const GX = require('./fixtures/additive_signal_gold_v1.1_ext.json');
+const GX2 = require('./fixtures/additive_signal_gold_v1.2_ext.json'); // 세션76 U75-3 · 61종
 
 let pass = 0, fail = 0;
 function t(name, fn) { try { fn(); pass++; console.log(`  ✅ ${name}`); } catch (e) { fail++; console.log(`  ❌ ${name}\n     → ${e.message}`); } }
@@ -148,6 +149,50 @@ t('75j — ⚪ 이름 구분(R0 성분 특정 불가 / 그 밖 자료 부족) ·
   assert.strictEqual(classifyAdditive('없는물질이름').color_label, '자료 부족');
   assert.strictEqual(classifyAdditive('산도조절제', { matchType: 'class_only' }).domestic, null);
   assert.ok(/ADI 제한 불필요/.test(classifyAdditive('구연산').reason));
+});
+
+// ══ 세션76 U75-3 — 근거 확장 v1.2(빈도 61~124위 61종) ══
+t('gold_v1.2_ext 61종 — 색+규칙 61/61 (prior 51 확인 · 근거/규칙 해소 10)', () => {
+  assert.strictEqual(GX2.items.length, 61, '정답 수가 바뀌었다 — 사유 기록 후 갱신');
+  const bad = [];
+  for (const g of GX2.items) {
+    const s = classifyAdditive(g.additive, { asOfYear: AS_OF });
+    if (s.color !== EMOJI2COLOR[g.final] || s.rule !== g.rule) bad.push(`${g.additive} 정답 ${g.final}/${g.rule} · 엔진 ${s.emoji}/${s.rule}(${s.reason})`);
+  }
+  assert.ok(bad.length === 0, `${61 - bad.length}/61\n     ${bad.join('\n     ')}`);
+});
+t('R7a — 최신 결론이 «ADI 설정 불가»면 ⚪ · R6n 보다 우선(β-카로틴) · 더 새 ADI 가 오면 🟡(뮤테이션)', () => {
+  const b = classifyAdditive('β-카로틴', { asOfYear: AS_OF });
+  assert.strictEqual(b.rule, 'R7'); assert.ok(/2019/.test(b.reason), b.reason); assert.ok(has(b, 'adi_withdrawn'));
+  const EV = require('../src/data/additive_evidence.json');
+  const rows = EV.rows.concat([{ additive: 'β-카로틴', source: 'EFSA', finding: 'adi_numeric', value: 1, unit: 'mg/kg bw/day', year: 2027, route: null }]);
+  assert.strictEqual(classifyAdditive('β-카로틴', { evidenceIndex: _indexEvidence({ rows }), asOfYear: 2027 }).color, 'yellow');
+  assert.strictEqual(classifyAdditive('안나토색소', { asOfYear: AS_OF }).color, 'yellow', '옛 no_adi(2006 오일추출 한정)는 더 새 ADI 를 이기지 못함');
+});
+t('proxy 원칙 — 다른 물질·다른 용도 평가(adi_cited)는 색을 만들지 않는다', () => {
+  assert.strictEqual(classifyAdditive('적양배추색소', { asOfYear: AS_OF }).color, 'gray', '포도과피추출물 ADI 로 🟡 되면 안 됨');
+  assert.strictEqual(classifyAdditive('dl-α-토코페릴아세테이트', { asOfYear: AS_OF }).rule, 'R6n');
+  assert.ok(/자료 부족으로 상한섭취량 미설정\(IOM 2005\)/.test(classifyAdditive('L-로이신').reason));
+  const EV = require('../src/data/additive_evidence.json');
+  const rows = EV.rows.map((r) => (r.additive === '적양배추색소' && r.finding === 'adi_cited' ? { ...r, finding: 'adi_numeric', year: 2020 } : r)); // 2013 EFSA «설정 불가»보다 새로워야 R7a 를 넘는다
+  assert.strictEqual(classifyAdditive('적양배추색소', { evidenceIndex: _indexEvidence({ rows }), asOfYear: AS_OF }).color, 'yellow', '뮤테이션: 게이트가 finding 으로 작동');
+});
+t('다른 용도 우려·대체된 결론은 🔴 아님 · 훈연향은 🔴 R2(사유 한글 덮어쓰기)', () => {
+  const h = classifyAdditive('홍국색소', { asOfYear: AS_OF });
+  assert.strictEqual(h.color, 'gray'); assert.ok(has(h, 'other_use_concern'));
+  assert.strictEqual(classifyAdditive('트랜스글루타미나아제', { asOfYear: AS_OF }).color, 'green');
+  const sm = classifyAdditive('스모크향', { asOfYear: AS_OF });
+  assert.strictEqual(sm.rule, 'R2'); assert.ok(/훈연향/.test(sm.reason) && !/식품첨가물 승인/.test(sm.reason), sm.reason);
+  assert.ok(!has(sm, 'agency_conflict'), 'JECFA 1987 잠정 수용은 adi_cited — 불일치 배지 없음');
+  const EV = require('../src/data/additive_evidence.json');
+  const rows = EV.rows.map((r) => (r.additive === '홍국색소' && r.finding === 'other_use_concern' ? { ...r, finding: 'not_safe_conclusion' } : r));
+  assert.strictEqual(classifyAdditive('홍국색소', { evidenceIndex: _indexEvidence({ rows }), asOfYear: AS_OF }).color, 'red', '뮤테이션');
+});
+t('여러 물질 포괄(시클로덱스트린) — 가장 엄격한 β 기준 🟡 + 배지 · 불일치 배지 없음 · 같은 문구 반복 없음(우유응고효소)', () => {
+  const c = classifyAdditive('시클로덱스트린', { asOfYear: AS_OF });
+  assert.strictEqual(c.color, 'yellow'); assert.ok(has(c, 'multi_substance')); assert.ok(!has(c, 'agency_conflict'));
+  const r = classifyAdditive('우유응고효소', { asOfYear: AS_OF }).reason;
+  assert.strictEqual(r.split(' · ').length, new Set(r.split(' · ')).size, r);
 });
 
 console.log(`\n  결과: ${pass} 통과 · ${fail} 실패`);

@@ -121,7 +121,7 @@ if (require.main === module && process.argv.includes('--self-test')) {
   process.exit(bad ? 1 : 0);
 }
 
-module.exports = { decideKeep, loadHaccp, planHaccp, goldGate, applyPlan, undoBatch, nameKey, VERSION };
+module.exports = { decideKeep, loadHaccp, planHaccp, goldGate, applyPlan, undoBatch, nameKey, nameGate, mfrOverlap, haccpName, VERSION };
 
 const ING_COLS = ['id', 'product_id', 'raw_text', 'parsed_ingredients', 'prdlst_report_no', 'source', 'created_at', 'updated_at'];
 const ADD_COLS = ['product_id', 'additive_id', 'amount', 'unit', 'detected_name', 'confidence'];

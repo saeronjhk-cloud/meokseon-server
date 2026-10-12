@@ -1,5 +1,5 @@
 {
- "version": "allergen_ing_rules_v2",
+ "version": "allergen_ing_rules_v3",
  "note": "DB 경로(공공 원재료명) 전용. OCR 경로에는 쓰지 않는다(제이 10-12: OCR 파싱은 표시사항 그대로 유효). 토큰을 allergenName.normalizeAllergenNames 에 넣기 전에 아래 제외 규칙으로 거른다. HACCP 원재료↔표시란 5,757쌍에서 오탐으로 확인된 패턴만 넣는다.",
  "exclude_suffix": [
   "향",
@@ -106,6 +106,640 @@
    "token": "연유",
    "allergen": "우유",
    "evidence": "n77 P0.987"
+  },
+  {
+   "match": "includes",
+   "token": "유정란",
+   "allergen": "난류(가금류)",
+   "class": "identity",
+   "except_contains": [
+    "맛",
+    "시즈닝",
+    "양념",
+    "소스",
+    "풍미",
+    "향",
+    "후레바",
+    "플레이버",
+    "인핸",
+    "인헨"
+   ],
+   "evidence": "HACCP n15 P1.000 새TP9 새FP0"
+  },
+  {
+   "match": "includes",
+   "token": "무정란",
+   "allergen": "난류(가금류)",
+   "class": "identity",
+   "except_contains": [
+    "맛",
+    "시즈닝",
+    "양념",
+    "소스",
+    "풍미",
+    "향",
+    "후레바",
+    "플레이버",
+    "인핸",
+    "인헨"
+   ],
+   "evidence": "HACCP n0 P- 새TP0 새FP0"
+  },
+  {
+   "match": "includes",
+   "token": "전란",
+   "allergen": "난류(가금류)",
+   "class": "identity",
+   "except_contains": [
+    "맛",
+    "시즈닝",
+    "양념",
+    "소스",
+    "풍미",
+    "향",
+    "후레바",
+    "플레이버",
+    "인핸",
+    "인헨"
+   ],
+   "evidence": "HACCP n365 P0.995 새TP11 새FP0"
+  },
+  {
+   "match": "includes",
+   "token": "난각",
+   "allergen": "난류(가금류)",
+   "class": "identity",
+   "except_contains": [
+    "맛",
+    "시즈닝",
+    "양념",
+    "소스",
+    "풍미",
+    "향",
+    "후레바",
+    "플레이버",
+    "인핸",
+    "인헨"
+   ],
+   "evidence": "HACCP n118 P0.983 새TP35 새FP0"
+  },
+  {
+   "match": "includes",
+   "token": "에그알부민",
+   "allergen": "난류(가금류)",
+   "class": "identity",
+   "except_contains": [
+    "맛",
+    "시즈닝",
+    "양념",
+    "소스",
+    "풍미",
+    "향",
+    "후레바",
+    "플레이버",
+    "인핸",
+    "인헨"
+   ],
+   "evidence": "HACCP n9 P0.889 새TP7 새FP1"
+  },
+  {
+   "match": "includes",
+   "token": "에그요크",
+   "allergen": "난류(가금류)",
+   "class": "identity",
+   "except_contains": [
+    "맛",
+    "시즈닝",
+    "양념",
+    "소스",
+    "풍미",
+    "향",
+    "후레바",
+    "플레이버",
+    "인핸",
+    "인헨"
+   ],
+   "evidence": "HACCP n1 P1.000 새TP1 새FP0"
+  },
+  {
+   "match": "includes",
+   "token": "원유",
+   "allergen": "우유",
+   "class": "identity",
+   "except_contains": [
+    "맛",
+    "시즈닝",
+    "양념",
+    "소스",
+    "풍미",
+    "향",
+    "후레바",
+    "플레이버",
+    "인핸",
+    "인헨"
+   ],
+   "evidence": "HACCP n302 P0.987 새TP59 새FP3"
+  },
+  {
+   "match": "includes",
+   "token": "유장",
+   "allergen": "우유",
+   "class": "identity",
+   "except_contains": [
+    "맛",
+    "시즈닝",
+    "양념",
+    "소스",
+    "풍미",
+    "향",
+    "후레바",
+    "플레이버",
+    "인핸",
+    "인헨"
+   ],
+   "evidence": "HACCP n59 P1.000 새TP21 새FP0"
+  },
+  {
+   "match": "includes",
+   "token": "요구르트",
+   "allergen": "우유",
+   "class": "identity",
+   "except_contains": [
+    "맛",
+    "시즈닝",
+    "양념",
+    "소스",
+    "풍미",
+    "향",
+    "후레바",
+    "플레이버",
+    "인핸",
+    "인헨"
+   ],
+   "evidence": "HACCP n67 P1.000 새TP15 새FP0"
+  },
+  {
+   "match": "includes",
+   "token": "요거트",
+   "allergen": "우유",
+   "class": "identity",
+   "except_contains": [
+    "맛",
+    "시즈닝",
+    "양념",
+    "소스",
+    "풍미",
+    "향",
+    "후레바",
+    "플레이버",
+    "인핸",
+    "인헨"
+   ],
+   "evidence": "HACCP n65 P1.000 새TP14 새FP0"
+  },
+  {
+   "match": "includes",
+   "token": "발효유",
+   "allergen": "우유",
+   "class": "identity",
+   "except_contains": [
+    "맛",
+    "시즈닝",
+    "양념",
+    "소스",
+    "풍미",
+    "향",
+    "후레바",
+    "플레이버",
+    "인핸",
+    "인헨"
+   ],
+   "evidence": "HACCP n13 P1.000 새TP2 새FP0"
+  },
+  {
+   "match": "includes",
+   "token": "밀크",
+   "allergen": "우유",
+   "class": "identity",
+   "except_contains": [
+    "코코넛",
+    "씨슬",
+    "에멀",
+    "라이스",
+    "오트",
+    "아몬드",
+    "두유",
+    "소이",
+    "맛",
+    "시즈닝",
+    "양념",
+    "소스",
+    "풍미",
+    "향",
+    "후레바",
+    "플레이버",
+    "인핸",
+    "인헨"
+   ],
+   "evidence": "HACCP n81 P1.000 새TP2 새FP0"
+  },
+  {
+   "match": "includes",
+   "token": "한우",
+   "allergen": "쇠고기",
+   "class": "identity",
+   "except_contains": [
+    "맛",
+    "시즈닝",
+    "양념",
+    "소스",
+    "풍미",
+    "향",
+    "후레바",
+    "플레이버",
+    "인핸",
+    "인헨"
+   ],
+   "evidence": "HACCP n166 P0.982 새TP77 새FP1"
+  },
+  {
+   "match": "includes",
+   "token": "소갈비",
+   "allergen": "쇠고기",
+   "class": "identity",
+   "except_contains": [
+    "맛",
+    "시즈닝",
+    "양념",
+    "소스",
+    "풍미",
+    "향",
+    "후레바",
+    "플레이버",
+    "인핸",
+    "인헨"
+   ],
+   "evidence": "HACCP n26 P0.923 새TP15 새FP2"
+  },
+  {
+   "match": "includes",
+   "token": "양지",
+   "allergen": "쇠고기",
+   "class": "identity",
+   "except_contains": [
+    "평양",
+    "맛",
+    "시즈닝",
+    "양념",
+    "소스",
+    "풍미",
+    "향",
+    "후레바",
+    "플레이버",
+    "인핸",
+    "인헨"
+   ],
+   "evidence": "HACCP n49 P1.000 새TP17 새FP0"
+  },
+  {
+   "match": "includes",
+   "token": "사태",
+   "allergen": "쇠고기",
+   "class": "identity",
+   "except_contains": [
+    "맛",
+    "시즈닝",
+    "양념",
+    "소스",
+    "풍미",
+    "향",
+    "후레바",
+    "플레이버",
+    "인핸",
+    "인헨"
+   ],
+   "evidence": "HACCP n16 P0.938 새TP9 새FP0"
+  },
+  {
+   "match": "includes",
+   "token": "우둔",
+   "allergen": "쇠고기",
+   "class": "identity",
+   "except_contains": [
+    "맛",
+    "시즈닝",
+    "양념",
+    "소스",
+    "풍미",
+    "향",
+    "후레바",
+    "플레이버",
+    "인핸",
+    "인헨"
+   ],
+   "evidence": "HACCP n5 P1.000 새TP4 새FP0"
+  },
+  {
+   "match": "includes",
+   "token": "차돌",
+   "allergen": "쇠고기",
+   "class": "identity",
+   "except_contains": [
+    "맛",
+    "시즈닝",
+    "양념",
+    "소스",
+    "풍미",
+    "향",
+    "후레바",
+    "플레이버",
+    "인핸",
+    "인헨"
+   ],
+   "evidence": "HACCP n5 P1.000 새TP2 새FP0"
+  },
+  {
+   "match": "includes",
+   "token": "우족",
+   "allergen": "쇠고기",
+   "class": "identity",
+   "except_contains": [
+    "맛",
+    "시즈닝",
+    "양념",
+    "소스",
+    "풍미",
+    "향",
+    "후레바",
+    "플레이버",
+    "인핸",
+    "인헨"
+   ],
+   "evidence": "HACCP n4 P1.000 새TP2 새FP0"
+  },
+  {
+   "match": "includes",
+   "token": "삼겹",
+   "allergen": "돼지고기",
+   "class": "identity",
+   "except_contains": [
+    "맛",
+    "시즈닝",
+    "양념",
+    "소스",
+    "풍미",
+    "향",
+    "후레바",
+    "플레이버",
+    "인핸",
+    "인헨"
+   ],
+   "evidence": "HACCP n33 P1.000 새TP8 새FP0"
+  },
+  {
+   "match": "includes",
+   "token": "베이컨",
+   "allergen": "돼지고기",
+   "class": "identity",
+   "except_contains": [
+    "맛",
+    "시즈닝",
+    "양념",
+    "소스",
+    "풍미",
+    "향",
+    "후레바",
+    "플레이버",
+    "인핸",
+    "인헨"
+   ],
+   "evidence": "HACCP n17 P1.000 새TP10 새FP0"
+  },
+  {
+   "match": "includes",
+   "token": "치킨",
+   "allergen": "닭고기",
+   "class": "identity",
+   "except_contains": [
+    "치킨무",
+    "맛",
+    "시즈닝",
+    "양념",
+    "소스",
+    "풍미",
+    "향",
+    "후레바",
+    "플레이버",
+    "인핸",
+    "인헨"
+   ],
+   "evidence": "HACCP n185 P0.924 새TP82 새FP9"
+  },
+  {
+   "match": "includes",
+   "token": "곡자",
+   "allergen": "밀",
+   "class": "identity",
+   "except_contains": [
+    "맛",
+    "시즈닝",
+    "양념",
+    "소스",
+    "풍미",
+    "향",
+    "후레바",
+    "플레이버",
+    "인핸",
+    "인헨"
+   ],
+   "evidence": "HACCP n5 P1.000 새TP1 새FP0"
+  },
+  {
+   "match": "includes",
+   "token": "강력분",
+   "allergen": "밀",
+   "class": "identity",
+   "except_contains": [
+    "맛",
+    "시즈닝",
+    "양념",
+    "소스",
+    "풍미",
+    "향",
+    "후레바",
+    "플레이버",
+    "인핸",
+    "인헨"
+   ],
+   "evidence": "HACCP n5 P1.000 새TP1 새FP0"
+  },
+  {
+   "match": "includes",
+   "token": "중력분",
+   "allergen": "밀",
+   "class": "identity",
+   "except_contains": [
+    "맛",
+    "시즈닝",
+    "양념",
+    "소스",
+    "풍미",
+    "향",
+    "후레바",
+    "플레이버",
+    "인핸",
+    "인헨"
+   ],
+   "evidence": "HACCP n19 P1.000 새TP2 새FP0"
+  },
+  {
+   "match": "includes",
+   "token": "박력분",
+   "allergen": "밀",
+   "class": "identity",
+   "except_contains": [
+    "맛",
+    "시즈닝",
+    "양념",
+    "소스",
+    "풍미",
+    "향",
+    "후레바",
+    "플레이버",
+    "인핸",
+    "인헨"
+   ],
+   "evidence": "HACCP n21 P1.000 새TP1 새FP0"
+  },
+  {
+   "match": "includes",
+   "token": "스파게티",
+   "allergen": "밀",
+   "class": "identity",
+   "except_contains": [
+    "맛",
+    "시즈닝",
+    "양념",
+    "소스",
+    "풍미",
+    "향",
+    "후레바",
+    "플레이버",
+    "인핸",
+    "인헨"
+   ],
+   "evidence": "HACCP n17 P1.000 새TP2 새FP0"
+  },
+  {
+   "match": "includes",
+   "token": "마카로니",
+   "allergen": "밀",
+   "class": "identity",
+   "except_contains": [
+    "맛",
+    "시즈닝",
+    "양념",
+    "소스",
+    "풍미",
+    "향",
+    "후레바",
+    "플레이버",
+    "인핸",
+    "인헨"
+   ],
+   "evidence": "HACCP n5 P1.000 새TP1 새FP0"
+  },
+  {
+   "match": "includes",
+   "token": "케찹",
+   "allergen": "토마토",
+   "class": "identity",
+   "except_contains": [
+    "맛",
+    "시즈닝",
+    "양념",
+    "소스",
+    "풍미",
+    "향",
+    "후레바",
+    "플레이버",
+    "인핸",
+    "인헨"
+   ],
+   "evidence": "HACCP n30 P0.967 새TP2 새FP0"
+  },
+  {
+   "match": "includes",
+   "token": "케첩",
+   "allergen": "토마토",
+   "class": "identity",
+   "except_contains": [
+    "맛",
+    "시즈닝",
+    "양념",
+    "소스",
+    "풍미",
+    "향",
+    "후레바",
+    "플레이버",
+    "인핸",
+    "인헨"
+   ],
+   "evidence": "HACCP n39 P0.974 새TP0 새FP0"
+  },
+  {
+   "match": "includes",
+   "token": "피넛",
+   "allergen": "땅콩",
+   "class": "identity",
+   "except_contains": [
+    "맛",
+    "시즈닝",
+    "양념",
+    "소스",
+    "풍미",
+    "향",
+    "후레바",
+    "플레이버",
+    "인핸",
+    "인헨"
+   ],
+   "evidence": "HACCP n8 P1.000 새TP0 새FP0"
+  },
+  {
+   "match": "includes",
+   "token": "크랩",
+   "allergen": "게",
+   "class": "identity",
+   "except_contains": [
+    "실크",
+    "맛",
+    "시즈닝",
+    "양념",
+    "소스",
+    "풍미",
+    "향",
+    "후레바",
+    "플레이버",
+    "인핸",
+    "인헨"
+   ],
+   "evidence": "HACCP n7 P1.000 새TP3 새FP0"
+  },
+  {
+   "match": "endsWith",
+   "token": "된장",
+   "allergen": "밀",
+   "class": "component",
+   "except_contains": [
+    "한식",
+    "재래",
+    "메주",
+    "토굴",
+    "집된장",
+    "전통"
+   ],
+   "evidence": "HACCP n128 P0.992 새TP14 새FP1"
   }
  ],
  "composite_tokens": [
@@ -126,5 +760,11 @@
   "햄",
   "소시지"
  ],
- "composite_note": "복합원재료 신호(HI 16토큰): HACCP 5,694쌍에서 이 토큰이 있으면 원재료명 추론이 표시란 알레르기를 하나 이상 놓칠 확률 0.714 · 없으면 0.382(v1 엔진 기준). 화면 «빠졌을 가능성 높음» 고지 + 사진 제보 우선순위에 쓴다. 측정 .tmp/s77/a10.js"
+ "composite_note": "복합원재료 신호(HI 16토큰): HACCP 5,694쌍에서 이 토큰이 있으면 원재료명 추론이 표시란 알레르기를 하나 이상 놓칠 확률 0.714 · 없으면 0.382(v1 엔진 기준). 화면 «빠졌을 가능성 높음» 고지 + 사진 제보 우선순위에 쓴다. 측정 .tmp/s77/a10.js",
+ "note_v3": "v3(10-13 세션78 U77-4): 사전 빈틈 보강. class=identity — 그 단어 자체가 알레르겐을 뜻함(유정란·한우·원유·박력분 등). 맛·시즈닝·양념·소스·풍미·향 등이 붙은 토큰은 향미제일 수 있어 제외. class=component — 그 원재료에 통상 들어감(된장→밀, 한식·재래·메주·토굴 제외). 상관관계(산지·유지·비프시즈닝·액젓→새우·당면/면→밀·미림·유산균·젤라틴)는 거부. 측정 .tmp/s78/b4.js · 정답 IP/eval_allergen_db_v1/rules_v3_gold_v1.json",
+ "measure_v3": {
+  "v2": "{\"n\":5757,\"tp\":12718,\"fp\":376,\"fn\":5736,\"P\":\"0.9713\",\"R\":\"0.6892\"}",
+  "v3": "{\"n\":5757,\"tp\":13117,\"fp\":393,\"fn\":5337,\"P\":\"0.9709\",\"R\":\"0.7108\"}",
+  "pairs": 5757
+ }
 }

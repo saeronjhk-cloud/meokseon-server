@@ -5,6 +5,7 @@
  *   §1 엔진 — 제외 규칙(향·콩검·강낭콩류·식물성크림·라우릴황산·둥굴레) · 정본 19종 정규화
  *   §2 eval — HACCP 원재료↔표시란 고정 400쌍: 정밀도 ≥ 0.96 · 재현율 ≥ 0.66 · missing_likely 분리(놓침률 차 ≥ 0.20)
  *   §1-6~9 v2 파생 원재료(전란액·간장·레시틴·버터) + 예외(한식간장·코코아버터) + 복합원재료 신호
+ *   §1-10 v3 사전 빈틈(세션78 U77-4): 정답 tests/fixtures/allergen_rules_v3_gold_v1.json(정본 IP/eval_allergen_db_v1/) 전부 통과
  *   §3 OCR 경로 불변 — ocrParser 는 이 모듈을 쓰지 않고, 원재료명만 있는 OCR 텍스트는 여전히 0(DS-6′ 회귀와 같은 방향)
  *   §4 응답 — 표시란 미수집 + 공공 DB 원재료 → allergens_from_ingredients · 표시란 키는 그대로 null
  *   §5 응답 — 표시란이 있으면 null · OCR 제보 원재료면 null · 원재료 없으면 null
@@ -55,10 +56,17 @@ async function t(name, fn) { try { await fn(); pass++; console.log(`  ✅ ${name
     const b = allergensFromIngredients('정제수, 설탕, 구연산');
     assert.strictEqual(b.missing_likely, false); assert.deepStrictEqual(b.composite, []);
   });
+  await t('§1-10 v3 사전 빈틈: 유정란·한우·원유·박력분·곡자·케찹·된장 등 + 경계(평양지미·코코넛밀크·치킨맛시즈닝·한식된장) — 정답 전부', () => {
+    const g = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', 'allergen_rules_v3_gold_v1.json'), 'utf8'));
+    const bad = [];
+    for (const c of g.cases) { const n = allergensFromIngredients(c.raw).names; if (!c.include.every((a) => n.includes(a)) || !c.exclude.every((a) => !n.includes(a))) bad.push(`${c.id} ${c.raw} → ${JSON.stringify(n)}`); }
+    assert.strictEqual(bad.length, 0, bad.join(' | '));
+    assert.ok(g.cases.length >= 20);
+  });
   await t('§1-5 빈 입력 → 빈 결과', () => { assert.deepStrictEqual(allergensFromIngredients('').names, []); assert.deepStrictEqual(allergensFromIngredients(null).names, []); });
 
   console.log('\n══ §2 eval (HACCP 고정 400쌍) ══');
-  await t('§2 정밀도 ≥ 0.96 · 재현율 ≥ 0.66 · missing_likely 분리 ≥ 0.20', () => {
+  await t('§2 정밀도 ≥ 0.96 · 재현율 ≥ 0.70(v3) · missing_likely 분리 ≥ 0.20', () => {
     const fx = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', 'allergen_from_ingredients_eval_v1.json'), 'utf8'));
     let tp = 0, fp = 0, fn = 0;
     for (const c of fx.cases) { const truth = new Set(c.truth); const p = allergensFromIngredients(c.raw).names; for (const a of p) truth.has(a) ? tp++ : fp++; for (const a of truth) if (!p.includes(a)) fn++; }
@@ -68,7 +76,7 @@ async function t(name, fn) { try { await fn(); pass++; console.log(`  ✅ ${name
     const pf = fm / f, pn = nfm / nf;
     console.log(`     n=${fx.cases.length} tp=${tp} fp=${fp} fn=${fn} precision=${prec.toFixed(3)} recall=${rec.toFixed(3)} · 놓침률 missing_likely ${pf.toFixed(3)}(${f}) vs 아님 ${pn.toFixed(3)}(${nf})`);
     assert.ok(prec >= 0.96, `precision ${prec}`);
-    assert.ok(rec >= 0.66, `recall ${rec}`);
+    assert.ok(rec >= 0.70, `recall ${rec}`); // v2 0.693 → v3 0.715 (세션78)
     assert.ok(pf - pn >= 0.20, `missing_likely 분리 ${pf} vs ${pn}`);
   });
 

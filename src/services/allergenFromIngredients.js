@@ -8,7 +8,8 @@
  *     그런 제품에서만, 원재료명 토큰을 정본 사전(allergenName)으로 19종에 맞춘다.
  *   · 결과는 «저장하지 않는다». 응답에서 `allergens_from_ingredients` 로 «따로» 낸다(표시란 기반 allergens 와 섞지 않는다).
  *   · «없음»을 말하지 않는다: 원재료에 안 보인다고 알레르기가 없는 것이 아니다(복합원재료·혼입 미표기).
- * 규칙 파일: src/data/allergen_ingredient_rules.json (정본 IP/알레르기_원재료추론_v1/rules_v1.json)
+ * 규칙 파일: src/data/allergen_ingredient_rules.json (정본 IP/알레르기_원재료추론_v1/rules_v3.json · md5 같게 유지)
+ *   v3(세션78): derive 에 class=identity(그 단어 자체가 알레르겐: 유정란·한우·원유·박력분…) · component(된장→밀) 추가. 코드 변경 없음.
  * eval: HACCP 원재료↔표시란 5,757쌍(.tmp/s77/a8.js) · 측정값은 인수인계 188.
  */
 const { normalizeAllergenNames } = require('./allergenName');

@@ -11,6 +11,9 @@
  *  - 데이터 검증 상태(data_freshness)
  */
 
+const { allergensFromIngredients } = require('./allergenFromIngredients');
+// ★ 세션77 — 공공 DB 원재료 출처(OCR 제보 ocr_crowdsource · 웹 파일럿 web_pilot 제외)
+const DB_INGREDIENT_SOURCES = new Set(['c002', 'c002_barcode', 'c002_name', 'c003', 'haccp_api', 'c005_sibling']);
 const productModel = require('../models/productModel');
 const { evaluateNutrition, deriveBasis } = require('./nutritionTrafficLight');
 const { getRaccPolicy } = require('./raccPolicy');
@@ -290,6 +293,20 @@ async function getProductWithTrafficLight(barcode) {
     allergens = null;
   }
 
+  // ★★ 세션77 — DB 경로 전용 원재료 알레르기(제이 결정 2026-10-12: «DB 기반 추론에 한해 변경 · OCR 파싱은 그대로»).
+  //   표시란 기반 알레르기(위 allergens)가 «미수집»이고, 원재료가 공공 DB 출처일 때만 원재료명에서 19종을 찾는다.
+  //   ⚠ 표시란 키(allergens·allergens_v2·allergens_available·flat_complete)는 한 글자도 바꾸지 않는다 — 미수집이면 그대로 null.
+  //   ⚠ 결과는 «원재료명에서 확인된 것»이지 «전부»가 아니다. 클라이언트는 이것으로 «알레르기 없음»을 말하면 안 된다.
+  let allergensFromIng = null;
+  if (!(allergens && allergens.collected) && ingredient && ingredient.text && DB_INGREDIENT_SOURCES.has(ingredient.raw_source)) {
+    try {
+      const r = allergensFromIngredients(ingredient.text);
+      allergensFromIng = { names: r.names, evidence: r.evidence, rules_version: r.rules_version, ingredient_source: ingredient.source };
+    } catch (e) {
+      allergensFromIng = null;
+    }
+  }
+
   // 카테고리 맥락
   // ★★ 세션50 D2 — 신호등 결과를 **함께 넘긴다.** getContext 가 건조·제외 여부를 두 번째로
   //   판정하던 것을 끊었다. 종전에는 같은 응답이 traffic_light.is_dried_exception=true 와
@@ -416,6 +433,10 @@ async function getProductWithTrafficLight(barcode) {
     //   allergens_may_unconfirmed: true = 혼입 정보 미확인(혼입 문장을 못 읽었을 수 있다). 「혼입 없음」이라 쓰지 말 것.
     allergens_crowd_auto: allergenAuto ? allergenAuto.crowdAuto : null,
     allergens_may_unconfirmed: allergenAuto ? allergenAuto.mayUnconfirmed : null,
+    // ★★ 세션77 신설(키 추가만): {names, evidence:[{allergen,token}], rules_version, ingredient_source} | null.
+    //   null = 표시란 알레르기가 있거나, 원재료가 없거나, 원재료가 공공 DB 출처가 아님(OCR 제보 등).
+    //   names 가 빈 배열이어도 «알레르기 없음»이 아니다(원재료명에 안 보였을 뿐).
+    allergens_from_ingredients: allergensFromIng,
     context,
     sources: buildSources(trafficLight),
     data_freshness: buildFreshness(product),

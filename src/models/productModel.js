@@ -679,7 +679,8 @@ async function getIngredientText(productId) {
         WHERE product_id = $1 AND raw_text IS NOT NULL AND btrim(raw_text) <> ''
         ORDER BY (source = 'c005_sibling'), id LIMIT 1`, [productId]);
     if (!r.rows[0]) return { text: null, source: null };
-    return { text: String(r.rows[0].raw_text).trim(), source: r.rows[0].source === 'c005_sibling' ? 'sibling' : 'own' };
+    // ★ 세션77 — raw_source(DB 출처 이름)를 함께 낸다. DB 경로 원재료 알레르기(allergenFromIngredients)가 OCR·웹 출처를 거르는 데 쓴다. 응답 키는 productService 가 정한다.
+    return { text: String(r.rows[0].raw_text).trim(), source: r.rows[0].source === 'c005_sibling' ? 'sibling' : 'own', raw_source: r.rows[0].source };
   } catch (e) {
     return undefined;
   }

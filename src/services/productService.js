@@ -301,7 +301,7 @@ async function getProductWithTrafficLight(barcode) {
   if (!(allergens && allergens.collected) && ingredient && ingredient.text && DB_INGREDIENT_SOURCES.has(ingredient.raw_source)) {
     try {
       const r = allergensFromIngredients(ingredient.text);
-      allergensFromIng = { names: r.names, evidence: r.evidence, rules_version: r.rules_version, ingredient_source: ingredient.source };
+      allergensFromIng = { names: r.names, evidence: r.evidence, composite: r.composite, missing_likely: r.missing_likely, rules_version: r.rules_version, ingredient_source: ingredient.source };
     } catch (e) {
       allergensFromIng = null;
     }
@@ -433,7 +433,8 @@ async function getProductWithTrafficLight(barcode) {
     //   allergens_may_unconfirmed: true = 혼입 정보 미확인(혼입 문장을 못 읽었을 수 있다). 「혼입 없음」이라 쓰지 말 것.
     allergens_crowd_auto: allergenAuto ? allergenAuto.crowdAuto : null,
     allergens_may_unconfirmed: allergenAuto ? allergenAuto.mayUnconfirmed : null,
-    // ★★ 세션77 신설(키 추가만): {names, evidence:[{allergen,token}], rules_version, ingredient_source} | null.
+    // ★★ 세션77 신설(키 추가만): {names, evidence:[{allergen,token,via}], composite:[복합원재료 토큰], missing_likely, rules_version, ingredient_source} | null.
+    //   missing_likely = 복합원재료가 있어 원재료명에 안 드러난 알레르기가 있을 가능성이 높음(HACCP 실측 0.649 vs 0.330).
     //   null = 표시란 알레르기가 있거나, 원재료가 없거나, 원재료가 공공 DB 출처가 아님(OCR 제보 등).
     //   names 가 빈 배열이어도 «알레르기 없음»이 아니다(원재료명에 안 보였을 뿐).
     allergens_from_ingredients: allergensFromIng,

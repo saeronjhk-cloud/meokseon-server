@@ -1,5 +1,5 @@
 {
- "version": "allergen_ing_rules_v1",
+ "version": "allergen_ing_rules_v2",
  "note": "DB 경로(공공 원재료명) 전용. OCR 경로에는 쓰지 않는다(제이 10-12: OCR 파싱은 표시사항 그대로 유효). 토큰을 allergenName.normalizeAllergenNames 에 넣기 전에 아래 제외 규칙으로 거른다. HACCP 원재료↔표시란 5,757쌍에서 오탐으로 확인된 패턴만 넣는다.",
  "exclude_suffix": [
   "향",
@@ -22,5 +22,109 @@
   "땅콩또는견과류",
   "렌팅콩"
  ],
- "exclude_exact": []
+ "exclude_exact": [],
+ "note_v2": "v2(10-12): derive = 정본 사전(allergenName)이 못 잡는 «그 원재료 자체에 알레르겐이 들어 있는» 파생 원재료. 상관관계(예: 말레이시아산→대두)는 넣지 않는다. 채택 기준: HACCP 5,694쌍에서 P(표시란에 그 알레르겐|토큰) ≥ 0.96 · n ≥ 20 · 식품학적으로 그 원재료의 구성 성분일 것. 측정 .tmp/s77/a13.js",
+ "derive": [
+  {
+   "match": "endsWith",
+   "token": "전란",
+   "allergen": "난류(가금류)",
+   "evidence": "n25 P1.000"
+  },
+  {
+   "match": "endsWith",
+   "token": "전란액",
+   "allergen": "난류(가금류)",
+   "evidence": "n302 P0.993"
+  },
+  {
+   "match": "endsWith",
+   "token": "전란분",
+   "allergen": "난류(가금류)",
+   "evidence": "n23 P1.000"
+  },
+  {
+   "match": "endsWith",
+   "token": "마요네즈",
+   "allergen": "난류(가금류)",
+   "evidence": "n73 P0.973"
+  },
+  {
+   "match": "endsWith",
+   "token": "간장",
+   "allergen": "밀",
+   "evidence": "n956 P0.962 (양조 0.994·혼합 0.980·진 0.988·산분해 0.967)",
+   "except_contains": [
+    "한식간장",
+    "조선간장",
+    "국간장",
+    "재래간장",
+    "재래식간장"
+   ]
+  },
+  {
+   "match": "endsWith",
+   "token": "고추장",
+   "allergen": "밀",
+   "evidence": "n255 P0.976"
+  },
+  {
+   "match": "endsWith",
+   "token": "빵가루",
+   "allergen": "밀",
+   "evidence": "n231 P0.996"
+  },
+  {
+   "match": "includes",
+   "token": "레시틴",
+   "allergen": "대두",
+   "evidence": "n479 P0.990",
+   "except_contains": [
+    "해바라기",
+    "난황",
+    "달걀",
+    "계란"
+   ]
+  },
+  {
+   "match": "endsWith",
+   "token": "버터",
+   "allergen": "우유",
+   "evidence": "n503 P0.962",
+   "except_contains": [
+    "코코아",
+    "카카오",
+    "땅콩",
+    "시어",
+    "아몬드",
+    "캐슈",
+    "망고"
+   ]
+  },
+  {
+   "match": "endsWith",
+   "token": "연유",
+   "allergen": "우유",
+   "evidence": "n77 P0.987"
+  }
+ ],
+ "composite_tokens": [
+  "복합조미",
+  "기타가공품",
+  "스프",
+  "소스",
+  "양념",
+  "시즈닝",
+  "베이스",
+  "엑기스",
+  "조미",
+  "향미유",
+  "풍미",
+  "초콜릿",
+  "튀김",
+  "만두",
+  "햄",
+  "소시지"
+ ],
+ "composite_note": "복합원재료 신호(HI 16토큰): HACCP 5,694쌍에서 이 토큰이 있으면 원재료명 추론이 표시란 알레르기를 하나 이상 놓칠 확률 0.714 · 없으면 0.382(v1 엔진 기준). 화면 «빠졌을 가능성 높음» 고지 + 사진 제보 우선순위에 쓴다. 측정 .tmp/s77/a10.js"
 }

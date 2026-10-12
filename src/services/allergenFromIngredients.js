@@ -23,17 +23,35 @@ function excluded(t) {
   return false;
 }
 
-/** @returns {{names: string[], evidence: {allergen: string, token: string}[], rules_version: string}} */
-function allergensFromIngredients(raw) {
-  const names = [], evidence = [], seen = new Set();
-  for (const t of String(raw || '').split(TOK)) {
-    if (!t || excluded(t)) continue;
-    for (const h of normalizeAllergenNames(t)) {
-      if (seen.has(h.name)) continue;
-      seen.add(h.name); names.push(h.name); evidence.push({ allergen: h.name, token: t });
-    }
+/** ★ v2 — 파생 원재료(그 원재료 자체에 알레르겐이 든 것). 상관관계 규칙은 넣지 않는다(규칙 파일 note_v2). */
+function derived(t) {
+  const out = [];
+  for (const d of RULES.derive || []) {
+    const hit = d.match === 'includes' ? t.includes(d.token) : t.endsWith(d.token);
+    if (!hit) continue;
+    if ((d.except_contains || []).some((x) => t.includes(x))) continue;
+    out.push(d.allergen);
   }
-  return { names, evidence, rules_version: RULES.version };
+  return out;
 }
 
-module.exports = { allergensFromIngredients, _excluded: excluded };
+/** ★ v2 — 복합원재료 신호: 원재료명에 드러나지 않는 알레르기가 있을 가능성이 높다(HACCP 실측 0.714 vs 0.382). */
+function compositeTokens(raw) {
+  const s = String(raw || '');
+  return (RULES.composite_tokens || []).filter((c) => s.includes(c));
+}
+
+/** @returns {{names: string[], evidence: {allergen: string, token: string, via: string}[], composite: string[], missing_likely: boolean, rules_version: string}} */
+function allergensFromIngredients(raw) {
+  const names = [], evidence = [], seen = new Set();
+  const add = (name, t, via) => { if (seen.has(name)) return; seen.add(name); names.push(name); evidence.push({ allergen: name, token: t, via }); };
+  for (const t of String(raw || '').split(TOK)) {
+    if (!t || excluded(t)) continue;
+    for (const h of normalizeAllergenNames(t)) add(h.name, t, 'name');
+    for (const a of derived(t)) add(a, t, 'derive');
+  }
+  const composite = compositeTokens(raw);
+  return { names, evidence, composite, missing_likely: composite.length > 0, rules_version: RULES.version };
+}
+
+module.exports = { allergensFromIngredients, _excluded: excluded, _derived: derived };

@@ -3,7 +3,8 @@
  *   정본 결정: 제이 2026-10-12 «데이터베이스 기반 추론에 한해서 변경 · OCR 파싱은 여전히 유효»
  *              → IP/결정_DS-6db_DB경로_원재료알레르기_2026-10-12.md
  *   §1 엔진 — 제외 규칙(향·콩검·강낭콩류·식물성크림·라우릴황산·둥굴레) · 정본 19종 정규화
- *   §2 eval — HACCP 원재료↔표시란 고정 400쌍에서 정밀도 ≥ 0.96 (규칙 미적용 기준선 0.961 · 규칙 적용 실측은 인수인계 188)
+ *   §2 eval — HACCP 원재료↔표시란 고정 400쌍: 정밀도 ≥ 0.96 · 재현율 ≥ 0.66 · missing_likely 분리(놓침률 차 ≥ 0.20)
+ *   §1-6~9 v2 파생 원재료(전란액·간장·레시틴·버터) + 예외(한식간장·코코아버터) + 복합원재료 신호
  *   §3 OCR 경로 불변 — ocrParser 는 이 모듈을 쓰지 않고, 원재료명만 있는 OCR 텍스트는 여전히 0(DS-6′ 회귀와 같은 방향)
  *   §4 응답 — 표시란 미수집 + 공공 DB 원재료 → allergens_from_ingredients · 표시란 키는 그대로 null
  *   §5 응답 — 표시란이 있으면 null · OCR 제보 원재료면 null · 원재료 없으면 null
@@ -34,19 +35,41 @@ async function t(name, fn) { try { await fn(); pass++; console.log(`  ✅ ${name
   });
   await t('§1-4 증거(evidence)에 토큰이 남는다 · 규칙 버전', () => {
     const r = allergensFromIngredients('밀가루');
-    assert.deepStrictEqual(r.evidence, [{ allergen: '밀', token: '밀가루' }]);
+    assert.deepStrictEqual(r.evidence, [{ allergen: '밀', token: '밀가루', via: 'name' }]);
     assert.ok(String(r.rules_version).startsWith('allergen_ing_rules_'));
+  });
+  await t('§1-6 v2 파생: 전란액→난류 · 양조간장→밀(+대두) · 레시틴→대두 · 빵가루→밀', () => {
+    const r = allergensFromIngredients('전란액, 양조간장, 레시틴, 빵가루');
+    for (const a of ['난류(가금류)', '밀', '대두']) assert.ok(r.names.includes(a), a + ' ' + JSON.stringify(r.names));
+    assert.ok(r.evidence.some((e) => e.via === 'derive'));
+  });
+  await t('§1-7 v2 예외: 한식간장→밀 아님 · 코코아버터·땅콩버터→우유 아님 · 해바라기레시틴→대두 아님', () => {
+    assert.ok(!allergensFromIngredients('한식간장').names.includes('밀'));
+    assert.ok(!allergensFromIngredients('코코아버터').names.includes('우유'));
+    assert.ok(!allergensFromIngredients('땅콩버터').names.includes('우유'));
+    assert.ok(!allergensFromIngredients('해바라기레시틴').names.includes('대두'));
+  });
+  await t('§1-8 복합원재료 신호: 복합조미식품·스프 → missing_likely true · 단순 원재료 → false', () => {
+    const a = allergensFromIngredients('면, 분말스프, 복합조미식품');
+    assert.strictEqual(a.missing_likely, true); assert.ok(a.composite.includes('복합조미') && a.composite.includes('스프'));
+    const b = allergensFromIngredients('정제수, 설탕, 구연산');
+    assert.strictEqual(b.missing_likely, false); assert.deepStrictEqual(b.composite, []);
   });
   await t('§1-5 빈 입력 → 빈 결과', () => { assert.deepStrictEqual(allergensFromIngredients('').names, []); assert.deepStrictEqual(allergensFromIngredients(null).names, []); });
 
   console.log('\n══ §2 eval (HACCP 고정 400쌍) ══');
-  await t('§2 정밀도 ≥ 0.96', () => {
+  await t('§2 정밀도 ≥ 0.96 · 재현율 ≥ 0.66 · missing_likely 분리 ≥ 0.20', () => {
     const fx = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', 'allergen_from_ingredients_eval_v1.json'), 'utf8'));
     let tp = 0, fp = 0, fn = 0;
     for (const c of fx.cases) { const truth = new Set(c.truth); const p = allergensFromIngredients(c.raw).names; for (const a of p) truth.has(a) ? tp++ : fp++; for (const a of truth) if (!p.includes(a)) fn++; }
     const prec = tp / (tp + fp), rec = tp / (tp + fn);
-    console.log(`     n=${fx.cases.length} tp=${tp} fp=${fp} fn=${fn} precision=${prec.toFixed(3)} recall=${rec.toFixed(3)}`);
+    let f = 0, fm = 0, nf = 0, nfm = 0;
+    for (const c of fx.cases) { const r = allergensFromIngredients(c.raw); const miss = c.truth.some((a) => !r.names.includes(a)); if (r.missing_likely) { f++; if (miss) fm++; } else { nf++; if (miss) nfm++; } }
+    const pf = fm / f, pn = nfm / nf;
+    console.log(`     n=${fx.cases.length} tp=${tp} fp=${fp} fn=${fn} precision=${prec.toFixed(3)} recall=${rec.toFixed(3)} · 놓침률 missing_likely ${pf.toFixed(3)}(${f}) vs 아님 ${pn.toFixed(3)}(${nf})`);
     assert.ok(prec >= 0.96, `precision ${prec}`);
+    assert.ok(rec >= 0.66, `recall ${rec}`);
+    assert.ok(pf - pn >= 0.20, `missing_likely 분리 ${pf} vs ${pn}`);
   });
 
   console.log('\n══ §3 OCR 경로 불변 ══');
@@ -84,6 +107,7 @@ async function t(name, fn) { try { await fn(); pass++; console.log(`  ✅ ${name
   await t('§4-1 DB 원재료 · 표시란 미수집 → names [밀, 대두] · 표시란 키는 null 그대로', async () => {
     const r = await svc.getProductWithTrafficLight('8800000077001');
     assert.deepStrictEqual(r.allergens_from_ingredients.names.sort(), ['대두', '밀'].sort());
+    assert.strictEqual(r.allergens_from_ingredients.missing_likely, false); assert.deepStrictEqual(r.allergens_from_ingredients.composite, []);
     assert.strictEqual(r.allergens, null); assert.strictEqual(r.allergens_v2, null); assert.strictEqual(r.allergens_available, false);
     assert.strictEqual(r.allergens_flat_complete, null);
   });

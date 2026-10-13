@@ -14,6 +14,7 @@
 //   종전에는 가드가 A 에만 있어서 B·C 는 `밀납`·`땅콩버터`·`게맛살` 을 거를 방법이 없었고,
 //   그것이 P4(원재료표에 `밀` 단독 추가)를 한 세션 동안 막아 세운 직접 원인이었다.
 //   ⚠ 가드 규칙을 여기에 «복사»하지 말 것. 고칠 일이 있으면 `allergenGuards.js` 를 고친다.
+const { reconcileServingVsPer100 } = require('./nutritionBasisReconcile');   // ★ 세션78 2열 영양표 기준 재판정(정본 파서와 공용)
 const allergenGuards = require('./allergenGuards');
 const { detectAdditives } = require('./additiveDetect');   // ★ 세션75e 첨가물 검출기 v2
 const { applyDvCheck, unitFillFromDv } = require('./labelDvCheck');   // 세션68 U67-15 — %열 교차검증(값을 고치지 않는다) · 세션69 U68-6 재계산 헬퍼
@@ -857,6 +858,7 @@ function parseNutrition(text) {
   //   상한을 둔다(세션43 교훈) — 라벨의 글자 사이 공백은 3자를 넘지 않는다.
   //   ⚠ scripts/lib/capture_label_parser.js parseLabel 에 **같은 정규화**가 있다.
   text = normalizeLabelSpacing(text);
+  const _textForBasis = text;   // ★ 세션78 — 기준 재판정은 괄호 총열량을 지우기 «전» 텍스트로 본다
 
   // 1z) ★ 배수 표기 kcal 제거 — dual/single 어떤 패턴보다 먼저여야 한다 (세션42)
   const _mult = stripCalorieMultiplier(text);
@@ -943,7 +945,16 @@ function parseNutrition(text) {
 
   // 3b) ★ 세션39: 실물 라벨은 "1회" 라고 안 쓴다. "1봉지(120g)당"·"1개(12g)당"·"1스틱(12g)당".
   //     위 정규식이 '1회' 를 요구해 serving 이 통째로 비었고, 환산 기준이 사라졌다.
-  const basisInfo = detectNutritionBasis(text);
+  let basisInfo = detectNutritionBasis(text);
+  // ★ 세션78 — 2열 영양표(1회분 | 100g당): 집은 값이 1회분 열이면 기준을 1회분으로 바로잡는다.
+  //   판정은 공용 함수 «한 곳»(nutritionBasisReconcile.js · 정본 파서도 같은 함수). 근거 없으면 null = 종전 그대로.
+  if (basisInfo.basis === 'per_100g' || basisInfo.basis === 'per_100ml') {
+    const rc = reconcileServingVsPer100({ text: _textForBasis, basis: 'per100', calories: nutrition.calories ?? null });
+    if (rc) {
+      basisInfo = { basis: 'per_serving', amount: rc.amount, unit: rc.unit, reconciled: rc.reason };
+      if (nutrition.serving_size === undefined) { nutrition.serving_size = rc.amount; nutrition.serving_unit = rc.unit; }
+    }
+  }
   if (nutrition.serving_size === undefined && basisInfo.basis === 'per_serving' && basisInfo.amount) {
     nutrition.serving_size = basisInfo.amount;
     nutrition.serving_unit = basisInfo.unit;
@@ -969,6 +980,7 @@ function parseNutrition(text) {
   //     per_100g 라벨을 per_serving 으로 판정하면 결과가 무의미해진다(해표 콩기름: 100g당 지방 100g).
   nutrition._basis = basisInfo.basis;                    // per_serving | per_100g | per_100ml | per_total | unknown
   if (basisInfo.amount != null) nutrition._basis_amount = basisInfo.amount;
+  if (basisInfo.reconciled) nutrition._basis_reconciled = basisInfo.reconciled;   // ★ 세션78 감사용
 
   // 4c) 세션42: 배수 표기 kcal 을 제거했다면 근거를 남긴다(감사·디버깅용).
   if (_mult.removed.length) {

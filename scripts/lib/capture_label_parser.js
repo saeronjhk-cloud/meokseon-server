@@ -23,6 +23,7 @@
  * 출력: { basis, serving, nutrition, ingredients, report_nos, product_name, food_type, warnings }
  */
 'use strict';
+const { reconcileServingVsPer100 } = require('../../src/services/nutritionBasisReconcile');   // ★ 세션78 앱과 공용
 
 // ── 숫자 파싱 — 천단위 콤마와 소수점 콤마를 구분한다 (결함 ①) ──────────────
 function num(s) {
@@ -326,9 +327,14 @@ function parseLabel(text) {
   // ★ 세션44 — 앱 파서 parseNutrition 과 같은 입구 정규화(「내 용 량」 → 「내용량」).
   //   순서: 어떤 규칙보다 먼저. basis·총내용량·괄호 총열량이 모두 이 낱말에 의존한다.
   text = normalizeLabelSpacing(text);
-  const basis = detectBasis(text);
+  let basis = detectBasis(text);
   const total = detectTotalContent(text);
   const cal = extractCalories(text, basis.basis);   // 세션43: 괄호 총열량 판단에 basis 가 필요하다
+  // ★ 세션78 — 2열 영양표(1회분 | 100g당) 기준 재판정. 앱 파서와 «같은 함수»(src/services/nutritionBasisReconcile.js).
+  {
+    const rc = reconcileServingVsPer100({ text, basis: basis.basis, calories: cal.calories ?? null });
+    if (rc) { basis = { basis: 'serving', amount: rc.amount, unit: rc.unit, reconciled: rc.reason }; warnings.push(`BASIS_RECONCILED: 100g당 → 1회분 ${rc.amount}${rc.unit} (${rc.reason})`); }
+  }
   const { values, units } = extractNutrients(text);
   const report_nos = extractReportNos(text);
   const identity = extractIdentity(text);

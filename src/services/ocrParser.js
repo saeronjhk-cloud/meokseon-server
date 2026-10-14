@@ -1849,6 +1849,43 @@ function _joinWrappedDeclaration(text) {
 }
 
 /**
+ * ★★★★ 세션79 — 줄바꿈이 갈라 놓은 법정 선언 «앞부분»을 되붙인다(U61-7 의 반대쪽).
+ *   실측(판매처 라벨 OCR 999 + eval 68): 32쌍 · 그중 27건에서 앞줄 이름이 «전량 소실».
+ *     `계란, 우유, 대두, 밀, 돼지고기, 토마토, 새우, 쇠고기,` ⏎ `오징어, 조개류(홍합 포함) 함유`
+ *       → 종전 contains = [오징어, 조개류] (8종 소실 · 과소경고) · 사용자 사진에서도 같은 모양이 나온다.
+ *   조건(«모두»): ① 앞줄이 쉼표로 끝난다 ② 앞줄의 쉼표 토큰이 «전부» 19종 법정명(괄호 묶음은 벗김) — 하나라도
+ *     원재료 낱말(`콩기름`·`밀가루`)이면 잇지 않는다(DS-6′ 유지) ③ 이어질 줄에 선언 `함유` 가 있다(`함유)` 제외 · 아스파탐 병기)
+ *     ④ 이어질 줄이 원재료 줄이 아니다 · `함유한/함유된 제품`(혼입 고지)도 아니다. 여러 줄이면 뒤에서 앞으로 차례로 잇는다.
+ *     (첫 토큰만은 «이름으로 끝나면» 된다 — 나머지 ≥2개가 전부 정확한 이름일 때 · `…(보존료)알류(달걀), 대두, 밀,`)
+ *   정답 IP/eval_allergen_wrapped_v1/cases_v1.json(양성 27 · 음성 5 · 구현 전 고정).
+ *   ⚠ 한계: 줄 사이에 다른 글(그래프 숫자 등)이 끼거나 낱말 한가운데서 끊긴 경우(`돼⏎…⏎지고기`)는 잇지 않는다.
+ */
+function _allNameTokens(line) {
+  // 괄호 묶음(줄 끝에서 안 닫힌 것 포함 · `조개류(굴, 바지락,`)을 먼저 지운다 — 괄호 안 쉼표가 토큰을 가르지 않게
+  const body = line.replace(/[(（[][^)）\]]*[)）\]]/g, '').replace(/[(（[][^)）\]]*$/, '');
+  const toks = body.replace(/[,，]\s*$/, '').split(/[,，]/).map((x) => _compact(x));
+  if (!toks.length || toks.some((t) => !t)) return false;
+  // 첫 토큰만은 «이름으로 끝나면» 된다(앞에 다른 글이 붙은 줄 · `…(보존료)알류`) — 단 나머지가 ≥2개이고 «전부» 정확한 이름일 때
+  const exact = (t) => DECLARED_NAME_TOKENS.includes(t);
+  if (toks.every(exact)) return true;
+  return toks.length >= 3 && toks.slice(1).every(exact) && !!_declaredNameAtEnd(toks[0]);
+}
+function _joinWrappedDeclarationHead(text) {
+  if (!text || text.indexOf('함유') === -1) return text;
+  const lines = text.split('\n');
+  if (lines.length < 2) return text;
+  for (let k = lines.length - 1; k >= 1; k--) {
+    const cur = lines[k]; const prev = lines[k - 1];
+    // 선언 `함유` 만(`함유)` 아스파탐 병기 · `함유한/함유된 제품` 혼입 고지 제외)
+    if (!/함유(?!\s*\))(?!\s*[한된]\s*제품)/.test(cur) || /원재료/.test(cur)) continue;
+    if (!/[,，]\s*$/.test(prev) || /함유/.test(prev) || !_allNameTokens(prev)) continue;
+    lines[k - 1] = prev.replace(/\s+$/, '') + ' ' + cur.replace(/^\s+/, '');
+    lines.splice(k, 1);
+  }
+  return lines.join('\n');
+}
+
+/**
  * ★★★★ 세션63 `U63-1` — 줄바꿈이 갈라 놓은 «혼입 고지»를 다시 붙인다.
  *
  * 무엇이 문제였나 (실측 `IP/U63-1_실측_및_합격조건_2026-08-12_세션63.md`)
@@ -1970,6 +2007,8 @@ function _joinWrappedMayContain(text) {
 function _splitSegments(text) {
   // ★ 세션61 U61-7 — 쪼개기 «전»에, 줄바꿈이 갈라 놓은 선언을 되붙인다.
   text = _joinWrappedDeclaration(text);
+  // ★ 세션79 — 선언 «앞부분»이 윗줄에 있는 경우(앞줄이 쉼표로 끝나는 19종 이름 목록).
+  text = _joinWrappedDeclarationHead(text);
   // ★ 세션63 U63-1 — 줄바꿈이 갈라 놓은 «혼입 고지»도 되붙인다. 선언 되붙이기 «다음»이다:
   //   `함유` 로 끝나는 줄은 그쪽에서 먼저 완성돼야 조건 ④(kind='other')가 정확해진다.
   text = _joinWrappedMayContain(text);

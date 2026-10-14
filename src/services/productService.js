@@ -278,6 +278,8 @@ function buildWebLabelBlock(product) {
     is_stale: isStaleAt(product.collected_at, product.status),
     nutrition_ok: product.nutrition_ok === false ? false : (product.nutrition_ok === true ? true : null),
     barcode_linked: false,
+    // ★ 세션79(제이 23:05) — 포장지에 인쇄된 기준·숫자 {basis, amount, unit, values, upper_bound?} | null. 화면은 이것을 먼저, 100 기준을 보조로.
+    label_nutrition: product.label_basis || null,
   };
 }
 
@@ -314,7 +316,12 @@ async function loadWebLabelSupplements(productId, payload) {
       may_contain: Array.isArray(a.data && a.data.may_contain) ? a.data.may_contain : [],
       collected_label: collectedLabel(a.collected_at),
     } : null,
-    nutrition: n ? { ...pick(n.data), basis: (n.data && n.data._basis) || null, collected_label: collectedLabel(n.collected_at) } : null,
+    nutrition: n ? {
+      ...pick(n.data), basis: (n.data && n.data._basis) || null, collected_label: collectedLabel(n.collected_at),
+      // ★ 세션79 — 포장지 기준·인쇄 숫자(없으면 null) · 상한값 키(«0.5g 이하» 등)
+      label: (n.data && n.data._label) || null,
+      upper_bound: (n.data && Array.isArray(n.data._upper_bound)) ? n.data._upper_bound : [],
+    } : null,
   };
 }
 

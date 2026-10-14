@@ -37,15 +37,15 @@ async function main() {
         (select row_to_json(n) from web_label.nutrition_data n where n.product_id=p.product_id limit 1) nut,
         (select raw_text from web_label.product_ingredients i where i.product_id=p.product_id order by id limit 1) ing
       from web_label.products p`)).rows;
-    const Sx = (await c.query(`select s.supplement_id, s.product_id, s.axis, s.data, s.status,
+    const Sx = (await c.query(`select s.supplement_id, s.product_id, s.axis, s.data, s.status, s.reviewed_by,
         (select raw_text from public.product_ingredients i where i.product_id=s.product_id order by id limit 1) ing
       from web_label.public_supplements s`)).rows;
     const chP = [], chS = [];
     for (const p of P) { if (KEEP.has(p.status)) continue; const j = judgeProduct(p); if (j.status !== p.status || j.nutrition_ok !== p.nutrition_ok || j.food_type !== p.food_type) chP.push({ id: p.product_id, from: p.status, ...j, food_type_before: p.food_type }); else chP.push({ id: p.product_id, same: true, ...j }); }
-    for (const s of Sx) { if (KEEP.has(s.status)) continue; const j = judgeSupplement(s); chS.push({ id: s.supplement_id, from: s.status, ...j }); }
+    for (const s of Sx) { if (KEEP.has(s.status) || s.reviewed_by) continue;   /* 세션79 — 사람이 정정·확정한 보충(reviewed_by)은 다시 판정하지 않는다(제이 F 정정이 게이트에 되돌려지는 것 방지) */ const j = judgeSupplement(s); chS.push({ id: s.supplement_id, from: s.status, ...j }); }
     const dist = (a) => a.reduce((m, x) => { m[x.status] = (m[x.status] || 0) + 1; return m; }, {});
     console.log('품목', P.length, '판정', dist(chP), '| 신호등 끔(nutrition_ok=false)', chP.filter((x) => x.nutrition_ok === false).length, '| 식품유형 정리', chP.filter((x) => !x.same && x.food_type_before !== x.food_type).length);
-    console.log('보충', Sx.length, '(사람 판정 유지', Sx.filter((s) => KEEP.has(s.status)).length + ')', '판정', dist(chS), '축별', JSON.stringify(chS.reduce((m, x) => { const s = Sx.find((y) => y.supplement_id === x.id); const k = s.axis + ':' + x.status; m[k] = (m[k] || 0) + 1; return m; }, {})));
+    console.log('보충', Sx.length, '(사람 판정 유지', Sx.filter((s) => KEEP.has(s.status) || s.reviewed_by).length + ')', '판정', dist(chS), '축별', JSON.stringify(chS.reduce((m, x) => { const s = Sx.find((y) => y.supplement_id === x.id); const k = s.axis + ':' + x.status; m[k] = (m[k] || 0) + 1; return m; }, {})));
     if (!APPLY) return;
     await c.query('BEGIN');
     // ★ 문장 2개(원격 RTT ~0.3초 · 행마다 보내면 수백 초 → 시간 초과 롤백 실측)

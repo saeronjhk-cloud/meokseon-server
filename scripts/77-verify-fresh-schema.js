@@ -507,17 +507,22 @@ function collectCreators(files) {
     liveAtt.get(r.tbl).set(r.col, r);
   }
   // 뷰까지 포함한 컬럼 목록 (§E 가 쓴다 — product_nutrition_resolved 같은 뷰를 봐야 한다)
+  // ★ 세션79 — 앱이 읽는 «분리 스키마»(web_label · 031~034)도 §E 대조 대상. 키 = public 은 표 이름, 그 밖은 «스키마.표».
+  //   (종전: public 만 읽어 `web_label.products` 참조가 「테이블 없음: web_label」 거짓 빨강 → CI gate 실패 → Railway 배포 SKIPPED)
+  const EXTRA_SCHEMAS = ['web_label'];
+  const qkey = (ns, t) => (ns === 'public' ? t : `${ns}.${t}`);
   const colRows = (await db.query(
-    `SELECT table_name, column_name, data_type, udt_name
-       FROM information_schema.columns WHERE table_schema = 'public'`)).rows;
+    `SELECT table_schema, table_name, column_name, data_type, udt_name
+       FROM information_schema.columns WHERE table_schema = ANY($1)`, [['public', ...EXTRA_SCHEMAS]])).rows;
   const live = new Map();
   for (const r of colRows) {
-    if (!live.has(r.table_name)) live.set(r.table_name, new Map());
-    live.get(r.table_name).set(r.column_name, r.data_type === 'USER-DEFINED' ? r.udt_name : r.data_type);
+    const k = qkey(r.table_schema, r.table_name);
+    if (!live.has(k)) live.set(k, new Map());
+    live.get(k).set(r.column_name, r.data_type === 'USER-DEFINED' ? r.udt_name : r.data_type);
   }
   const relKind = new Map((await db.query(
-    `SELECT c.relname, c.relkind FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
-      WHERE n.nspname = 'public' AND c.relkind IN ('r','v','m','p')`)).rows.map((r) => [r.relname, r.relkind]));
+    `SELECT n.nspname, c.relname, c.relkind FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+      WHERE n.nspname = ANY($1) AND c.relkind IN ('r','v','m','p')`, [['public', ...EXTRA_SCHEMAS]])).rows.map((r) => [qkey(r.nspname, r.relname), r.relkind]));
   info(`생성된 관계: 테이블/뷰 ${relKind.size}개 · 컬럼 ${colRows.length}개`);
 
   // 제약 (FK · CHECK)
@@ -673,12 +678,14 @@ function collectCreators(files) {
       const flat = st.sql.replace(/\s+/g, ' ');
       const cteNames = new Set([...flat.matchAll(CTE_RE)].map((m) => m[1].toLowerCase()));
       const alias = new Map();
-      const tRe = /\b(?:FROM|JOIN|INTO|UPDATE)\s+([a-z_][a-z0-9_]*)(?:\s+(?:AS\s+)?([a-z_][a-z0-9_]*))?/gi;
+      // ★ 세션79 — «스키마.표» 도 하나의 이름으로 읽는다(public. 접두는 떼고, 그 밖은 키 그대로).
+      const tRe = /\b(?:FROM|JOIN|INTO|UPDATE)\s+([a-z_][a-z0-9_]*(?:\.[a-z_][a-z0-9_]*)?)(?:\s+(?:AS\s+)?([a-z_][a-z0-9_]*))?/gi;
       let tm;
       while ((tm = tRe.exec(flat)) !== null) {
-        const tbl = tm[1].toLowerCase();
+        const tbl = tm[1].toLowerCase().replace(/^public\./, '');
         if (NOT_A_TABLE.has(tbl) || cteNames.has(tbl)) continue;
-        if (tbl === 'information_schema' || tbl === 'pg_catalog' || /^pg_/.test(tbl)) continue;
+        const head = tbl.split('.')[0];   // 세션79 — «스키마.표» 를 한 이름으로 읽으므로 스키마 부분으로 거른다
+        if (head === 'information_schema' || head === 'pg_catalog' || /^pg_/.test(head)) continue;
         if (flat.includes(`information_schema.${tbl}`)) continue;
         seen.add(tbl);
         if (!relKind.has(tbl)) { sink.table(tbl, st); continue; }
@@ -690,18 +697,18 @@ function collectCreators(files) {
         if (a2 && !NOT_AN_ALIAS.has(a2) && !cteNames.has(a2)) alias.set(a2, tbl);
         if (!cteNames.has(tbl)) alias.set(tbl, tbl);
       }
-      const im = flat.match(/INSERT\s+INTO\s+([a-z_][a-z0-9_]*)\s*\(([^)]*)\)/i);
-      if (im && relKind.has(im[1].toLowerCase())) {
-        const tbl = im[1].toLowerCase();
+      const im = flat.match(/INSERT\s+INTO\s+([a-z_][a-z0-9_]*(?:\.[a-z_][a-z0-9_]*)?)\s*\(([^)]*)\)/i);
+      if (im && relKind.has(im[1].toLowerCase().replace(/^public\./, ''))) {
+        const tbl = im[1].toLowerCase().replace(/^public\./, '');
         for (const raw of im[2].split(',')) {
           const col = raw.trim().toLowerCase();
           if (!/^[a-z_][a-z0-9_]*$/.test(col)) continue;
           if (!(live.get(tbl) || new Map()).has(col)) sink.column(tbl, col, st, 'INSERT');
         }
       }
-      const um = flat.match(/UPDATE\s+([a-z_][a-z0-9_]*)\s+SET\s+(.*?)(?:\s+WHERE\s|\s+RETURNING\s|$)/i);
-      if (um && relKind.has(um[1].toLowerCase())) {
-        const tbl = um[1].toLowerCase();
+      const um = flat.match(/UPDATE\s+([a-z_][a-z0-9_]*(?:\.[a-z_][a-z0-9_]*)?)\s+SET\s+(.*?)(?:\s+WHERE\s|\s+RETURNING\s|$)/i);
+      if (um && relKind.has(um[1].toLowerCase().replace(/^public\./, ''))) {
+        const tbl = um[1].toLowerCase().replace(/^public\./, '');
         for (const m of um[2].matchAll(/(?:^|,)\s*([a-z_][a-z0-9_]*)\s*=/g)) {
           const col = m[1].toLowerCase();
           if (!(live.get(tbl) || new Map()).has(col)) sink.column(tbl, col, st, 'UPDATE SET');

@@ -29,6 +29,7 @@ const fs = require('fs'); const path = require('path'); const crypto = require('
 const canon = require('./lib/capture_label_parser');
 const { cleanFoodType } = require('./lib/web_label_gate');
 const P = require('../src/services/ocrParser');
+const { labelFromParsed, consistent: labelConsistent } = require('./lib/label_basis');   // 세션79 — 포장지 기준
 
 /** OCR 원문 → 웹 값(수집 스크립트와 무관하게 «여기서» 다시 계산 · 같은 파서). */
 function webFromText(text) {
@@ -37,7 +38,7 @@ function webFromText(text) {
   let f = null;
   if (n._basis === 'per_100g' || n._basis === 'per_100ml') f = 1; else if (n._basis === 'per_serving' && n._basis_amount) f = 100 / n._basis_amount; else if (n._basis === 'per_total' && n.total_content) f = 100 / n.total_content;
   let per100 = null; if (f != null) { per100 = {}; for (const k of KEYS) if (n[k] != null) per100[k] = Math.round(n[k] * f * 100) / 100; if (!Object.keys(per100).length) per100 = null; }
-  return { ingredients_text: sec ? String(sec).slice(0, 1500) : null, basis: n._basis, basis_amount: n._basis_amount || null, per100, alg_contains: a.contains || [], alg_may: a.mayContain || [] };
+  return { label: labelFromParsed(n, text), ingredients_text: sec ? String(sec).slice(0, 1500) : null, basis: n._basis, basis_amount: n._basis_amount || null, per100, alg_contains: a.contains || [], alg_may: a.mayContain || [] };
 }
 
 const ORIGIN = 'web_label_ocr';
@@ -73,7 +74,7 @@ function planPage(rec, ocrText, db) {
     if (!prods.length) { out.notes.push('in_db 인데 지금 DB 에 없음 → 건너뜀'); return out; }
     for (const p of prods) {
       if (!p.has_alg && w && (w.alg_contains || []).length) out.candidates.push({ product_id: p.product_id, barcode: p.barcode, axis: 'allergens', data: { contains: w.alg_contains, may_contain: (w.alg_may || []).filter((a) => !w.alg_contains.includes(a)) } });
-      if (!p.has_nut && w && sane(w.per100)) { const pn = { _basis: unitMl ? 'per_100ml' : 'per_100g' }; for (const k of KEYS) if (w.per100[k] != null) pn[k] = w.per100[k]; out.candidates.push({ product_id: p.product_id, barcode: p.barcode, axis: 'nutrition', data: pn }); }
+      if (!p.has_nut && w && sane(w.per100)) { const pn = { _basis: unitMl ? 'per_100ml' : 'per_100g' }; for (const k of KEYS) if (w.per100[k] != null) pn[k] = w.per100[k]; if (w.label && labelConsistent(w.label, pn)) pn._label = w.label; out.candidates.push({ product_id: p.product_id, barcode: p.barcode, axis: 'nutrition', data: pn }); }
     }
     return out;
   }
@@ -83,7 +84,7 @@ function planPage(rec, ocrText, db) {
     const sb = siteBrandName(rec.name);
     // 제품명 = 판매처 상품명(브랜드 대괄호 제거). 라벨 OCR 의 「제품명」 칸은 잡음이 많다(실측: 'bibigo'·'내용량' 등) → 참고로만 남긴다.
     const np = { label_product_name: L.product_name || null, product: { product_name: sb.name.slice(0, 100), brand: sb.brand, manufacturer: maker(ocrText), food_type: cleanFoodType(L.food_type), total_content: L.total_content || null, content_unit: L.total_unit || null, c005_report_no: rn }, nutrition: null, allergens: [], ingredients: null };
-    if (w && sane(w.per100)) { const n = { serving_size: unitMl ? '100ml' : '100g' }; for (const k of KEYS) if (w.per100[k] != null) n[k] = w.per100[k]; np.nutrition = n; }
+    if (w && sane(w.per100)) { const n = { serving_size: unitMl ? '100ml' : '100g' }; for (const k of KEYS) if (w.per100[k] != null) n[k] = w.per100[k]; if (w.label && labelConsistent(w.label, n)) n._label = w.label; np.nutrition = n; }
     for (const a of (w && w.alg_contains) || []) np.allergens.push({ allergen_name: a, evidence_level: 'contains' });
     for (const a of (w && w.alg_may) || []) if (!np.allergens.some((x) => x.allergen_name === a)) np.allergens.push({ allergen_name: a, evidence_level: 'may_contain' });
     if (w && w.ingredients_text) np.ingredients = String(w.ingredients_text).slice(0, 4000);
@@ -126,7 +127,7 @@ async function applyPlans(q, plans, batch) {
     if (pl.newProduct) {
       const P = pl.newProduct.product; const N = pl.newProduct.nutrition;
       const r = await q(`with np as (insert into web_label.products (product_name, brand, manufacturer, food_type, total_content, content_unit, c005_report_no, data_source, verification, collected_at) values ($11,$12,$13,$14,$15,$16,$17,'web_label','unverified',$9::timestamptz) returning product_id),
-        nd as (insert into web_label.nutrition_data (product_id, ${KEYS.join(',')}, serving_size, data_source) select np.product_id, ${KEYS.map((k) => `(n->>'${k}')::numeric`).join(',')}, n->>'serving_size', 'web_label' from np, (select $18::jsonb n) x where $18::jsonb is not null returning 1),
+        nd as (insert into web_label.nutrition_data (product_id, ${KEYS.join(',')}, serving_size, data_source, label_basis) select np.product_id, ${KEYS.map((k) => `(n->>'${k}')::numeric`).join(',')}, n->>'serving_size', 'web_label', n->'_label' from np, (select $18::jsonb n) x where $18::jsonb is not null returning 1),
         al as (insert into web_label.product_allergens (product_id, allergen_name, status, detected_via, evidence_level) select np.product_id, a.allergen_name, 'candidate', 'web_label', a.evidence_level from np, jsonb_to_recordset($19::jsonb) a(allergen_name text, evidence_level text) on conflict do nothing returning 1),
         ig as (insert into web_label.product_ingredients (product_id, raw_text, prdlst_report_no, source) select np.product_id, $20, $17, 'web_label_ocr' from np where $20::text is not null returning 1),
         sp as (insert into web_label.source_pages (site, site_item_no, url, site_name, report_no, gate, target_schema, product_id, ocr_chars, ocr_sha1, fetched_at, batch_id) select $1,$2,$3,$4,$5,$6,'web_label',np.product_id,$7,$8,$9,$10 from np returning page_id)
@@ -161,7 +162,7 @@ function readInput(inPath, ocrDir) {
 
 async function selfTest() {
   const { PGlite } = require('@electric-sql/pglite'); const db = new PGlite(); const MIG = path.join(__dirname, 'migrations');
-  for (const f of ['000_baseline.sql', '021_supabase_auth.sql', '022_additive_detected_count.sql', '023_data_inspection.sql', '024_contribution_review.sql', '025_nutrition_data_crowd.sql', '026_crowd_nutrition_split.sql', '029_review_auto_applied.sql', '030_contribution_photos.sql', '031_web_label_schema.sql', '032_web_label_exposure.sql']) await db.exec(fs.readFileSync(path.join(MIG, f), 'utf8'));
+  for (const f of ['000_baseline.sql', '021_supabase_auth.sql', '022_additive_detected_count.sql', '023_data_inspection.sql', '024_contribution_review.sql', '025_nutrition_data_crowd.sql', '026_crowd_nutrition_split.sql', '029_review_auto_applied.sql', '030_contribution_photos.sql', '031_web_label_schema.sql', '032_web_label_exposure.sql', '034_web_label_label_basis.sql']) await db.exec(fs.readFileSync(path.join(MIG, f), 'utf8'));
   const q = (s, p) => db.query(s, p);
   let ok = 0, bad = 0; const eq = (a, b, n) => { const s = JSON.stringify(a) === JSON.stringify(b); s ? ok++ : bad++; console.log(`  ${s ? '✅' : '❌'} ${n}${s ? '' : `\n     기대 ${JSON.stringify(b)}\n     실제 ${JSON.stringify(a)}`}`); };
   const mk = async (bc, rn) => Number((await q("insert into products (barcode, product_name, data_source, c005_report_no) values ($1,'p','public_c005',$2) returning product_id", [bc, rn])).rows[0].product_id);

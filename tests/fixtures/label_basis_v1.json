@@ -1,0 +1,25 @@
+{
+  "name": "eval_label_basis_v1",
+  "fixed_at": "2026-10-14 23:1x (세션79 · 구현 전 고정)",
+  "decision": "제이 23:05 — 저장은 100g/100ml 기준 유지(엔진 공통) + 라벨 원래 기준을 함께 저장해 «포장지에 있는 그대로» 보여 준다.",
+  "build": [
+    {"id":"L01","text":"영양정보 1팩(190ml)당 75kcal\n나트륨 130mg 7%\n탄수화물 5g 2%\n당류 1g 1%\n지방 3.5g 6%\n포화지방 0.4g 3%\n단백질 6g 11%","expect":{"basis":"per_serving","amount":190,"unit":"ml","values":{"calories":75,"sodium":130,"total_carbs":5,"total_sugars":1,"total_fat":3.5,"saturated_fat":0.4,"protein":6}}},
+    {"id":"L02","text":"영양정보 1봉지당(115g) 485kcal\n나트륨 1,750mg 88%\n탄수화물 76g 23%\n당류 3g 3%\n지방 16g 30%\n포화지방 8g 53%\n단백질 9g 16%","expect":{"basis":"per_serving","amount":115,"unit":"g","values":{"calories":485,"sodium":1750}}},
+    {"id":"L03","text":"영양정보 총 내용량 500ml 총 내용량(500ml)당 35kcal\n나트륨 71mg 4%\n탄수화물 15g 5%\n당류 0g\n지방 0g\n단백질 0g","expect":{"basis":"per_total","amount":500,"unit":"ml","values":{"calories":35,"sodium":71,"total_carbs":15,"total_sugars":0,"total_fat":0,"protein":0}}},
+    {"id":"L04","text":"영양정보 총 내용량 300g 100g당 216kcal\n나트륨 1,680mg 84%\n지방 19g 35%","expect":{"basis":"per_100g","amount":100,"unit":"g","values":{"calories":216,"sodium":1680,"total_fat":19}}},
+    {"id":"L05","text":"영양정보 100ml당 40kcal\n나트륨 50mg 3%\n탄수화물 8g 2%","expect":{"basis":"per_100ml","amount":100,"unit":"ml"}},
+    {"id":"L06","text":"원재료명 정제수, 설탕","expect":null,"note":"영양표 없음 → null"}
+  ],
+  "consistency": [
+    {"id":"C01","label":{"basis":"per_serving","amount":190,"unit":"ml","values":{"calories":75,"sodium":130}},"per100":{"calories":39.47,"sodium":68.42},"expect":true},
+    {"id":"C02","label":{"basis":"per_serving","amount":190,"unit":"ml","values":{"calories":75}},"per100":{"calories":75},"expect":false,"note":"이미 다른 기준으로 저장된 값과 어긋나면 라벨을 붙이지 않는다(엉뚱한 페이지·정정분 보호)"},
+    {"id":"C03","label":{"basis":"per_100g","amount":100,"unit":"g","values":{"calories":216,"total_fat":19}},"per100":{"calories":216,"total_fat":19},"expect":true}
+  ],
+  "display": [
+    {"id":"D01","label":{"basis":"per_serving","amount":190,"unit":"ml"},"expect_header":"190ml당"},
+    {"id":"D02","label":{"basis":"per_total","amount":500,"unit":"ml"},"expect_header":"총 내용량 500ml당"},
+    {"id":"D03","label":{"basis":"per_100g","amount":100,"unit":"g"},"expect_header":"100g당"},
+    {"id":"D04","label":{"basis":"per_serving","amount":190,"unit":"ml","values":{"calories":75,"trans_fat":0.5},"upper_bound":["trans_fat"]},"expect_rows":["열량 75kcal","트랜스지방 0.5g 이하"],"note":"값은 라벨 숫자 그대로 · 상한값은 «이하»"},
+    {"id":"D05","label":{"basis":"per_serving","amount":190,"unit":"ml","values":{"calories":75}},"per100":{"calories":39.47},"expect_secondary":"100ml당 39.5kcal","note":"라벨 기준이 100 이 아니면 100 기준을 보조로 한 줄(소수 1자리)"}
+  ]
+}

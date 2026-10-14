@@ -50,7 +50,8 @@ async function findWebProduct(webId, q) {
             p.status, p.nutrition_ok, p.collected_at, p.c005_report_no,
             n.calories, n.total_fat, n.saturated_fat, n.trans_fat, n.cholesterol, n.sodium,
             n.total_carbs, n.total_sugars, n.dietary_fiber, n.protein,
-            n.data_source AS nutrition_source, n.serving_size AS nutrition_serving_size, n.verified_at
+            n.data_source AS nutrition_source, n.serving_size AS nutrition_serving_size, n.verified_at,
+            n.label_basis
        FROM web_label.products p
        LEFT JOIN web_label.nutrition_data n ON n.product_id = p.product_id
       WHERE p.product_id = $1 AND p.status IN ${EXPOSED} AND ${NOT_SHADOWED}

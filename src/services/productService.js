@@ -15,6 +15,7 @@ const { allergensFromIngredients } = require('./allergenFromIngredients');
 // ★ 세션77 — 공공 DB 원재료 출처(OCR 제보 ocr_crowdsource · 웹 파일럿 web_pilot 제외)
 const DB_INGREDIENT_SOURCES = new Set(['c002', 'c002_barcode', 'c002_name', 'c003', 'haccp_api', 'c005_sibling']);
 const productModel = require('../models/productModel');
+const webLabelModel = require('../models/webLabelModel');   // 세션79 U78-3
 const { evaluateNutrition, deriveBasis } = require('./nutritionTrafficLight');
 const { getRaccPolicy } = require('./raccPolicy');
 const { NotFoundError } = require('../middleware/errorHandler');
@@ -228,9 +229,116 @@ async function getProductWithTrafficLight(barcode) {
     throw new NotFoundError('제품');
   }
 
+  const payload = await assembleProductPayload(product, PUBLIC_DEPS, { barcode });
+  // ★ 세션79 U78-3 — 판매처 라벨 보충(키 추가만 · 기존 키 무변경). 빈 축(알레르기 미수집·영양 없음)일 때만 조회한다.
+  payload.web_label_supplements = await loadWebLabelSupplements(product.product_id, payload);
+  return payload;
+}
+
+/**
+ * ★ 세션79 U78-3 — web_label(판매처 라벨 기반) 품목 상세. 응답 «키»는 바코드 조회와 같다(E3) + `web_label` 블록.
+ *   신호등: nutrition_ok=false(4·4·9 교차확인 실패)면 끈다(영양 수치는 참고로 그대로 싣는다).
+ *   알레르기: 표시란(contains/may_contain)만 allergens_v2 에. 원재료 추론은 표시란이 비었을 때만 allergens_from_ingredients(«추가 확인 필요»)로 분리.
+ */
+async function getWebLabelProduct(webId) {
+  const product = await webLabelModel.findWebProduct(webId);
+  if (!product) throw new NotFoundError('제품');
+  const payload = await assembleProductPayload(product, WEB_DEPS, { webId });
+  payload.web_label = buildWebLabelBlock(product);
+  return payload;
+}
+
+const WEB_LABEL_BADGE = '판매처 라벨 기반 · 바코드 미확인';
+const WEB_LABEL_WARNING = '포장 리뉴얼로 실제와 다를 수 있어요. 알레르기는 반드시 실물 포장을 확인하세요.';
+const WEB_SUPPLEMENT_BADGE = '판매처 라벨 기반 보충';
+let _wlSuppMissingLogged = false;
+const STALE_DAYS = 365;   // 설계 §2-4 ⑤ — 수집 후 12개월
+
+/** 'YYYY.MM 수집' (KST) · 날짜 없으면 null */
+function collectedLabel(at) {
+  if (!at) return null;
+  const d = new Date(new Date(at).getTime() + 9 * 3600 * 1000);
+  if (Number.isNaN(d.getTime())) return null;
+  return `${d.getUTCFullYear()}.${String(d.getUTCMonth() + 1).padStart(2, '0')} 수집`;
+}
+function isStaleAt(at, status) {
+  if (status === 'stale') return true;
+  if (!at) return false;
+  return (Date.now() - new Date(at).getTime()) / 86400000 > STALE_DAYS;
+}
+
+function buildWebLabelBlock(product) {
+  return {
+    source: 'web_label',
+    web_id: product.product_id,
+    badge: WEB_LABEL_BADGE,
+    warning: WEB_LABEL_WARNING,
+    collected_at: product.collected_at ? new Date(product.collected_at).toISOString() : null,
+    collected_label: collectedLabel(product.collected_at),
+    is_stale: isStaleAt(product.collected_at, product.status),
+    nutrition_ok: product.nutrition_ok === false ? false : (product.nutrition_ok === true ? true : null),
+    barcode_linked: false,
+  };
+}
+
+/** public 제품의 빈 축만 판매처 라벨 보충으로 채운다. 신호등·allergens 키는 건드리지 않는다(보충으로 «안전»을 단정하지 않는다). 실패 = null. */
+async function loadWebLabelSupplements(productId, payload) {
+  const needAlg = !payload.allergens_available;
+  const needNut = payload.nutrition === null;
+  if (!needAlg && !needNut) return null;
+  let rows;
+  try {
+    rows = await webLabelModel.getActiveSupplements(productId);
+  } catch (e) {
+    // 032 미적용 DB(테스트용 pglite 등)는 표가 없다(42P01) — 한 번만 남긴다. 그 밖의 실패는 매번 남긴다.
+    if (!(e && e.code === '42P01' && _wlSuppMissingLogged)) logger.warn('판매처 라벨 보충 조회 실패 — 키를 null 로 둔다', { productId, error: e.message });
+    if (e && e.code === '42P01') _wlSuppMissingLogged = true;
+    return null;
+  }
+  const by = Object.fromEntries((rows || []).map((r) => [r.axis, r]));
+  const a = needAlg ? by.allergens : null;
+  const n = needNut ? by.nutrition : null;
+  if (!a && !n) return null;
+  const pick = (d) => {
+    const o = {};
+    for (const k of ['calories', 'total_fat', 'saturated_fat', 'trans_fat', 'cholesterol', 'sodium', 'total_carbs', 'total_sugars', 'dietary_fiber', 'protein']) {
+      const v = d && d[k]; o[k] = (typeof v === 'number' && Number.isFinite(v)) ? v : (v != null && v !== '' && Number.isFinite(Number(v)) ? Number(v) : null);
+    }
+    return o;
+  };
+  return {
+    badge: WEB_SUPPLEMENT_BADGE,
+    warning: WEB_LABEL_WARNING,
+    allergens: a ? {
+      contains: Array.isArray(a.data && a.data.contains) ? a.data.contains : [],
+      may_contain: Array.isArray(a.data && a.data.may_contain) ? a.data.may_contain : [],
+      collected_label: collectedLabel(a.collected_at),
+    } : null,
+    nutrition: n ? { ...pick(n.data), basis: (n.data && n.data._basis) || null, collected_label: collectedLabel(n.collected_at) } : null,
+  };
+}
+
+const PUBLIC_DEPS = {
+  getAdditives: (id) => productModel.getAdditives(id),
+  getIngredientText: (id) => productModel.getIngredientText(id),
+  getAllergens: (id, stats) => productModel.getAllergens(id, stats),
+  inferSources: DB_INGREDIENT_SOURCES,
+  trafficLightAllowed: () => true,
+};
+// web_label: 첨가물 표 없음(→ mfras null = 모름) · 원재료 추론 출처는 판매처 라벨 OCR · 4·4·9 실패면 신호등 끔.
+const WEB_DEPS = {
+  getAdditives: async () => [],
+  getIngredientText: (id) => webLabelModel.getWebIngredientText(id),
+  getAllergens: (id, stats) => webLabelModel.getWebAllergens(id, stats),
+  inferSources: new Set(['web_label_ocr']),
+  trafficLightAllowed: (p) => p.nutrition_ok !== false,
+};
+
+/** 바코드 조회·web_label 상세가 공유하는 응답 조립(세션79 에 getProductWithTrafficLight 본문을 그대로 옮김 · 규칙 1벌). */
+async function assembleProductPayload(product, deps, logCtx) {
   // 영양정보가 있으면 신호등 판정
   let trafficLight = null;
-  if (product.sodium !== null || product.calories !== null) {
+  if ((product.sodium !== null || product.calories !== null) && deps.trafficLightAllowed(product)) {
     trafficLight = evaluateNutrition(
       {
         product_name: product.product_name,
@@ -257,11 +365,11 @@ async function getProductWithTrafficLight(barcode) {
   }
 
   // 첨가물 조회 → MFRAS (병렬 처리하지 않고 순차 — DB pool 압박 회피)
-  const additivesRows = await productModel.getAdditives(product.product_id);
+  const additivesRows = await deps.getAdditives(product.product_id);
   const mfras = buildMfras(additivesRows);
 
   // ★ 세션75j — 원재료 원문. undefined(조회 실패)면 키를 싣지 않는다 → 웹은 «모름»으로 둔다.
-  const ingredient = await productModel.getIngredientText(product.product_id);
+  const ingredient = await deps.getIngredientText(product.product_id);
 
   // ★★ 세션45: 알레르기 조회 (같은 이유로 순차)
   //   이 응답에는 알레르기가 **아예 없었다** — 세션44 §6-2 가 「구분이 없다」고 본 것보다 심하다.
@@ -283,12 +391,12 @@ async function getProductWithTrafficLight(barcode) {
   let allergenAuto = null;   // ★ 세션72 — buildAllergenAutoSignals
   const allergenStats = { dropped: 0 };
   try {
-    const allergenRows = await productModel.getAllergens(product.product_id, allergenStats);
+    const allergenRows = await deps.getAllergens(product.product_id, allergenStats);
     allergens = buildAllergens(allergenRows);
     allergenAuto = buildAllergenAutoSignals(allergenRows, allergens);
   } catch (e) {
     logger.error('알레르기 조회 실패 — 응답에서 알레르기를 생략한다(500 대신)', {
-      barcode, productId: product.product_id, error: e.message,
+      ...logCtx, productId: product.product_id, error: e.message,
     });
     allergens = null;
   }
@@ -298,7 +406,7 @@ async function getProductWithTrafficLight(barcode) {
   //   ⚠ 표시란 키(allergens·allergens_v2·allergens_available·flat_complete)는 한 글자도 바꾸지 않는다 — 미수집이면 그대로 null.
   //   ⚠ 결과는 «원재료명에서 확인된 것»이지 «전부»가 아니다. 클라이언트는 이것으로 «알레르기 없음»을 말하면 안 된다.
   let allergensFromIng = null;
-  if (!(allergens && allergens.collected) && ingredient && ingredient.text && DB_INGREDIENT_SOURCES.has(ingredient.raw_source)) {
+  if (!(allergens && allergens.collected) && ingredient && ingredient.text && deps.inferSources.has(ingredient.raw_source)) {
     try {
       const r = allergensFromIngredients(ingredient.text);
       allergensFromIng = { names: r.names, evidence: r.evidence, composite: r.composite, missing_likely: r.missing_likely, rules_version: r.rules_version, ingredient_source: ingredient.source };
@@ -587,6 +695,9 @@ async function getProductAdditives(barcode) {
 
 module.exports = {
   getProductWithTrafficLight,
+  getWebLabelProduct,         // 세션79 U78-3
+  WEB_LABEL_BADGE, WEB_LABEL_WARNING, WEB_SUPPLEMENT_BADGE,   // 세션79 — 라우트·평가가 같은 문구를 쓴다
+  _collectedLabel: collectedLabel,
   getProductAdditives,
   // 테스트·재사용용 export
   buildMfras,

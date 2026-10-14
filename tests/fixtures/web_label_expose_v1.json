@@ -1,0 +1,35 @@
+{
+  "name": "eval_web_label_expose_v1",
+  "fixed_at": "2026-10-14 (세션79 · 구현 전 고정)",
+  "badge": "판매처 라벨 기반 · 바코드 미확인",
+  "warning": "포장 리뉴얼로 실제와 다를 수 있어요. 알레르기는 반드시 실물 포장을 확인하세요.",
+  "E1_search_live": [
+    {"id":"E1-01","q":"갈릭볶음밥","expect":{"web_contains":[307205],"public_unchanged":true}},
+    {"id":"E1-02","q":"커리부어스트","expect":{"web_contains":[306613],"public_unchanged":true}},
+    {"id":"E1-03","q":"그릭 요거트 플레인","expect":{"web_contains":[307846],"public_unchanged":true}},
+    {"id":"E1-04","q":"딸기맛 우유 미니","expect":{"web_contains":[307654]},"note":"브랜드 빙그레·이름 일치"},
+    {"id":"E1-05","q":"한국에스비식품","expect":{"web_contains":[306954]},"note":"제조사 일치 · nutrition_ok=false 도 검색엔 나온다(신호등만 끔)"},
+    {"id":"E1-06","q":"계란과자","expect":{"web_excludes":[306370]},"note":"needs_review 는 노출 안 함"},
+    {"id":"E1-07","q":"해품은 김","setup":"tx: web_label.products 307002 status=superseded","expect":{"web_excludes":[307002]}},
+    {"id":"E1-08","q":"떠먹는 감자 피자","setup":"tx: 307439 의 c005_report_no 를 활성 public 제품 번호로 교체","expect":{"web_excludes":[307439]},"note":"public 에 같은 번호의 활성 제품이 있으면 숨김(설계 D)"},
+    {"id":"E1-09","q":"갈릭볶음밥","offset":10,"expect":{"web_empty":true},"note":"web_label 결과는 첫 쪽에만"},
+    {"id":"E1-10","q":"a","expect":{"public_empty":true,"web_empty":true}},
+    {"id":"E1-11","q":"우유","expect":{"web_max":10,"every_web":{"badge":true,"barcode_null":true,"has_web_id":true,"source":"web_label"}}},
+    {"id":"E1-12","q":"자일리톨","expect":{"public_nonempty":true,"public_unchanged":true},"note":"public 결과(products 배열)는 종전과 한 글자도 같다 — 웹 결과는 별도 키"}
+  ],
+  "E3_shape_pglite": [
+    {"id":"E3-01","check":"상세 응답 최상위 키 = 바코드 응답 키 ∪ {web_label}"},
+    {"id":"E3-02","check":"product 하위 키 동일 · barcode=null · data_source='web_label'"},
+    {"id":"E3-03","check":"nutrition 하위 키 동일 · 숫자 타입 · basis per_100g"},
+    {"id":"E3-04","check":"nutrition_ok=false → traffic_light=null, nutrition 은 그대로(참고), web_label.nutrition_ok=false"},
+    {"id":"E3-05","check":"needs_review·superseded·없는 id → NotFound(404)"},
+    {"id":"E3-06","check":"web_label 블록: badge·warning 정확 · collected_label 'YYYY.MM 수집' · 알레르기는 표시란(contains/may_contain)만 allergens_v2 에"}
+  ],
+  "E5_supplement_pglite": [
+    {"id":"E5-01","check":"public 알레르기 미수집 + active 알레르기 보충 → web_label_supplements.allergens 채움(contains·may_contain·badge)"},
+    {"id":"E5-02","check":"public 알레르기 수집됨 → 보충 있어도 web_label_supplements.allergens=null"},
+    {"id":"E5-03","check":"needs_review·rejected 보충 → 싣지 않음"},
+    {"id":"E5-04","check":"public 영양 없음 + active 영양 보충 → web_label_supplements.nutrition(per100·basis), traffic_light 은 계속 null(보충으로 신호등 안 켬)"},
+    {"id":"E5-05","check":"보충 대상 없음 → 키 값 null (기존 키는 무변경)"}
+  ]
+}

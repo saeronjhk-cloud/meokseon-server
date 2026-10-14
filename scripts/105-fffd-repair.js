@@ -155,7 +155,7 @@ async function main() {
         if (maxCalls && n >= maxCalls) break;   // 식품안전나라: 보고번호 조회는 시간당 100회(INFO-320)
         const [api, rn] = k.split('|');
         try { cache[k] = { rows: await fetchSource(api, rn), at: new Date().toISOString() }; } catch (e) { cache[k] = { error: String(e.message || e).slice(0, 120) }; }
-        if (cache[k].error && /INFO-320/.test(cache[k].error)) { n++; console.log('INFO-320(시간당 100회 초과) — 이번 회차 중단'); break; }   // 거절된 호출도 한도를 먹을 수 있어 즉시 멈춘다
+        if (cache[k].error && /INFO-320|ERROR-503/.test(cache[k].error)) { n++; console.log(cache[k].error + ' — 호출 한도(INFO-320 시간당 100회 · ERROR-503 06~19시 일 300회) · 이번 회차 중단'); break; }   // 거절된 호출도 한도를 먹을 수 있어 즉시 멈춘다
         n++; await new Promise((r) => setTimeout(r, 200));   // 식품안전나라 INFO-320(연속 호출 제한) 회피
         if (n % 25 === 0) fs.writeFileSync(CACHE, JSON.stringify(cache));
       }

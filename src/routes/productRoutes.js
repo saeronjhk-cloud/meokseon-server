@@ -8,6 +8,7 @@ const express = require('express');
 const { query: checkQuery, param, validationResult } = require('express-validator');
 const productModel = require('../models/productModel');
 const productService = require('../services/productService');
+const webLabelModel = require('../models/webLabelModel');   // 세션79 U78-3
 // ★ 세션50 D2 — `sanityCheck` 를 **일부러 import 하지 않는다.** 판정은 엔진 한 곳에서만 한다.
 const { evaluateNutrition } = require('../services/nutritionTrafficLight');
 const { getRaccPolicy } = require('../services/raccPolicy');
@@ -34,7 +35,38 @@ router.get(
     validate(req);
     const { q, limit = 20, offset = 0 } = req.query;
     const products = await productModel.searchByName(q, limit, offset);
-    res.json({ success: true, data: { query: q, count: products.length, products } });
+    // ★ 세션79 U78-3 — 판매처 라벨 기반 품목은 «별도 키»로 public 결과 뒤에(첫 쪽만 · 최대 10). products 배열·count 는 종전과 같다.
+    //   별도 키인 이유: 구버전 앱은 products[i].barcode 로 상세를 연다 — 바코드 없는 품목이 섞이면 그 경로가 깨진다.
+    const webLabelProducts = await searchWebLabelSafe(q, offset);
+    res.json({ success: true, data: { query: q, count: products.length, products, web_label_products: webLabelProducts } });
+  }
+);
+
+/** web_label 검색 실패가 public 검색을 500 으로 만들지 않게 한다(빈 배열 + 로그). */
+async function searchWebLabelSafe(q, offset, exec) {
+  if (offset > 0) return [];
+  try {
+    const rows = await webLabelModel.searchWebLabel(q, 10, exec);
+    return rows.map((r) => ({
+      web_id: r.web_id, barcode: null, source: 'web_label', badge: productService.WEB_LABEL_BADGE,
+      product_name: r.product_name, brand: r.brand, manufacturer: r.manufacturer, food_type: r.food_type,
+      total_content: r.total_content, content_unit: r.content_unit,
+      collected_label: productService._collectedLabel(r.collected_at), nutrition_ok: r.nutrition_ok,
+    }));
+  } catch (e) {
+    require('../config/logger').warn('web_label 검색 실패 — 빈 배열', { q, error: e.message });
+    return [];
+  }
+}
+
+// ★ 세션79 U78-3 — GET /api/products/web/:id — 판매처 라벨 기반 품목 상세(바코드 조회와 같은 응답 키 + web_label 블록)
+router.get(
+  '/web/:id',
+  [param('id').trim().matches(/^\d{1,12}$/).withMessage('id 는 숫자입니다.')],
+  async (req, res) => {
+    validate(req);
+    const data = await productService.getWebLabelProduct(Number(req.params.id));
+    res.json({ success: true, data });
   }
 );
 
@@ -149,3 +181,4 @@ router.post('/evaluate', async (req, res) => {
 });
 
 module.exports = router;
+module.exports._searchWebLabelSafe = searchWebLabelSafe;   // 세션79 평가(E1)용

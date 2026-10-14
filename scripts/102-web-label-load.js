@@ -9,8 +9,9 @@
  *        · 알레르기 표시란 없음 + 라벨 «함유» ≥1 → 검토 후보 axis 'allergens'
  *        · 영양 없음(nutrition_data·nutrition_data_crowd 둘 다 없음) + 100g(㎖) 환산값 + 상식 범위 → 검토 후보 axis 'nutrition'
  *        · 원재료: 쓰지 않는다(구역 추출 정확도 미달 · 결과요약_v1 역방향 v1)
- *       후보 = contributions(type 'web_label_ocr', device_id NULL, user_id NULL) + contribution_review('candidate', evidence.origin 'web_label_ocr').
- *       자동 반영 없음(사람 승인 → 기존 contributionApply 경로). 같은 페이지·제품·축 후보가 이미 있으면 건너뜀(멱등).
+ *       ★ 세션79(제이 10-14 13:54) — 후보는 public 검토 대기열이 «아니라» web_label.public_supplements(032)에 둔다.
+ *         판매처 라벨 값은 전부 web_label 에서 관리(public 무접촉). 노출 여부는 품질 게이트(scripts/104-web-label-gate.js)가 status 로 정한다.
+ *         (세션78 의 contributions/contribution_review 경로는 폐기 — 그 시절 배치의 되돌리기만 남긴다.)
  *   gate not_in_db (번호가 public 에 없음) → web_label 스키마(031 · public 과 같은 양식)에 신규 품목 1개:
  *        products · nutrition_data(100g 환산 · serving_size '100g'/'100ml') · product_allergens(함유 contains · 혼입 may_contain · status candidate)
  *        · product_ingredients(원재료 구역 원문 · source 'web_label_ocr'). 같은 번호가 web_label 에 이미 있으면 건너뜀.
@@ -26,6 +27,7 @@ try { require('dotenv').config(); } catch (_) { /* */ }
 const KEYS = ['calories', 'total_fat', 'saturated_fat', 'trans_fat', 'cholesterol', 'sodium', 'total_carbs', 'total_sugars', 'protein'];
 const fs = require('fs'); const path = require('path'); const crypto = require('crypto');
 const canon = require('./lib/capture_label_parser');
+const { cleanFoodType } = require('./lib/web_label_gate');
 const P = require('../src/services/ocrParser');
 
 /** OCR 원문 → 웹 값(수집 스크립트와 무관하게 «여기서» 다시 계산 · 같은 파서). */
@@ -70,8 +72,8 @@ function planPage(rec, ocrText, db) {
     const prods = db.byReport.get(rn) || [];
     if (!prods.length) { out.notes.push('in_db 인데 지금 DB 에 없음 → 건너뜀'); return out; }
     for (const p of prods) {
-      if (!p.has_alg && w && (w.alg_contains || []).length) out.candidates.push({ product_id: p.product_id, barcode: p.barcode, axis: 'allergens', data: { allergens: w.alg_contains, allergens_v2: { contains: w.alg_contains, inferred: [], mayContain: w.alg_may || [] } } });
-      if (!p.has_nut && w && sane(w.per100)) { const pn = { _basis: unitMl ? 'per_100ml' : 'per_100g' }; for (const k of KEYS) if (w.per100[k] != null) pn[k] = w.per100[k]; out.candidates.push({ product_id: p.product_id, barcode: p.barcode, axis: 'nutrition', data: { parsed_nutrition: pn } }); }
+      if (!p.has_alg && w && (w.alg_contains || []).length) out.candidates.push({ product_id: p.product_id, barcode: p.barcode, axis: 'allergens', data: { contains: w.alg_contains, may_contain: (w.alg_may || []).filter((a) => !w.alg_contains.includes(a)) } });
+      if (!p.has_nut && w && sane(w.per100)) { const pn = { _basis: unitMl ? 'per_100ml' : 'per_100g' }; for (const k of KEYS) if (w.per100[k] != null) pn[k] = w.per100[k]; out.candidates.push({ product_id: p.product_id, barcode: p.barcode, axis: 'nutrition', data: pn }); }
     }
     return out;
   }
@@ -80,7 +82,7 @@ function planPage(rec, ocrText, db) {
     if (db.wlReports.has(rn)) { out.notes.push('web_label 에 같은 번호 이미 있음'); return out; }
     const sb = siteBrandName(rec.name);
     // 제품명 = 판매처 상품명(브랜드 대괄호 제거). 라벨 OCR 의 「제품명」 칸은 잡음이 많다(실측: 'bibigo'·'내용량' 등) → 참고로만 남긴다.
-    const np = { label_product_name: L.product_name || null, product: { product_name: sb.name.slice(0, 100), brand: sb.brand, manufacturer: maker(ocrText), food_type: (L.food_type && !/^(?:질량|중량|내용량|용량|포장재질)$/.test(L.food_type)) ? L.food_type : null, total_content: L.total_content || null, content_unit: L.total_unit || null, c005_report_no: rn }, nutrition: null, allergens: [], ingredients: null };
+    const np = { label_product_name: L.product_name || null, product: { product_name: sb.name.slice(0, 100), brand: sb.brand, manufacturer: maker(ocrText), food_type: cleanFoodType(L.food_type), total_content: L.total_content || null, content_unit: L.total_unit || null, c005_report_no: rn }, nutrition: null, allergens: [], ingredients: null };
     if (w && sane(w.per100)) { const n = { serving_size: unitMl ? '100ml' : '100g' }; for (const k of KEYS) if (w.per100[k] != null) n[k] = w.per100[k]; np.nutrition = n; }
     for (const a of (w && w.alg_contains) || []) np.allergens.push({ allergen_name: a, evidence_level: 'contains' });
     for (const a of (w && w.alg_may) || []) if (!np.allergens.some((x) => x.allergen_name === a)) np.allergens.push({ allergen_name: a, evidence_level: 'may_contain' });
@@ -107,28 +109,23 @@ async function loadDbState(q, reports) {
 
 async function applyPlans(q, plans, batch) {
   // ★ 원격 DB 왕복이 비싸다(실측 RTT ~0.3s) → 페이지 1개 = SQL 1문장(+후보마다 1문장). 데이터 수정 CTE 로 한 번에 넣는다.
-  const rec = { batch, contributions: [], reviews: [], web_label_products: [], pages: [] };
+  const rec = { batch, supplements: [], web_label_products: [], pages: [] };
   const urls = plans.filter((p) => p.page).map((p) => p.page.url);
   const ex = new Set((await q('select url from web_label.source_pages where url = any($1)', [urls])).rows.map((r) => r.url));
   for (const pl of plans) {
     if (!pl.page || ex.has(pl.page.url)) continue;   // 이미 적재한 페이지(멱등)
     ex.add(pl.page.url);
     let target = null, pid = null;
-    for (const c of pl.candidates) {
-      const data = { source: ORIGIN, source_url: pl.page.url, site_name: pl.page.site_name, report_no: pl.page.report_no, fetched_at: pl.page.fetched_at, batch_id: batch, avg_confidence: 0.9, notify_result: false, ...c.data };
-      const ev = { origin: ORIGIN, barcode: c.barcode, is_new_product: false, source_url: pl.page.url, report_no: pl.page.report_no, batch_id: batch };
-      if (c.axis === 'nutrition') Object.assign(ev, { basis_detected: c.data.parsed_nutrition._basis, nutrient_count: Object.keys(c.data.parsed_nutrition).length - 1, per_total_divisor: 1, sanity_warnings: [] });
-      else Object.assign(ev, { allergen_count: c.data.allergens.length, allergens: c.data.allergens, allergens_v2: c.data.allergens_v2 });
-      const r = await q(`with c as (insert into contributions (user_id, product_id, contribution_type, data, status, device_id) values (null,$1,$2,$3::jsonb,'pending',null) returning contribution_id)
-        insert into contribution_review (contribution_id, product_id, axis, status, evidence) select contribution_id, $1, $4, 'candidate', $5::jsonb || jsonb_build_object('contribution_id', contribution_id) from c returning review_id, contribution_id`,
-        [c.product_id, ORIGIN, JSON.stringify(data), c.axis, JSON.stringify(ev)]);
-      rec.contributions.push(Number(r.rows[0].contribution_id)); rec.reviews.push(Number(r.rows[0].review_id)); target = 'public'; pid = pid || c.product_id;
+    for (const c of pl.candidates) {   // ★ 세션79 — public 대기열이 아니라 web_label.public_supplements(상태 needs_review → 게이트가 판정)
+      const r = await q(`insert into web_label.public_supplements (product_id, axis, data, source_url, report_no, batch_id) values ($1,$2,$3::jsonb,$4,$5,$6)
+        on conflict (product_id, axis, source_url) do nothing returning supplement_id`, [c.product_id, c.axis, JSON.stringify(c.data), pl.page.url, pl.page.report_no, batch]);
+      if (r.rows[0]) rec.supplements.push(Number(r.rows[0].supplement_id)); target = 'public'; pid = pid || c.product_id;
     }
     const p = pl.page;
     const pageVals = [p.site, p.site_item_no, p.url, p.site_name, p.report_no, p.gate, p.ocr_chars, p.ocr_sha1, p.fetched_at, batch];
     if (pl.newProduct) {
       const P = pl.newProduct.product; const N = pl.newProduct.nutrition;
-      const r = await q(`with np as (insert into web_label.products (product_name, brand, manufacturer, food_type, total_content, content_unit, c005_report_no, data_source, verification) values ($11,$12,$13,$14,$15,$16,$17,'web_label','unverified') returning product_id),
+      const r = await q(`with np as (insert into web_label.products (product_name, brand, manufacturer, food_type, total_content, content_unit, c005_report_no, data_source, verification, collected_at) values ($11,$12,$13,$14,$15,$16,$17,'web_label','unverified',$9::timestamptz) returning product_id),
         nd as (insert into web_label.nutrition_data (product_id, ${KEYS.join(',')}, serving_size, data_source) select np.product_id, ${KEYS.map((k) => `(n->>'${k}')::numeric`).join(',')}, n->>'serving_size', 'web_label' from np, (select $18::jsonb n) x where $18::jsonb is not null returning 1),
         al as (insert into web_label.product_allergens (product_id, allergen_name, status, detected_via, evidence_level) select np.product_id, a.allergen_name, 'candidate', 'web_label', a.evidence_level from np, jsonb_to_recordset($19::jsonb) a(allergen_name text, evidence_level text) on conflict do nothing returning 1),
         ig as (insert into web_label.product_ingredients (product_id, raw_text, prdlst_report_no, source) select np.product_id, $20, $17, 'web_label_ocr' from np where $20::text is not null returning 1),
@@ -145,12 +142,14 @@ async function applyPlans(q, plans, batch) {
 }
 
 async function undoBatch(q, batch) {
-  const ap = await q(`select count(*)::int n from contribution_review where evidence->>'batch_id'=$1 and evidence->>'origin'=$2 and status not in ('candidate','superseded')`, [batch, ORIGIN]);
+  // 세션78 배치(public 대기열 경로): 승인/반영된 후보가 있으면 거부
+  const ap = await q(`select count(*)::int n from contribution_review where evidence->>'batch_id'=$1 and evidence->>'origin'=$2 and status not in ('candidate','superseded','undone','rejected')`, [batch, ORIGIN]);
   if (ap.rows[0].n) throw new Error(`UNDO_REFUSED: 이 배치 후보 중 ${ap.rows[0].n}건이 이미 승인/반영됨 — 관리자 화면에서 먼저 되돌릴 것`);
   const c = await q(`delete from contributions where contribution_type=$2 and data->>'batch_id'=$1 returning contribution_id`, [batch, ORIGIN]); // review 는 CASCADE
+  const ps = await q(`delete from web_label.public_supplements where batch_id=$1 returning supplement_id`, [batch]);   // 세션79 경로
   const w = await q(`delete from web_label.products where product_id in (select product_id from web_label.source_pages where batch_id=$1 and target_schema='web_label') returning product_id`, [batch]);
   const s = await q(`delete from web_label.source_pages where batch_id=$1 returning page_id`, [batch]);
-  return { contributions: c.rows.length, web_label_products: w.rows.length, pages: s.rows.length };
+  return { contributions: c.rows.length, supplements: ps.rows.length, web_label_products: w.rows.length, pages: s.rows.length };
 }
 
 function readInput(inPath, ocrDir) {
@@ -162,7 +161,7 @@ function readInput(inPath, ocrDir) {
 
 async function selfTest() {
   const { PGlite } = require('@electric-sql/pglite'); const db = new PGlite(); const MIG = path.join(__dirname, 'migrations');
-  for (const f of ['000_baseline.sql', '021_supabase_auth.sql', '022_additive_detected_count.sql', '023_data_inspection.sql', '024_contribution_review.sql', '025_nutrition_data_crowd.sql', '026_crowd_nutrition_split.sql', '029_review_auto_applied.sql', '030_contribution_photos.sql', '031_web_label_schema.sql']) await db.exec(fs.readFileSync(path.join(MIG, f), 'utf8'));
+  for (const f of ['000_baseline.sql', '021_supabase_auth.sql', '022_additive_detected_count.sql', '023_data_inspection.sql', '024_contribution_review.sql', '025_nutrition_data_crowd.sql', '026_crowd_nutrition_split.sql', '029_review_auto_applied.sql', '030_contribution_photos.sql', '031_web_label_schema.sql', '032_web_label_exposure.sql']) await db.exec(fs.readFileSync(path.join(MIG, f), 'utf8'));
   const q = (s, p) => db.query(s, p);
   let ok = 0, bad = 0; const eq = (a, b, n) => { const s = JSON.stringify(a) === JSON.stringify(b); s ? ok++ : bad++; console.log(`  ${s ? '✅' : '❌'} ${n}${s ? '' : `\n     기대 ${JSON.stringify(b)}\n     실제 ${JSON.stringify(a)}`}`); };
   const mk = async (bc, rn) => Number((await q("insert into products (barcode, product_name, data_source, c005_report_no) values ($1,'p','public_c005',$2) returning product_id", [bc, rn])).rows[0].product_id);
@@ -180,41 +179,26 @@ async function selfTest() {
   const st = await loadDbState(q, ['1976048700593', '2001044505524', '19720154001491']);
   const plans = recs.map((r) => planPage(r, texts[r.no], st));
   eq(plans[0].candidates.map((c) => [c.product_id, c.axis]), [[p1, 'allergens'], [p1, 'nutrition'], [p2, 'nutrition']], 'in_db: 같은 번호 제품 2개 — 빈 칸만(p2 는 알레르기 있음)');
-  eq(plans[0].candidates[1].data.parsed_nutrition._basis, 'per_100g', '영양 후보는 100g 환산 기준');
+  eq(plans[0].candidates[1].data._basis, 'per_100g', '영양 후보는 100g 환산 기준');
+  eq(plans[0].candidates[0].data, { contains: ['대두', '밀'], may_contain: ['땅콩'] }, '알레르기 보충 값 = 함유·혼입');
   eq(plans[1].candidates.map((c) => c.axis), ['allergens'], '상식 범위 밖 영양(9999kcal) → 영양 후보 안 만듦 · 영양 있는 제품은 애초에 제외');
   eq([plans[2].newProduct.product.product_name, plans[2].newProduct.label_product_name, plans[2].newProduct.product.manufacturer, plans[2].newProduct.product.food_type], ['먹태깡 60g', '먹태깡청양마요맛', '(주)농심', '과자'], 'not_in_db: 제품명=판매처 상품명(브랜드 제거) · 라벨 제품명은 참고 · 업소명·식품유형');
   eq(planPage({ ...recs[2], no: 5, url: 'https://www.kurly.com/goods/5' }, texts[3], st).newProduct, null, '같은 배치에서 같은 번호 두 번째 페이지 → 신규 만들지 않음');
   eq(plans[2].newProduct.allergens, [{ allergen_name: '대두', evidence_level: 'contains' }, { allergen_name: '밀', evidence_level: 'contains' }, { allergen_name: '땅콩', evidence_level: 'may_contain' }], 'not_in_db: 함유/혼입 등급');
+  const pubBefore = (await q("select (select count(*)::int from public.product_allergens) a, (select count(*)::int from public.nutrition_data_crowd) c, (select count(*)::int from contributions) k")).rows[0];
   const rec = await applyPlans(q, plans, 'wl_test');
-  eq([rec.contributions.length, rec.reviews.length, rec.web_label_products.length, rec.pages.length], [4, 4, 1, 4], '적용: 후보 4 · 신규 품목 1 · 페이지 4');
-  const rv = (await q("select r.axis, r.status, r.evidence->>'origin' o, c.contribution_type t, c.device_id d from contribution_review r join contributions c using(contribution_id) order by r.review_id")).rows;
-  eq(rv.every((x) => x.status === 'candidate' && x.o === ORIGIN && x.t === ORIGIN && x.d === null), true, '후보는 candidate · origin/type web_label_ocr · device_id NULL(머지 경로 회피)');
-  const wl = (await q("select (select count(*)::int from web_label.nutrition_data) n, (select count(*)::int from web_label.product_allergens) a, (select count(*)::int from web_label.product_ingredients) i, (select count(*)::int from public.products) pp")).rows[0];
-  eq([wl.n, wl.a, wl.i, wl.pp], [1, 3, 1, 3], 'web_label 신규 품목에 영양·알레르기·원재료 · public 제품 수 무변경');
-  // ★ 기존 승인 경로(contributionApply)가 이 후보를 그대로 반영하는지 — 관리자 승인 흉내
-  { const { applyApprovedContribution } = require('../src/services/contributionApply');
-    const client = { query: (s, p) => db.query(s, p) };
-    const nRv = (await q("select review_id from contribution_review where product_id=$1 and axis='nutrition'", [p1])).rows[0].review_id;
-    const aRv = (await q("select review_id from contribution_review where product_id=$1 and axis='allergens'", [p1])).rows[0].review_id;
-    await q("update contribution_review set status='approved', reviewed_by='self-test', reviewed_at=now() where review_id = any($1)", [[nRv, aRv]]);
-    await applyApprovedContribution(client, Number(nRv), { appliedBy: 'self-test' }); await applyApprovedContribution(client, Number(aRv), { appliedBy: 'self-test' });
-    const cr = (await q('select calories::float c, serving_size s, basis_stored b from nutrition_data_crowd where product_id=$1', [p1])).rows[0];
-    eq([cr.c, cr.s, cr.b], [494.12, '100g', 'per_100g'], '승인 → nutrition_data_crowd 100g 기준 반영(기존 경로 그대로)');
-    const al = (await q("select allergen_name, evidence_level from product_allergens where product_id=$1 order by allergen_name", [p1])).rows.map((x) => x.allergen_name + ':' + x.evidence_level);
-    eq(al, ['대두:contains', '땅콩:may_contain', '밀:contains'], '승인 → product_allergens 함유/혼입 반영');
-    const { undoAppliedContribution } = require('../src/services/contributionApply');
-    await undoAppliedContribution(client, Number(nRv), { undoneBy: 'self-test' }); await undoAppliedContribution(client, Number(aRv), { undoneBy: 'self-test' });
-    await q("update contribution_review set status='candidate', reviewed_by=null, reviewed_at=null, applied_at=null where review_id = any($1)", [[nRv, aRv]]);
-  }
+  eq([rec.supplements.length, rec.web_label_products.length, rec.pages.length], [4, 1, 4], '적용: 보충 4 · 신규 품목 1 · 페이지 4');
+  const sp = (await q("select product_id::int pid, axis, status, batch_id from web_label.public_supplements order by supplement_id")).rows;
+  eq(sp.map((x) => [x.pid, x.axis, x.status]), [[p1, 'allergens', 'needs_review'], [p1, 'nutrition', 'needs_review'], [p2, 'nutrition', 'needs_review'], [p3, 'allergens', 'needs_review']], '보충은 web_label.public_supplements · 상태 needs_review(게이트 전)');
+  const pubAfter = (await q("select (select count(*)::int from public.product_allergens) a, (select count(*)::int from public.nutrition_data_crowd) c, (select count(*)::int from contributions) k")).rows[0];
+  eq(pubAfter, pubBefore, '★ public 무접촉(알레르기·제보 영양·제보 행 수 그대로)');
+  const wl = (await q("select (select count(*)::int from web_label.nutrition_data) n, (select count(*)::int from web_label.product_allergens) a, (select count(*)::int from web_label.product_ingredients) i, (select count(*)::int from public.products) pp, (select status from web_label.products limit 1) st")).rows[0];
+  eq([wl.n, wl.a, wl.i, wl.pp, wl.st], [1, 3, 1, 3, 'needs_review'], 'web_label 신규 품목에 영양·알레르기·원재료 · 상태 needs_review · public 제품 수 무변경');
   const rec2 = await applyPlans(q, plans, 'wl_test2');
-  eq(rec2.pages.length, 0, '재실행 멱등(같은 URL 은 건너뜀)');
-  await q("update contribution_review set status='approved', reviewed_by='t', reviewed_at=now() where review_id=$1", [rec.reviews[0]]);
-  let refused = false; try { await undoBatch(q, 'wl_test'); } catch (e) { refused = /UNDO_REFUSED/.test(e.message); }
-  eq(refused, true, '승인된 후보가 있으면 되돌리기 거부');
-  await q("update contribution_review set status='candidate', reviewed_by=null, reviewed_at=null where review_id=$1", [rec.reviews[0]]);
-  eq(await undoBatch(q, 'wl_test'), { contributions: 4, web_label_products: 1, pages: 4 }, '되돌리기: 후보·신규 품목·페이지 전부');
-  const left = (await q("select (select count(*)::int from contribution_review) r, (select count(*)::int from web_label.product_allergens) a, (select count(*)::int from public.product_allergens) pa")).rows[0];
-  eq([left.r, left.a, left.pa], [0, 0, 1], '되돌린 뒤 잔여 0 · public 기존 알레르기 무접촉');
+  eq(rec2.pages.length + rec2.supplements.length, 0, '재실행 멱등(같은 URL 은 건너뜀)');
+  eq(await undoBatch(q, 'wl_test'), { contributions: 0, supplements: 4, web_label_products: 1, pages: 4 }, '되돌리기: 보충·신규 품목·페이지 전부');
+  const left = (await q("select (select count(*)::int from web_label.public_supplements) s, (select count(*)::int from web_label.product_allergens) a, (select count(*)::int from public.product_allergens) pa")).rows[0];
+  eq([left.s, left.a, left.pa], [0, 0, 1], '되돌린 뒤 잔여 0 · public 기존 알레르기 무접촉');
   console.log(`\nself-test: ${ok} 통과 · ${bad} 실패`); process.exit(bad ? 1 : 0);
 }
 
@@ -230,17 +214,17 @@ async function main() {
   const st = await loadDbState((s, p) => pool.query(s, p), reports);
   const plans = items.map((x) => planPage(x.rec, x.text, st));
   const rows = [['url', 'gate', 'report_no', 'action', 'product_id', 'axis', 'detail']];
-  for (const pl of plans) { if (!pl.page) continue; if (pl.candidates.length) for (const c of pl.candidates) rows.push([pl.page.url, pl.page.gate, pl.page.report_no, 'review_candidate', c.product_id, c.axis, JSON.stringify(c.data).slice(0, 200)]); else if (pl.newProduct) rows.push([pl.page.url, pl.page.gate, pl.page.report_no, 'web_label_new', '', '', JSON.stringify(pl.newProduct.product)]); else rows.push([pl.page.url, pl.page.gate, pl.page.report_no, 'record_only', '', '', pl.notes.join(';')]); }
+  for (const pl of plans) { if (!pl.page) continue; if (pl.candidates.length) for (const c of pl.candidates) rows.push([pl.page.url, pl.page.gate, pl.page.report_no, 'supplement', c.product_id, c.axis, JSON.stringify(c.data).slice(0, 200)]); else if (pl.newProduct) rows.push([pl.page.url, pl.page.gate, pl.page.report_no, 'web_label_new', '', '', JSON.stringify(pl.newProduct.product)]); else rows.push([pl.page.url, pl.page.gate, pl.page.report_no, 'record_only', '', '', pl.notes.join(';')]); }
   const stamp = new Date().toISOString().replace(/\D/g, '').slice(0, 14); const outDir = path.dirname(path.resolve(IN));
   const csv = rows.map((r) => r.map((v) => { const s = String(v ?? '').replace(/\r?\n/g, ' '); return /[",]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; }).join(',')).join('\n');
   const pf = path.join(outDir, `102_preview_${stamp}.csv`); fs.writeFileSync(pf, '﻿' + csv);
   const cnt = (a) => rows.filter((r) => r[3] === a).length;
-  console.log(`미리보기 ${pf}\n  페이지 ${plans.filter((p) => p.page).length} · 검토 후보 ${cnt('review_candidate')}(알레르기 ${rows.filter((r) => r[5] === 'allergens').length} · 영양 ${rows.filter((r) => r[5] === 'nutrition').length}) · web_label 신규 ${cnt('web_label_new')} · 기록만 ${cnt('record_only')}`);
+  console.log(`미리보기 ${pf}\n  페이지 ${plans.filter((p) => p.page).length} · 보충 ${cnt('supplement')}(알레르기 ${rows.filter((r) => r[5] === 'allergens').length} · 영양 ${rows.filter((r) => r[5] === 'nutrition').length}) · web_label 신규 ${cnt('web_label_new')} · 기록만 ${cnt('record_only')}`);
   if (process.argv.includes('--apply')) {
     const batch = `weblabel_${stamp}`; const c = await pool.connect();
     try { await c.query('begin'); const rec = await applyPlans((s, p) => c.query(s, p), plans, batch); await c.query('commit');
       fs.writeFileSync(path.join(outDir, `102_batch_${batch}.json`), JSON.stringify({ ...rec, at: new Date().toISOString(), input: IN }, null, 1));
-      console.log(`✅ 적용 ${batch} — 후보 ${rec.reviews.length} · web_label 신규 ${rec.web_label_products.length} · 페이지 ${rec.pages.length}`);
+      console.log(`✅ 적용 ${batch} — 보충 ${rec.supplements.length} · web_label 신규 ${rec.web_label_products.length} · 페이지 ${rec.pages.length}`);
     } catch (e) { await c.query('rollback'); throw e; } finally { c.release(); }
   }
   await pool.end();

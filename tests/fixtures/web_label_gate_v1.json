@@ -1,0 +1,50 @@
+{
+ "version": "eval_web_label_gate_v1",
+ "created": "2026-10-14 세션79 (구현 전 고정)",
+ "note": "web_label 노출 품질 게이트(엔진 규칙 · AI 추론 없음). 근거: 설계 v2 §2-4 · 자문 라운드1 · U78-2 실측(진라면·스낵면·꼬꼬면·볶은검은콩가루·남자라면·W차 등). MAJOR = 법정 19종 중 아황산류를 뺀 18종.",
+ "food_type": [
+  {"id":"FT01","in":"품목보고번호 20180267093-271","out":null,"why":"번호 잡음"},
+  {"id":"FT02","in":"소시지(비살균제품)","out":"소시지(비살균제품)"},
+  {"id":"FT03","in":"추잉껌·","out":"추잉껌","why":"끝 구두점"},
+  {"id":"FT04","in":"질량","out":null},
+  {"id":"FT05","in":"과자","out":"과자"},
+  {"id":"FT06","in":"내용량 500g","out":null},
+  {"id":"FT07","in":"유탕면 내용량 115g","out":"유탕면","why":"다음 항목 앞에서 자름"},
+  {"id":"FT08","in":"즉석조리식품","out":"즉석조리식품"},
+  {"id":"FT09","in":"","out":null},
+  {"id":"FT10","in":"만두(가열하여 섭취하는 냉동식품)","out":"만두(가열하여 섭취하는 냉동식품)"},
+  {"id":"FT11","in":"포장재질","out":null},
+  {"id":"FT12","in":"1회 제공량 30g","out":null,"why":"영양 잡음"}
+ ],
+ "nutrition_ok": [
+  {"id":"N01","in":{"calories":457,"total_carbs":36,"protein":39,"total_fat":17},"out":true,"why":"볶은검은콩가루 정정값 453≈457"},
+  {"id":"N02","in":{"calories":185,"total_carbs":30,"protein":0,"total_fat":null},"out":false,"why":"지방 빈 칸 = 교차확인 불가 → 신호등 끔"},
+  {"id":"N03","in":{"calories":334.78,"total_carbs":16.52,"protein":1.96,"total_fat":3.48},"out":false,"why":"남자라면 오독"},
+  {"id":"N04","in":{"calories":7,"total_carbs":3,"protein":0,"total_fat":0},"out":true,"why":"차 · 차이 5kcal ≤ 25"},
+  {"id":"N05","in":{"calories":null,"total_carbs":3,"protein":1,"total_fat":1},"out":null,"why":"열량 없음 = 판정 불가"},
+  {"id":"N06","in":{"calories":216,"total_carbs":47,"protein":2,"total_fat":2},"out":true},
+  {"id":"N07","in":{"calories":65.79,"total_carbs":4.74,"protein":3.16,"total_fat":3.68},"out":true},
+  {"id":"N08","in":{"calories":157.14,"total_carbs":null,"protein":0.21,"total_fat":100},"out":false,"why":"지방 100g/100g 불가능"},
+  {"id":"N09","in":{"calories":443.75,"total_carbs":60,"protein":6.25,"total_fat":20},"out":true},
+  {"id":"N10","in":{"calories":500,"total_carbs":40,"protein":10,"total_fat":10},"out":false,"why":"계산 290 · 42% 차이"},
+  {"id":"N11","in":{},"out":null,"why":"영양 없음"}
+ ],
+ "allergen_check": [
+  {"id":"A01","label":["닭고기","조개류"],"inferred":["밀","난류(가금류)","대두","쇠고기","돼지고기"],"out":"needs_review","why":"진라면 매운맛 — 주요 5종 누락"},
+  {"id":"A02","label":["밀","우유"],"inferred":["우유","밀","아황산류"],"out":"ok","why":"쿠쉬쿠쉬 — 아황산류는 표시 기준(10ppm) 차이 가능, MAJOR 아님"},
+  {"id":"A03","label":["대두","토마토","우유"],"inferred":["밀","토마토","대두","우유"],"out":"needs_review","why":"야채타임 — 밀 1종이라도 MAJOR 누락이면 검토"},
+  {"id":"A04","label":["우유","난류(가금류)","대두","밀","닭고기"],"inferred":["밀","조개류","닭고기","난류(가금류)","대두","우유"],"out":"needs_review","why":"꼬꼬면 — 라벨이 맞아도(조개류는 혼입 문구) 규칙상 검토로 보낸다(과소경고 방지가 우선 · 거짓 경보 허용)"},
+  {"id":"A05","label":["대두"],"inferred":null,"out":"ok","why":"DB 원재료 없음 = 교차확인 불가 → 라벨 그대로"},
+  {"id":"A06","label":["우유"],"inferred":[],"out":"ok"},
+  {"id":"A07","label":[],"inferred":["밀"],"out":"needs_review","why":"라벨 함유 0 + 추론 있음"},
+  {"id":"A08","label":[],"inferred":null,"out":"none","why":"알레르기 정보 없음"}
+ ],
+ "status": [
+  {"id":"S01","in":{"allergen":"ok","nutrition_ok":true,"has_alg":true,"has_nut":true},"out":"active"},
+  {"id":"S02","in":{"allergen":"ok","nutrition_ok":false,"has_alg":true,"has_nut":true},"out":"active","why":"영양 교차확인 실패 = 신호등만 끔(nutrition_ok=false), 제품은 노출"},
+  {"id":"S03","in":{"allergen":"needs_review","nutrition_ok":true,"has_alg":true,"has_nut":true},"out":"needs_review","why":"알레르기 의심은 제품 전체 보류"},
+  {"id":"S04","in":{"allergen":"none","nutrition_ok":null,"has_alg":false,"has_nut":false},"out":"needs_review","why":"보여 줄 값 없음"},
+  {"id":"S05","in":{"allergen":"none","nutrition_ok":true,"has_alg":false,"has_nut":true},"out":"active","why":"영양만 있어도 노출(알레르기는 «정보 없음»)"},
+  {"id":"S06","in":{"allergen":"ok","nutrition_ok":null,"has_alg":true,"has_nut":false},"out":"active"}
+ ]
+}

@@ -216,8 +216,78 @@ function _stripAllergenSuffix(text) {
  * @param {string} ingredientText
  * @returns {Array<Object>}
  */
+/**
+ * ★ 세션79 (U78-4 · 롯데자일리톨 제보) — 원재료 구역의 괄호 불균형 복구.
+ *   실측: 원재료 구역 938개 중 332개(35%)가 괄호 짝이 맞지 않았다. 짝이 안 맞으면 그 뒤 원재료가 앞 항목에 «통째로» 먹힌다
+ *   (예: 껌베이스(감미료(효소처리스테비아)«)» 누락 → 「감미료(이소말트…)」 소실 · 마요네즈[… 줄 머리 「[산)」 → 12개 중 1개만 남음).
+ *   ⚠ 괄호가 (종류 무관) 균형이면 «아무것도 하지 않는다» — 기존 동작 그대로(eval_ingredient_section_v1 68건 가드).
+ *   규칙(정답 IP/eval_ingredient_paren_v1 · 구현 전 고정):
+ *     A) 대괄호가 남으면, 남는 개수만큼 «줄 머리» 「[」를 버린다(Vision 이 줄 시작 테두리를 「[」로 읽음 · 「백설⏎[탕」).
+ *        단어를 가르는 쪽(줄바꿈 앞이 쉼표가 아님)을 먼저. 닫는 「]」 잉여는 버리지 않는다(대개 「)」 오인식 → B).
+ *     B) 종류를 보는 짝 맞춤: 「(…]」 처럼 안쪽 소괄호가 안 닫힌 채 대괄호가 닫히면 소괄호를 먼저 닫는다.
+ *        짝이 스택에 없는 닫힘은 맨 위 열림을 닫는 것으로 본다(오인식) · 스택이 비었으면 그대로 둔다(종전).
+ *     C) 끝까지 소괄호가 남고 구역이 닫는 괄호로 «끝나면»(작성자가 닫았다 = 중간에서 「))」가 「)」로 읽힘),
+ *        깊이가 남는 가장 앞의 「),」 에 닫힘을 하나 더 넣는다. 그 밖(구역이 잘림 · 후보 없음)은 닫지 않는다(종전 그대로).
+ */
+function _balanceBrackets(text) {
+  if (!text) return text;
+  const OPEN = '({（['; const CLOSE = ')}）]';
+  const fam = (ch) => (ch === '[' || ch === ']' ? 's' : 'r');
+  let d = 0; let min = 0;
+  for (const ch of text) { if (OPEN.includes(ch)) d++; else if (CLOSE.includes(ch)) { d--; if (d < min) min = d; } }
+  if (d === 0 && min === 0) return text;
+  const a = [...text];
+  // A) 여는 「[」 잉여 — 줄 머리 「[」
+  let so = 0; let sc = 0; for (const ch of a) { if (ch === '[') so++; else if (ch === ']') sc++; }
+  const prevNonSpace = (i) => { let j = i - 1; while (j >= 0 && (a[j] === ' ' || a[j] === '\t')) j--; return j; };
+  if (so > sc) {
+    const cand = [];
+    for (let i = 0; i < a.length; i++) {
+      if (a[i] !== '[') continue; const j = prevNonSpace(i); if (j < 0 || a[j] !== '\n') continue;
+      const k = prevNonSpace(j); cand.push({ i, split: !(k >= 0 && /[,，]/.test(a[k])) });
+    }
+    cand.sort((x, y) => (Number(y.split) - Number(x.split)) || (x.i - y.i));
+    for (const c of cand.slice(0, so - sc)) a[c.i] = '';
+  }
+  // (닫는 「]」 잉여는 버리지 않는다 — 대개 「)」 오인식이라 B 가 맨 위 소괄호를 닫는 것으로 처리한다 · 줄 끝 「]」 를 버리면 정당한 닫힘이 사라졌다(rv_1000068973·rv_1000463955 실측))
+  // B) 종류를 보는 짝 맞춤
+  const out = []; const st = [];
+  for (const ch of a) {
+    if (!ch) continue;
+    if (OPEN.includes(ch)) { st.push(fam(ch)); out.push(ch); continue; }
+    if (!CLOSE.includes(ch)) { out.push(ch); continue; }
+    const f = fam(ch);
+    if (st.length && st[st.length - 1] === f) { st.pop(); out.push(ch); continue; }
+    if (st.includes(f)) { while (st[st.length - 1] !== f) out.push(st.pop() === 's' ? ']' : ')'); st.pop(); out.push(ch); continue; }
+    if (st.length) { out.push(st.pop() === 's' ? ']' : ')'); continue; }
+    out.push(ch);   // 스택이 비었으면 그대로 둔다(종전 동작 · 파서가 깊이 0 에서 무시한다)
+  }
+  // C) 남은 열림
+  if (st.length) {
+    const t = text.replace(/\s+$/, ''); const endsClosed = CLOSE.includes(t[t.length - 1]);
+    while (st.length) {
+      const f = st[st.length - 1]; let ins = -1;
+      if (endsClosed && f === 'r') {
+        let dd = 0;
+        for (let i = 0; i < out.length; i++) {
+          if (OPEN.includes(out[i])) dd++;
+          else if (CLOSE.includes(out[i])) {
+            dd--;
+            if (dd >= 1 && fam(out[i]) === 'r') { let j = i + 1; while (j < out.length && /\s/.test(out[j])) j++; if (out[j] === ',' || out[j] === '，') { ins = i + 1; break; } }
+          }
+        }
+      }
+      st.pop();
+      if (ins >= 0) out.splice(ins, 0, ')');
+      // 후보가 없으면(구역이 잘림 등) 닫지 않는다 — 종전 동작 그대로(끝에서 닫으면 뒤 원재료가 앞 항목의 세부로 들어간다 · 077 실측)
+    }
+  }
+  return out.join('');
+}
+
 function parseIngredients(ingredientText) {
   if (!ingredientText) return [];
+  ingredientText = _balanceBrackets(ingredientText);   // ★ 세션79 — 괄호 불균형 복구(균형이면 무변경)
 
   // ★ 세션73 U71-2 — 닫는 괄호와 다음 글자 사이가 «같은 줄의 공백»이면 표지(\u0001)로 남긴다(아래 분해 루프가 쓴다).
   //   접속어(또는·및·등·외)가 오면 문장이지 새 원재료가 아니다 — 표지를 남기지 않는다.
@@ -2764,6 +2834,8 @@ function analyzeText(correctedText) {
     ingredient_section: ingredientSection,
     ingredients: ingredients.map(i => ({
       name: i.name,
+      // ★ 세션79 — 괄호 안(「감미료(자일리톨)」의 자일리톨). 화면이 이름만 그려 「감미료」만 보였다(롯데자일리톨 제보).
+      detail: i.detail || null,
       origin: i.origin,
       percentage: i.percentage,
       sub_ingredients: i.sub_ingredients,
@@ -2801,6 +2873,7 @@ module.exports = {
   NUTRIENT_KEYS,
   countNutrientValues,   // 세션70 U69-2: /multi-photo 영양 폴백은 «값이 있는 컷»으로 고른다
   extractIngredientSection,
+  _balanceBrackets,
   parseIngredients,
   identifyAdditives,
   parseNutrition,

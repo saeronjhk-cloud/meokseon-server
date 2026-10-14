@@ -82,6 +82,10 @@ async function main() {
   const C_A = await ins(uA, DATA);
   const C_B = await ins(uB, DATA);
   const C_EMPTY = await ins(uA, {});
+  // ★ 세션79 — 롯데자일리톨 제보: 괄호 안이 화면에서 사라지던 문제
+  const C_X = await ins(uA, { parsed_ingredients: [
+    { name: '감미료', detail: '자일리톨' }, { name: '껌베이스', detail: '감미료(효소처리스테비아)' },
+    { name: '감미료', detail: '이소말트, D-소비톨, D-말티톨' }, { name: '정제수', detail: '' }, '향료' ] });
 
   await t('① 내 제보 → 200 · 읽힌 그대로', async () => {
     const r = await get(`/api/contributions/mine/${C_A}`, TOKEN_A);
@@ -95,6 +99,10 @@ async function main() {
     assert.deepStrictEqual(rb.allergens, { contains: ['밀', '대두'], inferred: [], may_contain: ['우유'] });
     assert.deepStrictEqual(rb.additives, ['비타민E']);
     assert.strictEqual(rb.nutrition_status, 'ok');
+  });
+  await t('⑧ 원재료 = 이름(괄호 안) — 괄호가 다르면 같은 이름도 따로 · 빈 괄호·문자열은 이름 그대로 (세션79)', async () => {
+    const rb = (await get(`/api/contributions/mine/${C_X}`, TOKEN_A)).body.data.readback;
+    assert.deepStrictEqual(rb.ingredients, ['감미료(자일리톨)', '껌베이스(감미료(효소처리스테비아))', '감미료(이소말트, D-소비톨, D-말티톨)', '정제수', '향료']);
   });
   await t('⑥ 영양: 숫자만 · 0 은 남김 · 문자열 버림 · 기준 유지', async () => {
     const rb = (await get(`/api/contributions/mine/${C_A}`, TOKEN_A)).body.data.readback;
@@ -125,7 +133,7 @@ async function main() {
   });
   await t('목록(/mine)은 그대로 — 상세 추가가 목록을 바꾸지 않는다', async () => {
     const r = await get('/api/contributions/mine', TOKEN_A);
-    assert.strictEqual(r.status, 200); assert.strictEqual(r.body.data.total, 2);
+    assert.strictEqual(r.status, 200); assert.strictEqual(r.body.data.total, 3);   // 세션79: C_X(자일리톨 픽스처) 추가로 2 → 3
     assert.ok(!r.raw.includes('SECRET_OCR_TEXT') && !r.raw.includes('readback'));
   });
 

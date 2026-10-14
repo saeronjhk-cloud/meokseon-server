@@ -19,6 +19,12 @@ const MAX_LIST = 200;
 
 const str = (v, max = 2000) => (typeof v === 'string' && v.trim() ? v.trim().slice(0, max) : null);
 const num = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+/** 원재료 한 항목 → 표시 문자열. 객체에 detail 이 있으면 「이름(detail)」. 문자열·이름만 있는 객체는 그대로. */
+const ingredientLabel = (x) => {
+  if (!x || typeof x !== 'object' || typeof x.name !== 'string') return x;
+  const det = typeof x.detail === 'string' ? x.detail.trim() : '';
+  return det ? `${x.name.trim()}(${det})` : x.name;
+};
 const names = (arr) => (Array.isArray(arr)
   ? [...new Set(arr.map((x) => (typeof x === 'string' ? x : (x && typeof x.name === 'string' ? x.name : null)))
     .filter((s) => s && s.trim()).map((s) => s.trim()))].slice(0, MAX_LIST)
@@ -50,7 +56,8 @@ function buildReadback(data) {
     total_content: num(ui.total_content) ?? (typeof ui.total_content === 'string' && /^\d+(\.\d+)?$/.test(ui.total_content.trim()) ? Number(ui.total_content) : null),
     content_unit: str(ui.content_unit, 10),
     ingredients_text: str(ui.ingredients_text, 4000),
-    ingredients: names(d.parsed_ingredients),
+    // ★ 세션79 — 원재료는 «이름(괄호 안)» 으로 돌려준다(「감미료」 만 보이던 문제 · 롯데자일리톨 제보). 괄호가 없으면 이름 그대로.
+    ingredients: names(Array.isArray(d.parsed_ingredients) ? d.parsed_ingredients.map(ingredientLabel) : d.parsed_ingredients),
     allergens,
     additives: names(d.additives),
     nutrition,

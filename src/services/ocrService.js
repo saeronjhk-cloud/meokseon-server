@@ -284,9 +284,13 @@ function httpPost(url, body) {
     };
 
     const req = transport.request(options, (res) => {
-      let responseData = '';
-      res.on('data', chunk => { responseData += chunk; });
+      // ★ 세션79 — Buffer 조각을 모은 뒤 «한 번에» UTF-8 로 해석한다.
+      //   종전 `responseData += chunk` 는 조각마다 문자열로 바꿔, 조각 경계에 걸린 한글(3바이트)이 U+FFFD 로 깨졌다
+      //   (운영 사진 제보 32건 중 21건 · 예: 영등포구 → ��등포구). 회귀: tests/test_ocr_utf8_chunks.js
+      const chunks = [];
+      res.on('data', chunk => { chunks.push(chunk); });
       res.on('end', () => {
+        const responseData = Buffer.concat(chunks).toString('utf8');
         if (res.statusCode >= 400) {
           const err = new Error(`HTTP ${res.statusCode}: ${responseData.substring(0, 200)}`);
           err.statusCode = res.statusCode;
@@ -323,6 +327,7 @@ function sleep(ms) {
 
 module.exports = {
   callVisionAPI,
+  _httpPost: httpPost,   // 세션79: 테스트 전용(test_ocr_utf8_chunks)
   correctOcrText,
   OCR_CORRECTIONS,
   MAX_FILE_SIZE_MB,

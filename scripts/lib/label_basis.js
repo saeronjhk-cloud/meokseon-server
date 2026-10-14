@@ -25,7 +25,18 @@ function labelFromParsed(n, text) {
   const values = {};
   for (const k of KEYS) if (typeof n[k] === 'number' && Number.isFinite(n[k])) values[k] = n[k];
   if (!Object.keys(values).length) return null;
-  return { basis: n._basis, amount, unit, values };
+  const out = { basis: n._basis, amount, unit, values };
+  // v1.1 — «0.5g 미만»·«1g 이하» 상한 표기(정답 L07·L08). 키 = 그 줄의 영양소명 · 값이 파서 값과 같을 때만.
+  if (text) {
+    const NAME = [['트랜스지방', 'trans_fat'], ['포화지방', 'saturated_fat'], ['콜레스테롤', 'cholesterol'], ['당류', 'total_sugars'], ['나트륨', 'sodium'], ['단백질', 'protein'], ['탄수화물', 'total_carbs'], ['식이섬유', 'dietary_fiber'], ['지방', 'total_fat']];
+    const bound = {};
+    for (const m of String(text).matchAll(/(트랜스\s*지방|포화\s*지방|콜레스테롤|당류|나트륨|단백질|탄수화물|식이\s*섬유|지방)\s*([\d.]+)\s*(?:mg|g)\s*(미만|이하)/g)) {
+      const nm = m[1].replace(/\s/g, ''); const hit = NAME.find(([k]) => k === nm); if (!hit) continue;
+      if (values[hit[1]] === Number(m[2])) bound[hit[1]] = m[3];
+    }
+    if (Object.keys(bound).length) { out.upper_bound = Object.keys(bound).sort(); out.bound = bound; }
+  }
+  return out;
 }
 
 /** 라벨 숫자를 100 기준으로 바꾼 값이 이미 저장된 per100 과 맞는가(공통 키 전부 ±1% 또는 ±0.05). 공통 키가 없으면 false. */

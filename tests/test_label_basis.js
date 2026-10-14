@@ -9,6 +9,7 @@ for (const c of C.build) t(`${c.id} 라벨 기준 만들기`, () => {
   if (c.expect === null) return assert.strictEqual(L, null);
   assert.ok(L, 'null'); assert.strictEqual(L.basis, c.expect.basis); assert.strictEqual(L.amount, c.expect.amount); assert.strictEqual(L.unit, c.expect.unit);
   for (const [k, v] of Object.entries(c.expect.values || {})) assert.strictEqual(L.values[k], v, k);
+  if (c.expect.upper_bound) { assert.deepStrictEqual(L.upper_bound, c.expect.upper_bound); assert.deepStrictEqual(L.bound, c.expect.bound); } else assert.ok(!L.upper_bound, '상한 오탐');
 });
 for (const c of C.consistency) t(`${c.id} 저장 per100 과의 정합`, () => assert.strictEqual(consistent(c.label, c.per100), c.expect));
 console.log(`\n[label basis] ${pass}/${pass + fail}`); process.exit(fail ? 1 : 0);

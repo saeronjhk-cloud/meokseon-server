@@ -18,6 +18,28 @@ const label = (no) => { const t = readOcr(no); if (!t) return { why: 'no_ocr' };
 (async () => {
   if (!OCR) { console.error('--ocr-dir 필요'); process.exit(1); }
   const { Pool } = require('pg'); const pool = new Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false } });
+  // v1.1 — 이미 붙은 포장지 기준에 «미만/이하» 상한 표기만 덧붙인다(정답 L07·L08). 값·기준은 건드리지 않는다.
+  if (process.argv.includes('--refresh-bound')) {
+    const W2 = (await pool.query(`select n.nutrition_id, n.label_basis, sp.site_item_no from web_label.nutrition_data n join web_label.source_pages sp on sp.product_id = n.product_id and sp.target_schema = 'web_label' where n.label_basis is not null`)).rows;
+    const S2 = (await pool.query(`select s.supplement_id, s.data, sp.site_item_no from web_label.public_supplements s join web_label.source_pages sp on sp.url = s.source_url where s.axis = 'nutrition' and s.reviewed_by is null and (s.data ? '_label')`)).rows;
+    const pick = (old, no) => { const x = label(no); if (!x.L || !x.L.bound) return null; for (const k of Object.keys(x.L.bound)) if (!old.values || old.values[k] !== x.L.values[k]) return null; return { upper_bound: x.L.upper_bound, bound: x.L.bound }; };
+    const uW = []; const uS = [];
+    for (const r of W2) { const b = pick(r.label_basis, r.site_item_no); if (b) uW.push([r.nutrition_id, JSON.stringify(b)]); }
+    for (const r of S2) { const b = pick(r.data._label, r.site_item_no); if (b) uS.push([r.supplement_id, JSON.stringify(b)]); }
+    console.log('상한 표기: 품목', uW.length, '/', W2.length, '· 보충', uS.length, '/', S2.length);
+    if (APPLY) {
+      const c = await pool.connect();
+      try {
+        await c.query('BEGIN');
+        if (uW.length) await c.query(`update web_label.nutrition_data t set label_basis = t.label_basis || u.b::jsonb from unnest($1::bigint[], $2::text[]) u(id, b) where t.nutrition_id = u.id`, [uW.map((x) => x[0]), uW.map((x) => x[1])]);
+        if (uS.length) await c.query(`update web_label.public_supplements t set data = jsonb_set(t.data, '{_label}', (t.data->'_label') || u.b::jsonb), updated_at = now() from unnest($1::bigint[], $2::text[]) u(id, b) where t.supplement_id = u.id`, [uS.map((x) => x[0]), uS.map((x) => x[1])]);
+        await c.query('COMMIT');
+      } catch (e) { await c.query('ROLLBACK'); throw e; } finally { c.release(); }
+      const f = path.join(__dirname, '..', '..', 'IP', 'eval_label_basis_v1', `bound_${new Date().toISOString().replace(/\D/g, '').slice(0, 14)}.json`);
+      fs.writeFileSync(f, JSON.stringify({ at: new Date().toISOString(), products: uW, supplements: uS }, null, 1)); console.log('✅ 적용 →', f);
+    }
+    await pool.end(); return;
+  }
   const W = (await pool.query(`select n.nutrition_id, n.product_id, row_to_json(n) n, sp.site_item_no from web_label.nutrition_data n
       join web_label.source_pages sp on sp.product_id = n.product_id and sp.target_schema = 'web_label' where n.label_basis is null`)).rows;
   const S = (await pool.query(`select s.supplement_id, s.data, sp.site_item_no from web_label.public_supplements s

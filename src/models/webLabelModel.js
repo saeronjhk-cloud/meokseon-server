@@ -63,6 +63,18 @@ async function findWebProduct(webId, q) {
   return out;
 }
 
+/**
+ * ★ 세션79 바코드 잇기 — 스캔 바코드 → 연결된 web_label 품목 id(auto·approved · 노출 상태 · 숨김 아님). 0개·2개 이상(모호)이면 null.
+ *   정답 IP/eval_barcode_link_v1/runtime_v1.json(E7).
+ */
+async function findWebIdByBarcode(barcode, q) {
+  const r = await run(q)(
+    `SELECT DISTINCT b.product_id FROM web_label.product_barcodes b
+       JOIN web_label.products p ON p.product_id = b.product_id
+      WHERE b.barcode = $1 AND b.status IN ('auto','approved') AND p.status IN ${EXPOSED} AND ${NOT_SHADOWED}`, [barcode]);
+  return r.rows.length === 1 ? Number(r.rows[0].product_id) : null;
+}
+
 /** 표시란 알레르기 — productModel.getAllergens 와 같은 행 모양·같은 정규화(19종 밖 이름은 버리고 stats.dropped 에 센다). */
 async function getWebAllergens(webId, stats, q) {
   const r = await run(q)(
@@ -97,4 +109,4 @@ async function getActiveSupplements(productId, q) {
   return r.rows;
 }
 
-module.exports = { searchWebLabel, findWebProduct, getWebAllergens, getWebIngredientText, getActiveSupplements };
+module.exports = { searchWebLabel, findWebProduct, findWebIdByBarcode, getWebAllergens, getWebIngredientText, getActiveSupplements };

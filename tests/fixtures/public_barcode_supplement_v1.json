@@ -1,0 +1,221 @@
+{
+ "name": "eval_public_barcode_supplement_v1 (E8)",
+ "fixed_at": "2026-10-15 00:1x (세션79 · 구현 전 고정)",
+ "decision": "제이 00:09 «제안대로 진행» — 공공에 같은 바코드가 이미 있는 경우(conflict_public)는 판매처 품목을 바코드에 잇지 않고, 그 공공 제품의 «빈 축»만 판매처 데이터로 보충(public_supplements).",
+ "rules": [
+  "판매처 품목과 공공 제품이 같은 제품이어야 한다: 이름 일치(바코드 게이트 nameMatch · 변형어 불일치면 불일치) 필수 — 제조사만 같은 것은 불충분(v1.1). 아니면 아무것도 하지 않음(바코드 행 needs_review 유지 · reason identity)",
+  "공공 알레르기 없음 + 판매처 함유 알레르기 있음 → allergens 보충 후보",
+  "공공 영양 없음 + 판매처 영양(100 기준) 있음 → nutrition 보충 후보(_basis · _label 포함)",
+  "보충 후보는 status needs_review 로 넣고 104 게이트가 active/needs_review 를 정한다",
+  "보충할 축이 없으면(공공이 이미 다 가짐) 바코드 행만 정리(rejected · reason public_complete)",
+  "보충을 만들었으면 바코드 행은 rejected · reason moved_to_supplement (바코드 조회는 공공 제품이 답한다)",
+  "보충할 값이 판매처에도 없으면 바코드 행만 정리(rejected · reason nothing_to_add)"
+ ],
+ "cases": [
+  {
+   "id": "E8-01",
+   "in": {
+    "web": {
+     "name": "게맛살 큰잔치 300g",
+     "maker": null,
+     "alg": [
+      "밀",
+      "대두",
+      "게"
+     ],
+     "nut": {
+      "calories": 120
+     }
+    },
+    "pub": {
+     "name": "게맛살큰잔치",
+     "maker": "사조대림",
+     "has_alg": false,
+     "has_nut": false
+    }
+   },
+   "expect": {
+    "axes": [
+     "allergens",
+     "nutrition"
+    ],
+    "barcode": "moved_to_supplement"
+   }
+  },
+  {
+   "id": "E8-02",
+   "in": {
+    "web": {
+     "name": "아몬드초코볼 46g",
+     "maker": null,
+     "alg": [
+      "우유"
+     ],
+     "nut": {
+      "calories": 530
+     }
+    },
+    "pub": {
+     "name": "아몬드 초코볼",
+     "maker": "(주)롯데웰푸드",
+     "has_alg": true,
+     "has_nut": false
+    }
+   },
+   "expect": {
+    "axes": [
+     "nutrition"
+    ],
+    "barcode": "moved_to_supplement"
+   }
+  },
+  {
+   "id": "E8-03",
+   "in": {
+    "web": {
+     "name": "1000아일랜드드레싱 250g",
+     "maker": null,
+     "alg": [
+      "난류(가금류)"
+     ],
+     "nut": {
+      "calories": 400
+     }
+    },
+    "pub": {
+     "name": "1000 아일랜드드레싱-C",
+     "maker": "오뚜기",
+     "has_alg": true,
+     "has_nut": true
+    }
+   },
+   "expect": {
+    "axes": [],
+    "barcode": "public_complete"
+   }
+  },
+  {
+   "id": "E8-04",
+   "in": {
+    "web": {
+     "name": "코코팜 포도 340mL*6개",
+     "maker": null,
+     "alg": [],
+     "nut": {
+      "calories": 50
+     }
+    },
+    "pub": {
+     "name": "포도봉봉",
+     "maker": "해태htb",
+     "has_alg": false,
+     "has_nut": false
+    }
+   },
+   "expect": {
+    "axes": [],
+    "barcode": "identity"
+   },
+   "note": "이름 다름(코코팜 포도 vs 포도봉봉) · 제조사 비교 불가 → 손대지 않음"
+  },
+  {
+   "id": "E8-05",
+   "in": {
+    "web": {
+     "name": "순창 콩된장 900g",
+     "maker": "대상(주)",
+     "alg": [
+      "대두",
+      "밀"
+     ],
+     "nut": null
+    },
+    "pub": {
+     "name": "메주된장",
+     "maker": "대상주식회사",
+     "has_alg": false,
+     "has_nut": false
+    }
+   },
+   "expect": {
+    "axes": [],
+    "barcode": "identity"
+   },
+   "note": "v1.1 정정: 이름이 다르고(순창 콩된장 vs 메주된장) 제조사만 같음 → 같은 제품 근거 부족"
+  },
+  {
+   "id": "E8-06",
+   "in": {
+    "web": {
+     "name": "큰컵불닭볶음면",
+     "maker": null,
+     "alg": [],
+     "nut": null
+    },
+    "pub": {
+     "name": "불닭볶음면",
+     "maker": "삼양식품",
+     "has_alg": false,
+     "has_nut": false
+    }
+   },
+   "expect": {
+    "axes": [],
+    "barcode": "nothing_to_add"
+   },
+   "note": "판매처에도 보충할 값이 없음 → 보충 없음(바코드 행 정리)"
+  },
+  {
+   "id": "E8-07",
+   "in": {
+    "web": {
+     "name": "우렁강된장 비법양념 150g",
+     "maker": "(주)오뚜기",
+     "alg": [
+      "대두"
+     ],
+     "nut": null
+    },
+    "pub": {
+     "name": "중화식마파두부양념소스",
+     "maker": "오뚜기",
+     "has_alg": false,
+     "has_nut": false
+    }
+   },
+   "expect": {
+    "axes": [],
+    "barcode": "identity"
+   }
+  },
+  {
+   "id": "E8-08",
+   "in": {
+    "web": {
+     "name": "2%부족할때 제로ZERO 복숭아 350mL*20개",
+     "maker": null,
+     "alg": [
+      "복숭아"
+     ],
+     "nut": {
+      "calories": 2
+     }
+    },
+    "pub": {
+     "name": "이프로부족할때복숭아",
+     "maker": "롯데칠성음료",
+     "has_alg": false,
+     "has_nut": false
+    }
+   },
+   "expect": {
+    "axes": [],
+    "barcode": "identity"
+   },
+   "note": "변형어(제로) 한쪽에만"
+  }
+ ],
+ "revisions": [
+  "v1.1 (00:2x · 운영 미리보기 31건에서 오판 2건 발견 후 · 적용 전): ① 제조사만 같은 것은 같은 제품의 근거가 아니다(실측: 판매처「우렁강된장 비법양념」↔공공「중화식마파두부양념소스」 같은 제조사) → 이 단계는 «이름 일치» 필수. E8-05 기대값 identity 로 정정 · E8-07 추가 ② 변형어(제로·ZERO·라이트·무가당·저당 등)가 한쪽에만 있으면 다른 제품(실측: 「2%부족할때 제로ZERO 복숭아」↔「이프로부족할때복숭아」) → E8-08 추가"
+ ]
+}

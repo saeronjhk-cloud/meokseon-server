@@ -1,0 +1,13 @@
+{
+  "name": "eval_barcode_link_runtime_v1 (E7 · 바코드 조회 → 연결된 판매처 품목)",
+  "fixed_at": "2026-10-14 23:5x (세션79 · 구현 전 고정)",
+  "badge_linked": "판매처 라벨 기반 · 바코드 확인됨",
+  "cases": [
+    {"id":"E7-01","check":"public 에 없는 바코드 + auto 연결 + 품목 active → 200 · web_label.barcode_linked=true · product.barcode=스캔값 · badge=badge_linked · 응답 키는 바코드 응답과 같다(+web_label)"},
+    {"id":"E7-02","check":"연결 상태 needs_review → 404(종전과 같음)"},
+    {"id":"E7-03","check":"연결은 auto 인데 품목이 needs_review → 404"},
+    {"id":"E7-04","check":"같은 바코드가 서로 다른 품목 2개에 auto → 404(모호하면 보여 주지 않는다)"},
+    {"id":"E7-05","check":"public 에 그 바코드가 있으면 public 이 우선(web_label 조회 안 함)"},
+    {"id":"E7-06","check":"approved(관리자 승인)도 auto 와 같이 연결된다"}
+  ]
+}

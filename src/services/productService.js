@@ -226,6 +226,18 @@ async function getProductWithTrafficLight(barcode) {
   const product = await productModel.findByBarcode(barcode);
 
   if (!product) {
+    // ★ 세션79 바코드 잇기 — public 에 없으면 «연결된» 판매처 라벨 품목(auto·approved · 1개일 때만). 실패·없음은 종전대로 404.
+    let webId = null;
+    try { webId = await webLabelModel.findWebIdByBarcode(barcode); } catch (e) {
+      if (!(e && e.code === '42P01')) logger.warn('바코드→판매처 품목 조회 실패 — 404 로 둔다', { barcode, error: e.message });
+    }
+    if (webId) {
+      const w = await getWebLabelProduct(webId);
+      w.product.barcode = barcode;
+      w.web_label.barcode_linked = true;
+      w.web_label.badge = WEB_LABEL_BADGE_LINKED;
+      return w;
+    }
     throw new NotFoundError('제품');
   }
 
@@ -249,6 +261,7 @@ async function getWebLabelProduct(webId) {
 }
 
 const WEB_LABEL_BADGE = '판매처 라벨 기반 · 바코드 미확인';
+const WEB_LABEL_BADGE_LINKED = '판매처 라벨 기반 · 바코드 확인됨';   // 세션79 바코드 잇기(E7)
 const WEB_LABEL_WARNING = '포장 리뉴얼로 실제와 다를 수 있어요. 알레르기는 반드시 실물 포장을 확인하세요.';
 const WEB_SUPPLEMENT_BADGE = '판매처 라벨 기반 보충';
 let _wlSuppMissingLogged = false;
@@ -703,7 +716,7 @@ async function getProductAdditives(barcode) {
 module.exports = {
   getProductWithTrafficLight,
   getWebLabelProduct,         // 세션79 U78-3
-  WEB_LABEL_BADGE, WEB_LABEL_WARNING, WEB_SUPPLEMENT_BADGE,   // 세션79 — 라우트·평가가 같은 문구를 쓴다
+  WEB_LABEL_BADGE, WEB_LABEL_BADGE_LINKED, WEB_LABEL_WARNING, WEB_SUPPLEMENT_BADGE,   // 세션79 — 라우트·평가가 같은 문구를 쓴다
   _collectedLabel: collectedLabel,
   getProductAdditives,
   // 테스트·재사용용 export

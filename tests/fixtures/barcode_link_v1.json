@@ -1,0 +1,33 @@
+{
+  "name": "eval_barcode_link_v1 (E2)",
+  "fixed_at": "2026-10-14 23:4x (세션79 · 구현 전 고정)",
+  "decision": "제이 23:36 «바코드 연결 작업도 시작하자구» — 권장안: A(HACCP 공공: 품목보고번호→바코드) + B(판매처 라벨 OCR 바코드). auto/approved 만 스캔 조회에 쓴다.",
+  "rules": [
+    "바코드 체크섬(EAN-13/EAN-8) 불통과 → reject",
+    "후보 번호 ≠ web_label 번호(정확 일치 아님) → reject",
+    "공공(public) 활성 제품이 이미 가진 바코드 → needs_review(conflict_public)",
+    "같은 바코드가 다른 web_label 품목에 이미 auto/approved 로 연결 → needs_review(conflict_linked)",
+    "용량: HACCP 제품명 속 용량과 web_label 내용량이 둘 다 있고 다르면 → needs_review(size_mismatch)",
+    "이름(토큰 60% 이상 포함) 또는 제조사(법인 표기 제거 후 포함) 일치 필요 → 아니면 needs_review(identity)",
+    "같은 번호에서 위 조건을 통과한 서로 다른 바코드가 2개 이상 → needs_review(multi)",
+    "B(OCR)는 같은 품목의 A 결과와 같은 바코드일 때만 auto, 아니면 needs_review(ocr_only)"
+  ],
+  "cases": [
+    {"id":"E2-01","in":{"source":"haccp","barcode":"8801066500266","web":{"report_no":"19830511007104","name":"게맛살 큰잔치 300g","maker":null,"content":300,"unit":"g"},"cand":{"report_no":"19830511007104","name":"게맛살 큰잔치","maker":"사조대림"}},"expect":"auto"},
+    {"id":"E2-02","in":{"source":"haccp","barcode":"8809192914056","web":{"report_no":"2009001234567","name":"이천쌀 떡국떡 700g","maker":null,"content":700,"unit":"g"},"cand":{"report_no":"2009001234567","name":"피코크 이천쌀로 만든 떡국떡","maker":"(주)송학식품"}},"expect":"auto"},
+    {"id":"E2-03","in":{"source":"haccp","barcode":"8801052012490","web":{"report_no":"19760339001222","name":"화끈한 매운 갈비양념 500g","maker":"대상(주)","content":500,"unit":"g"},"cand":{"report_no":"19760339001222","name":"청정원 매운갈비소스","maker":"대상주식회사 이천공장"}},"expect":"auto","note":"이름 토큰 부족이지만 제조사 일치"},
+    {"id":"E2-04","in":{"source":"haccp","barcode":"8801052012490","web":{"report_no":"19760339001222","name":"한우 사골곰탕","maker":null,"content":500,"unit":"g"},"cand":{"report_no":"19760339001222","name":"청정원 매운갈비소스","maker":"대상주식회사"}},"expect":"needs_review","reason":"identity"},
+    {"id":"E2-05","in":{"source":"haccp","barcode":"8801007123455","web":{"report_no":"20100001111111","name":"비비고 왕교자 1.05kg","maker":null,"content":1050,"unit":"g"},"cand":{"report_no":"20100001111111","name":"비비고 왕교자 455g","maker":"씨제이제일제당(주)"}},"expect":"needs_review","reason":"size_mismatch"},
+    {"id":"E2-06","in":{"source":"haccp","barcode":"8801007123455","web":{"report_no":"20100001111111","name":"비비고 왕교자 455g","maker":null,"content":455,"unit":"g"},"cand":{"report_no":"20100001111111","name":"비비고 왕교자 455g","maker":"씨제이제일제당(주)"}},"expect":"auto"},
+    {"id":"E2-07","in":{"source":"haccp","barcode":"8801066500267","web":{"report_no":"19830511007104","name":"게맛살 큰잔치 300g","maker":null,"content":300,"unit":"g"},"cand":{"report_no":"19830511007104","name":"게맛살 큰잔치","maker":null}},"expect":"reject","reason":"checksum"},
+    {"id":"E2-08","in":{"source":"haccp","barcode":"8801066500266","web":{"report_no":"19830511007104","name":"게맛살 큰잔치 300g","maker":null,"content":300,"unit":"g"},"cand":{"report_no":"19830511007104","name":"게맛살 큰잔치","maker":null},"public_hit":{"product_id":1,"report_no":"19830511009999"}},"expect":"needs_review","reason":"conflict_public"},
+    {"id":"E2-09","in":{"source":"haccp","barcode":"8801066500266","web":{"report_no":"19830511007104","name":"게맛살 큰잔치 300g","maker":null,"content":300,"unit":"g"},"cand":{"report_no":"19830511007104","name":"게맛살 큰잔치","maker":null},"linked_other":true},"expect":"needs_review","reason":"conflict_linked"},
+    {"id":"E2-10","in":{"source":"haccp","barcode":"8801066500266","web":{"report_no":"19830511007104","name":"게맛살 큰잔치","maker":null,"content":null,"unit":null},"cand":{"report_no":"19830511007104","name":"게맛살 큰잔치","maker":null},"siblings_pass":2},"expect":"needs_review","reason":"multi"},
+    {"id":"E2-11","in":{"source":"haccp","barcode":"8801066500266","web":{"report_no":"19830511007104","name":"게맛살 큰잔치 300g","maker":null,"content":300,"unit":"g"},"cand":{"report_no":"1983051100710","name":"게맛살 큰잔치","maker":null}},"expect":"reject","reason":"report_no","note":"부분 일치(끝자리 누락)는 후보 아님"},
+    {"id":"E2-12","in":{"source":"ocr","barcode":"8801088106101","web":{"report_no":"19810450001101","name":"오양맛살E 500g","maker":null,"content":500,"unit":"g"},"cand":{"report_no":"19810450001101","name":null,"maker":null},"haccp_same":true},"expect":"auto"},
+    {"id":"E2-13","in":{"source":"ocr","barcode":"8801007997063","web":{"report_no":"20080405015207","name":"햇반 컵반 미역국밥","maker":null,"content":167,"unit":"g"},"cand":{"report_no":"20080405015207","name":null,"maker":null}},"expect":"needs_review","reason":"ocr_only"},
+    {"id":"E2-14","in":{"source":"ocr","barcode":"8801114139233","web":{"report_no":"19810372140118","name":"오징어땅콩","maker":null,"content":98,"unit":"g"},"cand":{"report_no":"19810372140118","name":null,"maker":null},"public_hit":{"product_id":2,"report_no":"2003044504568"}},"expect":"needs_review","reason":"conflict_public"},
+    {"id":"E2-15","in":{"source":"haccp","barcode":"8801075010091","web":{"report_no":"19920000001","name":"순창궁12가지양념쌈장170G","maker":null,"content":170,"unit":"g"},"cand":{"report_no":"19920000001","name":"순창궁 12가지양념으로 맛있는 양념쌈장","maker":"대상"}},"expect":"auto","note":"붙여 쓴 이름(토큰 1개) — 공백 제거 비교"},
+    {"id":"E2-16","in":{"source":"haccp","barcode":"88010759","web":{"report_no":"19920000002","name":"미니 쌈장 40g","maker":null,"content":40,"unit":"g"},"cand":{"report_no":"19920000002","name":"미니쌈장","maker":null}},"expect":"reject","reason":"checksum","note":"EAN-8 체크섬 불통과(88010759 → 정답 끝자리 9 아님)"}
+  ]
+}

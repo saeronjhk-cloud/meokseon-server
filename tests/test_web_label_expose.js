@@ -107,5 +107,20 @@ const keys = (o) => Object.keys(o || {}).sort();
     try { assert.strictEqual((await svc.getProductWithTrafficLight('8800000000028')).web_label_supplements, null); } finally { await realQuery('alter table web_label.ps_tmp rename to public_supplements'); }
     void P3;
   });
-  console.log(`\n[web_label 노출 E3·E5·033] ${pass}/${pass + fail}`); process.exit(fail ? 1 : 0);
+  console.log('── E7 바코드 조회 → 연결된 판매처 품목');
+  const RT = require('./fixtures/barcode_link_runtime_v1.json');
+  const nf = async (bc) => { try { await svc.getProductWithTrafficLight(bc); return false; } catch (e) { return true; } };
+  const link = (bc, id, st) => realQuery(`insert into web_label.product_barcodes (barcode, product_id, status, evidence) values ($1,$2,$3,'{}') on conflict (barcode, product_id) do update set status=excluded.status`, [bc, id, st]);
+  await t('E7-01 auto 연결 → 200 · barcode_linked · 스캔 바코드 · 배지 · 키 동일', async () => {
+    await link('8809000000017', W_OK, 'auto');
+    const x = await svc.getProductWithTrafficLight('8809000000017');
+    assert.strictEqual(x.web_label.barcode_linked, true); assert.strictEqual(x.product.barcode, '8809000000017'); assert.strictEqual(x.web_label.badge, RT.badge_linked);
+    assert.deepStrictEqual(keys(x).filter((k) => k !== 'web_label'), keys(pub).filter((k) => k !== 'web_label_supplements'));
+  });
+  await t('E7-02 needs_review 연결 → 404', async () => { await link('8809000000024', W_OK, 'needs_review'); assert.ok(await nf('8809000000024')); });
+  await t('E7-03 품목이 needs_review → 404', async () => { await link('8809000000031', W_REV, 'auto'); assert.ok(await nf('8809000000031')); });
+  await t('E7-04 같은 바코드 2품목 auto → 404(모호)', async () => { await link('8809000000048', W_OK, 'auto'); await link('8809000000048', W_NOK, 'auto'); assert.ok(await nf('8809000000048')); });
+  await t('E7-05 public 에 있으면 public 우선', async () => { await link('8800000000011', W_OK, 'auto'); const x = await svc.getProductWithTrafficLight('8800000000011'); assert.ok(!x.web_label); assert.strictEqual(x.product.product_name, '공공품목A'); });
+  await t('E7-06 approved 도 연결', async () => { await link('8809000000055', W_NOK, 'approved'); const x = await svc.getProductWithTrafficLight('8809000000055'); assert.strictEqual(x.web_label.barcode_linked, true); assert.strictEqual(x.traffic_light, null); });
+  console.log(`\n[web_label 노출 E3·E5·E7·033] ${pass}/${pass + fail}`); process.exit(fail ? 1 : 0);
 })().catch((e) => { console.error(e); process.exit(1); });

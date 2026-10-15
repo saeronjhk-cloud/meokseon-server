@@ -122,5 +122,32 @@ const keys = (o) => Object.keys(o || {}).sort();
   await t('E7-04 같은 바코드 2품목 auto → 404(모호)', async () => { await link('8809000000048', W_OK, 'auto'); await link('8809000000048', W_NOK, 'auto'); assert.ok(await nf('8809000000048')); });
   await t('E7-05 public 에 있으면 public 우선', async () => { await link('8800000000011', W_OK, 'auto'); const x = await svc.getProductWithTrafficLight('8800000000011'); assert.ok(!x.web_label); assert.strictEqual(x.product.product_name, '공공품목A'); });
   await t('E7-06 approved 도 연결', async () => { await link('8809000000055', W_NOK, 'approved'); const x = await svc.getProductWithTrafficLight('8809000000055'); assert.strictEqual(x.web_label.barcode_linked, true); assert.strictEqual(x.traffic_light, null); });
-  console.log(`\n[web_label 노출 E3·E5·E7·033] ${pass}/${pass + fail}`); process.exit(fail ? 1 : 0);
+  console.log('── E9 판매처 품목 첨가물');
+  const AD = require('./fixtures/web_label_additives_v1.json').cases;
+  const { classifyAdditive } = require('../src/services/additiveSignal');
+  const mk = async (name, ing) => {
+    const id = Number((await one(`insert into web_label.products (product_name, c005_report_no, data_source, verification, status, nutrition_ok) values ($1, $2, 'web_label','unverified','active', true) returning product_id`, [name, 'E9' + name])).product_id);
+    if (ing !== null) await realQuery(`insert into web_label.product_ingredients (product_id, raw_text, prdlst_report_no, source) values ($1,$2,'x','web_label_ocr')`, [id, ing]);
+    return id;
+  };
+  const E1 = await mk('첨가물있음', AD[0].ingredients); const E2 = await mk('원재료없음', null); const E3 = await mk('첨가물없음', AD[2].ingredients);
+  const pubAdd = await svc.getProductAdditives('8800000000011');
+  await t('E9-01 원재료 검출 → derived(own) · 저장 0 · total 0', async () => {
+    const x = await svc.getWebLabelAdditives(E1);
+    assert.strictEqual(x.additives.length, 0); assert.strictEqual(x.risk_summary.total, 0); assert.strictEqual(x.derived_additives.source, 'own');
+    const names = x.derived_additives.items.map((i) => i.name); for (const n of AD[0].expect.derived_names_include) assert.ok(names.includes(n), n + ' 없음: ' + names.join(','));
+  });
+  await t('E9-02 원재료 행 없음 → derived null', async () => { assert.strictEqual((await svc.getWebLabelAdditives(E2)).derived_additives, null); });
+  await t('E9-03 검출 0 → derived 빈 목록(웹 readDerived 가 null 로 본다)', async () => { const d = (await svc.getWebLabelAdditives(E3)).derived_additives; assert.ok(d === null || d.items.length === 0); });
+  await t('E9-04 needs_review·superseded·없는 id → NotFound', async () => { for (const id of [W_REV, W_SUP, 99999999]) { let nf = false; try { await svc.getWebLabelAdditives(id); } catch (e) { nf = true; } assert.ok(nf, String(id)); } });
+  await t('E9-05 응답 키 = 바코드 /additives 키', async () => { assert.deepStrictEqual(keys(await svc.getWebLabelAdditives(E1)), keys(pubAdd)); });
+  await t('E9-06 연결 바코드의 /:barcode/additives → 판매처 품목 첨가물', async () => {
+    await link('8809000000062', E1, 'auto');
+    const x = await svc.getProductAdditives('8809000000062'); assert.ok(x.derived_additives.items.some((i) => i.name === '변성전분'));
+    let nf = false; try { await svc.getProductAdditives('8809000000079'); } catch (e) { nf = true; } assert.ok(nf, '연결 없는 바코드는 404');
+  });
+  await t('E9-07 signal = classifyAdditive(이름, matchType)', async () => {
+    for (const i of (await svc.getWebLabelAdditives(E1)).derived_additives.items) assert.deepStrictEqual(i.signal, classifyAdditive(i.name, { matchType: i.match_type }));
+  });
+  console.log(`\n[web_label 노출 E3·E5·E7·E9·033] ${pass}/${pass + fail}`); process.exit(fail ? 1 : 0);
 })().catch((e) => { console.error(e); process.exit(1); });

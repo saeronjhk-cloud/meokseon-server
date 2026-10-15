@@ -1,0 +1,14 @@
+{
+  "name": "eval_web_label_additives_v1 (E9)",
+  "fixed_at": "2026-10-15 08:3x (세션79 · 구현 전 고정)",
+  "decision": "제이 08:33 «권장안대로» — 판매처 품목도 첨가물 신호등: 원재료 원문 → 검출기 v2(공전 665 완전일치) → 신호등 v3. 바코드 제품의 derived_additives 와 같은 엔진·같은 응답 모양. AI 추론 없음.",
+  "cases": [
+    {"id":"E9-01","ingredients":"정제수, 변성전분, L-글루탐산나트륨(향미증진제), 설탕","expect":{"additives_len":0,"derived_names_include":["변성전분","L-글루탐산나트륨"],"derived_source":"own","total":0}},
+    {"id":"E9-02","ingredients":null,"expect":{"derived":null},"note":"원재료 행 없음 → 검출 안 함(«없음» 단정 금지)"},
+    {"id":"E9-03","ingredients":"찹쌀, 김, 참깨, 천일염","expect":{"derived":null},"note":"검출 0 → 바코드 경로와 같게 null(readDerived 가 빈 목록을 null 로 본다)"},
+    {"id":"E9-04","check":"needs_review·superseded·없는 id → NotFound"},
+    {"id":"E9-05","check":"응답 키 집합 = 바코드 /additives 응답 키 집합(product_id·product_name·additives·risk_summary·signal_summary·derived_additives)"},
+    {"id":"E9-06","check":"public 에 없고 auto/approved 로 연결된 바코드의 /:barcode/additives → 연결된 판매처 품목의 첨가물(E9-01 과 같은 내용)"},
+    {"id":"E9-07","check":"각 derived 항목 signal 은 classifyAdditive(이름, {matchType}) 결과와 같다"}
+  ]
+}

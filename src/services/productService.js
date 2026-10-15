@@ -649,10 +649,36 @@ async function getProductAdditives(barcode) {
   const product = await productModel.findByBarcode(barcode);
 
   if (!product) {
+    // ★ 세션79 E9-06 — 바코드 조회와 같은 폴백: public 에 없고 판매처 품목에 연결된 바코드면 그 품목의 첨가물.
+    let webId = null;
+    try { webId = await webLabelModel.findWebIdByBarcode(barcode); } catch (e) { webId = null; }
+    if (webId) return getWebLabelAdditives(webId);
     throw new NotFoundError('제품');
   }
+  return buildAdditivesPayload(product, {
+    getAdditives: (id) => productModel.getAdditives(id),
+    getIngredientText: (id) => productModel.getIngredientText(id),
+    getAdditiveDetectedCount: (id) => productModel.getAdditiveDetectedCount(id),
+  });
+}
 
-  const additivesRaw = await productModel.getAdditives(product.product_id);
+/**
+ * ★ 세션79 E9 — 판매처 라벨 품목 첨가물(제이 2026-10-15 08:33). 저장 첨가물 표가 없으므로 원재료 원문에서 검출(derived)만 낸다.
+ *   응답 모양·엔진(검출기 v2 · 신호등 v3)은 바코드 /additives 와 같다(조립 함수 1벌).
+ */
+async function getWebLabelAdditives(webId) {
+  const product = await webLabelModel.findWebProduct(webId);
+  if (!product) throw new NotFoundError('제품');
+  return buildAdditivesPayload(product, {
+    getAdditives: async () => [],
+    getIngredientText: (id) => webLabelModel.getWebIngredientText(id),
+    getAdditiveDetectedCount: async () => null,
+  });
+}
+
+/** 바코드 제품·판매처 품목이 공유하는 /additives 응답 조립(세션79 에 getProductAdditives 본문을 옮김). */
+async function buildAdditivesPayload(product, deps) {
+  const additivesRaw = await deps.getAdditives(product.product_id);
   // ★ 세션75j — 첨가물마다 신호등 v3(근거 기반 · additiveSignal). 기존 필드는 그대로, `signal` 키만 추가.
   const additives = additivesRaw.map((a) => ({ ...a, signal: classifyAdditive(a.name_ko || a.name) }));
 
@@ -660,7 +686,7 @@ async function getProductAdditives(barcode) {
   //   `derived_additives` 로 «따로» 낸다. `additives`·`risk_summary` 의 뜻은 바꾸지 않는다(저장된 것만).
   let derivedAdditives = null;
   if (additives.length === 0) {
-    const ing = await productModel.getIngredientText(product.product_id);
+    const ing = await deps.getIngredientText(product.product_id);
     if (ing && ing.text) {
       derivedAdditives = detectAdditives(ing.text).map((d) => ({
         name: d.name, match_type: d.match_type, raw: d.raw,
@@ -684,7 +710,7 @@ async function getProductAdditives(barcode) {
   //     두 곳에서 같은 규칙을 쓰면 다음 수정 때 한쪽만 고친다.
   //   ★ `detected_total` 이 null 인 기존 제품(대다수)은 `unlisted = 0` 이라
   //     화면이 지금과 **완전히 같다.** 회귀가 없다.
-  const detectedTotal = await productModel.getAdditiveDetectedCount(product.product_id);
+  const detectedTotal = await deps.getAdditiveDetectedCount(product.product_id);
 
   // 색상 우선순위: v2 mfras_grade > v1 risk_color
   const colorOf = (a) => a.mfras_grade || a.risk_color;
@@ -716,6 +742,7 @@ async function getProductAdditives(barcode) {
 module.exports = {
   getProductWithTrafficLight,
   getWebLabelProduct,         // 세션79 U78-3
+  getWebLabelAdditives,       // 세션79 E9
   WEB_LABEL_BADGE, WEB_LABEL_BADGE_LINKED, WEB_LABEL_WARNING, WEB_SUPPLEMENT_BADGE,   // 세션79 — 라우트·평가가 같은 문구를 쓴다
   _collectedLabel: collectedLabel,
   getProductAdditives,

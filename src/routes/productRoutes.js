@@ -70,6 +70,17 @@ router.get(
   }
 );
 
+// ★ 세션79 E9 — GET /api/products/web/:id/additives — 판매처 품목 첨가물(원재료 검출 · 바코드 /additives 와 같은 모양)
+router.get(
+  '/web/:id/additives',
+  [param('id').trim().matches(/^\d{1,12}$/).withMessage('id 는 숫자입니다.')],
+  async (req, res) => {
+    validate(req);
+    const data = await productService.getWebLabelAdditives(Number(req.params.id));
+    res.json({ success: true, data });
+  }
+);
+
 // GET /api/products/recent
 router.get(
   '/recent',

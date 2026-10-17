@@ -9,6 +9,7 @@ const { query: checkQuery, param, validationResult } = require('express-validato
 const productModel = require('../models/productModel');
 const productService = require('../services/productService');
 const webLabelModel = require('../models/webLabelModel');   // 세션79 U78-3
+const kfindModel = require('../models/kfindModel');         // 세션80 결정 80-1
 // ★ 세션50 D2 — `sanityCheck` 를 **일부러 import 하지 않는다.** 판정은 엔진 한 곳에서만 한다.
 const { evaluateNutrition } = require('../services/nutritionTrafficLight');
 const { getRaccPolicy } = require('../services/raccPolicy');
@@ -38,7 +39,9 @@ router.get(
     // ★ 세션79 U78-3 — 판매처 라벨 기반 품목은 «별도 키»로 public 결과 뒤에(첫 쪽만 · 최대 10). products 배열·count 는 종전과 같다.
     //   별도 키인 이유: 구버전 앱은 products[i].barcode 로 상세를 연다 — 바코드 없는 품목이 섞이면 그 경로가 깨진다.
     const webLabelProducts = await searchWebLabelSafe(q, offset);
-    res.json({ success: true, data: { query: q, count: products.length, products, web_label_products: webLabelProducts } });
+    // ★ 세션80 결정 80-1 — 식약처 K-FIND 품목도 «별도 키»(R3 · 첫 쪽만 · 최대 10 · 실패해도 빈 배열). products·web_label_products 무변경.
+    const kfindProducts = await searchKfindSafe(q, offset);
+    res.json({ success: true, data: { query: q, count: products.length, products, web_label_products: webLabelProducts, kfind_products: kfindProducts } });
   }
 );
 
@@ -58,6 +61,35 @@ async function searchWebLabelSafe(q, offset, exec) {
     return [];
   }
 }
+
+/** kfind 검색 실패가 다른 검색을 500 으로 만들지 않게 한다(빈 배열 + 로그). */
+async function searchKfindSafe(q, offset, exec) {
+  if (offset > 0) return [];
+  try {
+    const rows = await kfindModel.searchKfind(q, 10, exec);
+    return rows.map((r) => ({
+      food_cd: r.food_cd, barcode: null, source: 'kfind', badge: productService.KFIND_BADGE,
+      product_name: r.food_name, manufacturer: r.maker || r.importer || null, importer: r.importer || null,
+      is_imported: !!r.is_imported, origin_country: r.origin_country || null, food_type: r.food_type || null,
+      basis: r.basis, food_weight: r.food_weight || null, calories: r.calories, nutrition_ok: r.nutrition_ok,
+      release_label: productService._kfindReleaseLabel(r.release_id),
+    }));
+  } catch (e) {
+    require('../config/logger').warn('kfind 검색 실패 — 빈 배열', { q, error: e.message });
+    return [];
+  }
+}
+
+// ★ 세션80 결정 80-1 — GET /api/products/kfind/:foodCd — K-FIND 품목 상세(바코드 응답과 같은 키 + kfind 블록)
+router.get(
+  '/kfind/:foodCd',
+  [param('foodCd').trim().matches(/^P[0-9]{3}-[0-9]{9}-[0-9]{4}$/).withMessage('식품코드 형식이 아닙니다.')],
+  async (req, res) => {
+    validate(req);
+    const data = await productService.getKfindProduct(req.params.foodCd);
+    res.json({ success: true, data });
+  }
+);
 
 // ★ 세션79 U78-3 — GET /api/products/web/:id — 판매처 라벨 기반 품목 상세(바코드 조회와 같은 응답 키 + web_label 블록)
 router.get(
@@ -193,3 +225,4 @@ router.post('/evaluate', async (req, res) => {
 
 module.exports = router;
 module.exports._searchWebLabelSafe = searchWebLabelSafe;   // 세션79 평가(E1)용
+module.exports._searchKfindSafe = searchKfindSafe;         // 세션80 평가(E_ops)용

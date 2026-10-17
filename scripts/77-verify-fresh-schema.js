@@ -509,7 +509,7 @@ function collectCreators(files) {
   // 뷰까지 포함한 컬럼 목록 (§E 가 쓴다 — product_nutrition_resolved 같은 뷰를 봐야 한다)
   // ★ 세션79 — 앱이 읽는 «분리 스키마»(web_label · 031~034)도 §E 대조 대상. 키 = public 은 표 이름, 그 밖은 «스키마.표».
   //   (종전: public 만 읽어 `web_label.products` 참조가 「테이블 없음: web_label」 거짓 빨강 → CI gate 실패 → Railway 배포 SKIPPED)
-  const EXTRA_SCHEMAS = ['web_label'];
+  const EXTRA_SCHEMAS = ['web_label', 'kfind'];   // ★ 세션80 — kfind(035 · 결정 80-1)
   const qkey = (ns, t) => (ns === 'public' ? t : `${ns}.${t}`);
   const colRows = (await db.query(
     `SELECT table_schema, table_name, column_name, data_type, udt_name

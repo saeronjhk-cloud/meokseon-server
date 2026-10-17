@@ -1,0 +1,301 @@
+{
+  "name": "eval_kfind_expose_v1 (K · G)",
+  "fixed_at": "2026-10-17 10:0x (세션80 · 구현 전 고정)",
+  "decision": "결정 80-1(제이 09:41 «권장대로»): K-FIND 가공식품DB 를 public 과 섞지 않는 별도 스키마 `kfind` 에 두고 이름 검색에 «영양정보만 · 바코드·원재료 없음» 배지로 노출. 판매처 품목(web_label) 영양을 K-FIND 로 교차확인(불일치 → 신호등 끔). 공공 제품 빈 칸 보충은 하지 않음(D60-1 봉인 유지).",
+  "wording": {
+    "badge": "식약처 영양성분 DB · 바코드·원재료 정보 없음",
+    "warning": "영양성분만 있는 공공 데이터예요. 알레르기와 원재료는 실물 포장을 확인하세요.",
+    "source_label": "출처: 식품의약품안전처 식품영양성분 데이터베이스",
+    "supplement_badge": "식약처 영양성분 DB 보충"
+  },
+  "rules": [
+    "R1 노출 상태 active 만(withdrawn 비노출).",
+    "R2 숨김(읽기 시점): 같은 품목보고번호의 public «활성» 제품이 있거나, 노출 중(active/stale·숨김 아님)인 web_label 품목이 있으면 kfind 품목을 검색·상세에서 숨긴다.",
+    "R3 검색은 별도 키 `kfind_products`(첫 쪽만 · 최대 10 · `products`·`web_label_products` 배열 무변경 · 실패해도 빈 배열).",
+    "R4 상세 = 바코드 응답과 같은 최상위 키 − {web_label_supplements} ∪ {kfind}. 응답 조립은 assembleProductPayload 1벌(KFIND_DEPS).",
+    "R5 알레르기·원재료 없음: allergens/allergens_v2 null · allergens_available false · ingredients_text null · allergens_from_ingredients null · mfras 는 «모름»(첨가물 행 없음).",
+    "R6 신호등: 저장 시 계산한 nutrition_ok(4·4·9 = web_label_gate.nutritionOk 동일 함수) 가 false 면 끈다.",
+    "R7 kfind 블록: {source:'kfind', food_cd, badge, warning, source_label, release_label 'YYYY.MM.DD 기준', is_imported, origin_country, importer, report_no, basis}.",
+    "R8 web_label 품목의 영양이 비었고 같은 품목보고번호 kfind 후보가 «정확히 1개»면 상세의 `web_label.kfind_supplement`{badge, source_label, release_label, food_cd, nutrition{…, basis}} — 신호등은 켜지 않는다(79-5 와 같음). 후보 0·2개 이상이거나 web_label 영양이 있으면 null. (v1 고정 직후·구현 전 정정: 최상위 키가 아니라 web_label 블록 안 — 기존 E3-01 «최상위 키 집합» 정답을 바꾸지 않기 위해)",
+    "R9 교차확인 kfindCheck(wl, cands): 후보 없음 → null · wl 영양 없음 → null · 후보 중 열량이 가장 가까운 1개와 비교 · 열량 |차| ≤ max(10kcal, 10%) 이고 나트륨(±max(30mg,10%))·당류(±max(1g,10%))·지방(±max(1g,10%)) 모두 허용 범위면 'agree', 아니면 'conflict'(차이 축 목록). 값이 한쪽이라도 없으면 그 축은 비교하지 않는다.",
+    "R10 104 게이트 v1.1: nutritionOk 가 true 여도 kfindCheck=conflict 면 nutrition_ok=false(신호등 끔). quality.kfind 에 결과 기록. 사람 판정 행 보존은 종전과 같다."
+  ],
+  "G_cases": [
+    {
+      "id": "G01",
+      "wl": {
+        "calories": 480,
+        "sodium": 350,
+        "total_sugars": 25,
+        "total_fat": 22
+      },
+      "cands": [],
+      "expect": null
+    },
+    {
+      "id": "G02",
+      "wl": {
+        "calories": null
+      },
+      "cands": [
+        {
+          "calories": 480
+        }
+      ],
+      "expect": null
+    },
+    {
+      "id": "G03",
+      "wl": {
+        "calories": 480,
+        "sodium": 350,
+        "total_sugars": 25,
+        "total_fat": 22
+      },
+      "cands": [
+        {
+          "calories": 470,
+          "sodium": 340,
+          "total_sugars": 24,
+          "total_fat": 21.5
+        }
+      ],
+      "expect": {
+        "result": "agree",
+        "diff": []
+      }
+    },
+    {
+      "id": "G04",
+      "note": "양반 현미밥 실측형 — 환산 오류",
+      "wl": {
+        "calories": 26.28,
+        "sodium": 2,
+        "total_sugars": 0,
+        "total_fat": 0.3
+      },
+      "cands": [
+        {
+          "calories": 158,
+          "sodium": 5,
+          "total_sugars": 0,
+          "total_fat": 1
+        }
+      ],
+      "expect": {
+        "result": "conflict",
+        "diff": [
+          "calories"
+        ]
+      }
+    },
+    {
+      "id": "G05",
+      "note": "열량 일치 · 나트륨만 다름",
+      "wl": {
+        "calories": 400,
+        "sodium": 900,
+        "total_sugars": 5,
+        "total_fat": 10
+      },
+      "cands": [
+        {
+          "calories": 405,
+          "sodium": 500,
+          "total_sugars": 5,
+          "total_fat": 10
+        }
+      ],
+      "expect": {
+        "result": "conflict",
+        "diff": [
+          "sodium"
+        ]
+      }
+    },
+    {
+      "id": "G06",
+      "note": "후보 여럿 → 열량 가장 가까운 것",
+      "wl": {
+        "calories": 300,
+        "sodium": 200,
+        "total_sugars": 10,
+        "total_fat": 5
+      },
+      "cands": [
+        {
+          "calories": 550,
+          "sodium": 200,
+          "total_sugars": 10,
+          "total_fat": 5
+        },
+        {
+          "calories": 305,
+          "sodium": 210,
+          "total_sugars": 10.5,
+          "total_fat": 5.2
+        }
+      ],
+      "expect": {
+        "result": "agree",
+        "diff": []
+      }
+    },
+    {
+      "id": "G07",
+      "note": "작은 값 절대 허용(당류 0.5 vs 1.4)",
+      "wl": {
+        "calories": 50,
+        "sodium": 10,
+        "total_sugars": 0.5,
+        "total_fat": 0.2
+      },
+      "cands": [
+        {
+          "calories": 55,
+          "sodium": 20,
+          "total_sugars": 1.4,
+          "total_fat": 0.9
+        }
+      ],
+      "expect": {
+        "result": "agree",
+        "diff": []
+      }
+    },
+    {
+      "id": "G08",
+      "note": "한쪽 값 없음 축은 비교 안 함",
+      "wl": {
+        "calories": 200,
+        "sodium": null,
+        "total_sugars": 3,
+        "total_fat": 4
+      },
+      "cands": [
+        {
+          "calories": 205,
+          "sodium": 999,
+          "total_sugars": 3,
+          "total_fat": 4
+        }
+      ],
+      "expect": {
+        "result": "agree",
+        "diff": []
+      }
+    },
+    {
+      "id": "G09",
+      "note": "여러 축 차이",
+      "wl": {
+        "calories": 166,
+        "sodium": 100,
+        "total_sugars": 1,
+        "total_fat": 5
+      },
+      "cands": [
+        {
+          "calories": 553,
+          "sodium": 600,
+          "total_sugars": 4,
+          "total_fat": 33
+        }
+      ],
+      "expect": {
+        "result": "conflict",
+        "diff": [
+          "calories",
+          "sodium",
+          "total_sugars",
+          "total_fat"
+        ]
+      }
+    },
+    {
+      "id": "G10",
+      "note": "당류 경계 10% 이내",
+      "wl": {
+        "calories": 400,
+        "sodium": 100,
+        "total_sugars": 30,
+        "total_fat": 10
+      },
+      "cands": [
+        {
+          "calories": 400,
+          "sodium": 100,
+          "total_sugars": 33,
+          "total_fat": 10
+        }
+      ],
+      "expect": {
+        "result": "agree",
+        "diff": []
+      }
+    }
+  ],
+  "K_pglite": [
+    {
+      "id": "K01",
+      "check": "active · 숨김 아님 kfind 품목 → searchKfind 결과에 있음 · 응답 필드 food_cd·food_name·maker·importer·is_imported·origin_country·calories"
+    },
+    {
+      "id": "K02",
+      "check": "같은 품목보고번호 public 활성 제품 있음 → 검색·상세 모두 없음(상세 NotFound)"
+    },
+    {
+      "id": "K03",
+      "check": "같은 품목보고번호 public 제품이 «비활성»뿐 → 노출(숨김 사유 아님)"
+    },
+    {
+      "id": "K04",
+      "check": "같은 품목보고번호 web_label 노출 품목 있음 → 숨김 · web_label 이 needs_review 면 숨기지 않음"
+    },
+    {
+      "id": "K05",
+      "check": "withdrawn → 검색·상세 없음"
+    },
+    {
+      "id": "K06",
+      "check": "상세 최상위 키 = 바코드 응답 키 − {web_label_supplements} ∪ {kfind}"
+    },
+    {
+      "id": "K07",
+      "check": "R5 알레르기·원재료 null/false · traffic_light 있음(nutrition_ok true)"
+    },
+    {
+      "id": "K08",
+      "check": "nutrition_ok=false → traffic_light null · nutrition 은 그대로"
+    },
+    {
+      "id": "K09",
+      "check": "kfind 블록 R7 값(badge·warning·source_label 정확히 위 wording · release_label '2026.09.29 기준' · is_imported)"
+    },
+    {
+      "id": "K10",
+      "check": "R8 web_label 영양 없음 + kfind 후보 1 → web_label.kfind_supplement · 후보 2 → null · web_label 영양 있음 → null · traffic_light null 유지 · 최상위 키 무변경"
+    },
+    {
+      "id": "K11",
+      "check": "035 적용·재적용 멱등 · public 열 수 무변경 · search_text 생성 컬럼(ALWAYS)"
+    }
+  ],
+  "E_ops": [
+    {
+      "id": "E01",
+      "note": "운영 DB(적재 후) — 결과는 적재 후 정답 대조",
+      "q": "힙스노말",
+      "expect": "kfind_products 1건 이상 · 전부 is_imported=true"
+    },
+    {
+      "id": "E02",
+      "q": "우리밀 한입 스콘",
+      "expect": "kfind_products 에 «우리밀 한입 스콘 초코칩» 포함 (P101-104000100-1203)"
+    },
+    {
+      "id": "E03",
+      "check": "kfind_products 결과의 품목보고번호가 public 활성 제품·web_label 노출 품목과 겹치는 행 0 (무작위 검색어 20개)"
+    }
+  ]
+}

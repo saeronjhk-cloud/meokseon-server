@@ -42,4 +42,26 @@ function productStatus({ allergen, has_alg, has_nut }) {
   return 'active';
 }
 
-module.exports = { cleanFoodType, nutritionOk, allergenCheck, productStatus, MAJOR };
+/**
+ * ★ 세션80 v1.1 — 판매처 라벨 영양 ↔ 식약처 K-FIND(같은 품목보고번호) 교차확인. 정답 IP/eval_kfind_expose_v1 G01~G10(구현 전 고정).
+ *   wl·cands 원소 = {calories, sodium, total_sugars, total_fat} (100g/100ml 기준).
+ *   반환 null(판정 불가) | {result:'agree'|'conflict', diff:[축], food_cd?}. 후보 여럿이면 열량이 가장 가까운 1개와 비교.
+ */
+const KF_AXES = [['calories', 10], ['sodium', 30], ['total_sugars', 1], ['total_fat', 1]];
+const _n = (v) => (v == null || v === '' || !Number.isFinite(Number(v)) ? null : Number(v));
+function kfindCheck(wl, cands) {
+  if (!wl || _n(wl.calories) == null) return null;
+  const C = (cands || []).filter((c) => c && _n(c.calories) != null);
+  if (!C.length) return null;
+  const k = _n(wl.calories);
+  const best = C.slice().sort((a, b) => Math.abs(_n(a.calories) - k) - Math.abs(_n(b.calories) - k))[0];
+  const diff = [];
+  for (const [ax, abs] of KF_AXES) {
+    const a = _n(wl[ax]), b = _n(best[ax]);
+    if (a == null || b == null) continue;
+    if (Math.abs(a - b) > Math.max(abs, 0.1 * Math.max(Math.abs(a), Math.abs(b)))) diff.push(ax);
+  }
+  return { result: diff.length ? 'conflict' : 'agree', diff, ...(best.food_cd ? { food_cd: best.food_cd } : {}) };
+}
+
+module.exports = { cleanFoodType, nutritionOk, allergenCheck, productStatus, kfindCheck, MAJOR };

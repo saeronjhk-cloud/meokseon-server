@@ -16,6 +16,7 @@ const { allergensFromIngredients } = require('./allergenFromIngredients');
 const DB_INGREDIENT_SOURCES = new Set(['c002', 'c002_barcode', 'c002_name', 'c003', 'haccp_api', 'c005_sibling']);
 const productModel = require('../models/productModel');
 const webLabelModel = require('../models/webLabelModel');   // 세션79 U78-3
+const kfindModel = require('../models/kfindModel');         // 세션80 결정 80-1
 const { evaluateNutrition, deriveBasis } = require('./nutritionTrafficLight');
 const { getRaccPolicy } = require('./raccPolicy');
 const { NotFoundError } = require('../middleware/errorHandler');
@@ -257,6 +258,57 @@ async function getWebLabelProduct(webId) {
   if (!product) throw new NotFoundError('제품');
   const payload = await assembleProductPayload(product, WEB_DEPS, { webId });
   payload.web_label = buildWebLabelBlock(product);
+  // ★ 세션80 R8 — 판매처 품목 영양이 비었고 같은 품목보고번호 K-FIND 후보가 정확히 1개면 보충(신호등은 켜지 않는다 · 블록 안 · 최상위 키 무변경)
+  payload.web_label.kfind_supplement = payload.nutrition === null ? await loadKfindSupplement(product.c005_report_no) : null;
+  return payload;
+}
+
+/* ── ★ 세션80 결정 80-1 — 식약처 K-FIND 가공식품DB(kfind) ─────────────────────────────
+ *   정답 IP/eval_kfind_expose_v1/cases_v1.json. 문구 정본은 아래 상수(웹 webLabel.ts 와 같다). */
+const KFIND_BADGE = '식약처 영양성분 DB · 바코드·원재료 정보 없음';
+const KFIND_WARNING = '영양성분만 있는 공공 데이터예요. 알레르기와 원재료는 실물 포장을 확인하세요.';
+const KFIND_SOURCE_LABEL = '출처: 식품의약품안전처 식품영양성분 데이터베이스';
+const KFIND_SUPPLEMENT_BADGE = '식약처 영양성분 DB 보충';
+let _kfMissingLogged = false;
+
+/** 'YYYYMMDD' → 'YYYY.MM.DD 기준' · 형식이 다르면 null */
+function kfindReleaseLabel(rel) {
+  const m = /^(\d{4})(\d{2})(\d{2})$/.exec(String(rel || ''));
+  return m ? `${m[1]}.${m[2]}.${m[3]} 기준` : null;
+}
+
+function buildKfindBlock(p) {
+  return {
+    source: 'kfind', food_cd: p.product_id, badge: KFIND_BADGE, warning: KFIND_WARNING, source_label: KFIND_SOURCE_LABEL,
+    release_label: kfindReleaseLabel(p.release_id), is_imported: !!p.is_imported, origin_country: p.origin_country || null,
+    importer: p.importer || null, maker: p.maker || null, report_no: p.report_no || null, basis: p.basis || null,
+    food_weight: p.food_weight || null, serving_ref: p.serving_ref || null,
+    nutrition_ok: p.nutrition_ok === false ? false : (p.nutrition_ok === true ? true : null),
+  };
+}
+
+/** R8 — 후보 정확히 1개일 때만. 표 없음(42P01)·실패 = null. */
+async function loadKfindSupplement(reportNo) {
+  if (!reportNo) return null;
+  let rows;
+  try { rows = await kfindModel.findByReportNo(reportNo); } catch (e) {
+    if (!(e && e.code === '42P01' && _kfMissingLogged)) logger.warn('K-FIND 보충 조회 실패 — null', { reportNo, error: e.message });
+    if (e && e.code === '42P01') _kfMissingLogged = true;
+    return null;
+  }
+  if (!rows || rows.length !== 1 || rows[0].calories == null) return null;
+  const k = rows[0]; const nutrition = {};
+  for (const x of ['calories', 'total_fat', 'saturated_fat', 'trans_fat', 'cholesterol', 'sodium', 'total_carbs', 'total_sugars', 'dietary_fiber', 'protein']) nutrition[x] = k[x];
+  nutrition.basis = k.basis;
+  return { badge: KFIND_SUPPLEMENT_BADGE, source_label: KFIND_SOURCE_LABEL, release_label: kfindReleaseLabel(k.release_id), food_cd: k.food_cd, nutrition };
+}
+
+/** K-FIND 품목 상세 — 바코드 응답과 같은 최상위 키 − {web_label_supplements} ∪ {kfind} (R4). */
+async function getKfindProduct(foodCd) {
+  const product = await kfindModel.findKfindProduct(foodCd);
+  if (!product) throw new NotFoundError('제품');
+  const payload = await assembleProductPayload(product, KFIND_DEPS, { foodCd });
+  payload.kfind = buildKfindBlock(product);
   return payload;
 }
 
@@ -351,6 +403,15 @@ const WEB_DEPS = {
   getIngredientText: (id) => webLabelModel.getWebIngredientText(id),
   getAllergens: (id, stats) => webLabelModel.getWebAllergens(id, stats),
   inferSources: new Set(['web_label_ocr']),
+  trafficLightAllowed: (p) => p.nutrition_ok !== false,
+};
+
+// ★ 세션80 kfind: 첨가물·원재료·알레르기 없음(R5 — 없음 ≠ 안전: 알레르기는 null/false 로 나간다) · 4·4·9 실패면 신호등 끔(R6).
+const KFIND_DEPS = {
+  getAdditives: async () => [],
+  getIngredientText: async () => ({ text: null, source: null }),
+  getAllergens: async () => [],
+  inferSources: new Set(),
   trafficLightAllowed: (p) => p.nutrition_ok !== false,
 };
 
@@ -743,6 +804,8 @@ module.exports = {
   getProductWithTrafficLight,
   getWebLabelProduct,         // 세션79 U78-3
   getWebLabelAdditives,       // 세션79 E9
+  getKfindProduct,            // 세션80 결정 80-1
+  KFIND_BADGE, KFIND_WARNING, KFIND_SOURCE_LABEL, KFIND_SUPPLEMENT_BADGE, _kfindReleaseLabel: kfindReleaseLabel,
   WEB_LABEL_BADGE, WEB_LABEL_BADGE_LINKED, WEB_LABEL_WARNING, WEB_SUPPLEMENT_BADGE,   // 세션79 — 라우트·평가가 같은 문구를 쓴다
   _collectedLabel: collectedLabel,
   getProductAdditives,

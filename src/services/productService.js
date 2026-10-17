@@ -239,6 +239,18 @@ async function getProductWithTrafficLight(barcode) {
       w.web_label.badge = WEB_LABEL_BADGE_LINKED;
       return w;
     }
+    // ★ 세션80 R1 — 그다음 «연결된» K-FIND 품목(auto·approved · 1개일 때만 · 정답 IP/eval_kfind_barcode_v1). 표 없음(42P01)·실패는 404.
+    let foodCd = null;
+    try { foodCd = await kfindModel.findKfindIdByBarcode(barcode); } catch (e) {
+      if (!(e && e.code === '42P01')) logger.warn('바코드→K-FIND 품목 조회 실패 — 404 로 둔다', { barcode, error: e.message });
+    }
+    if (foodCd) {
+      const k = await getKfindProduct(foodCd);
+      k.product.barcode = barcode;
+      k.kfind.barcode_linked = true;
+      k.kfind.badge = KFIND_BADGE_LINKED;
+      return k;
+    }
     throw new NotFoundError('제품');
   }
 
@@ -269,6 +281,7 @@ const KFIND_BADGE = '식약처 영양성분 DB · 바코드·원재료 정보 �
 const KFIND_WARNING = '영양성분만 있는 공공 데이터예요. 알레르기와 원재료는 실물 포장을 확인하세요.';
 const KFIND_SOURCE_LABEL = '출처: 식품의약품안전처 식품영양성분 데이터베이스';
 const KFIND_SUPPLEMENT_BADGE = '식약처 영양성분 DB 보충';
+const KFIND_BADGE_LINKED = '식약처 영양성분 DB · 바코드 확인됨 · 원재료 정보 없음';   // 세션80 바코드 잇기(R2)
 let _kfMissingLogged = false;
 
 /** 'YYYYMMDD' → 'YYYY.MM.DD 기준' · 형식이 다르면 null */
@@ -284,6 +297,7 @@ function buildKfindBlock(p) {
     importer: p.importer || null, maker: p.maker || null, report_no: p.report_no || null, basis: p.basis || null,
     food_weight: p.food_weight || null, serving_ref: p.serving_ref || null,
     nutrition_ok: p.nutrition_ok === false ? false : (p.nutrition_ok === true ? true : null),
+    barcode_linked: false,   // 세션80 R2 — 바코드 스캔으로 열렸을 때만 true
   };
 }
 
@@ -805,7 +819,7 @@ module.exports = {
   getWebLabelProduct,         // 세션79 U78-3
   getWebLabelAdditives,       // 세션79 E9
   getKfindProduct,            // 세션80 결정 80-1
-  KFIND_BADGE, KFIND_WARNING, KFIND_SOURCE_LABEL, KFIND_SUPPLEMENT_BADGE, _kfindReleaseLabel: kfindReleaseLabel,
+  KFIND_BADGE, KFIND_BADGE_LINKED, KFIND_WARNING, KFIND_SOURCE_LABEL, KFIND_SUPPLEMENT_BADGE, _kfindReleaseLabel: kfindReleaseLabel,
   WEB_LABEL_BADGE, WEB_LABEL_BADGE_LINKED, WEB_LABEL_WARNING, WEB_SUPPLEMENT_BADGE,   // 세션79 — 라우트·평가가 같은 문구를 쓴다
   _collectedLabel: collectedLabel,
   getProductAdditives,

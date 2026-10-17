@@ -73,4 +73,15 @@ async function findByReportNo(reportNo, q) {
   return r.rows.map((x) => { const o = { ...x }; for (const k of NUM_NUT) o[k] = num(x[k]); return o; });
 }
 
-module.exports = { searchKfind, findKfindProduct, findByReportNo };
+/**
+ * ★ 세션80 바코드 잇기(036) — 스캔 바코드 → 연결된 kfind 품목 food_cd(auto·approved · 노출 중 · 정확히 1개). 아니면 null.
+ *   정답 IP/eval_kfind_barcode_v1 R1·KB01~06.
+ */
+async function findKfindIdByBarcode(barcode, q) {
+  const r = await run(q)(
+    `SELECT DISTINCT b.food_cd FROM kfind.product_barcodes b JOIN kfind.products k ON k.food_cd = b.food_cd
+      WHERE b.barcode = $1 AND b.status IN ('auto','approved') AND k.status = 'active' AND ${NOT_SHADOWED}`, [barcode]);
+  return r.rows.length === 1 ? r.rows[0].food_cd : null;
+}
+
+module.exports = { searchKfind, findKfindProduct, findByReportNo, findKfindIdByBarcode };

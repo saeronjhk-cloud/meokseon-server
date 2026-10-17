@@ -1,0 +1,92 @@
+{
+  "name": "eval_kfind_barcode_v1 (KB 런타임 · KL 배치)",
+  "fixed_at": "2026-10-17 11:0x (세션80 · 구현 전 고정)",
+  "decision": "제이 10:57 «252건 진행» — K-FIND 품목 ↔ HACCP 공공 «품목보고번호→바코드» 잇기. 판정 = scripts/lib/barcode_link_gate.decide(세션79 E2 16/16 · 그대로 재사용 · 복제 금지). public 표·web_label 표 무접촉.",
+  "wording": {
+    "badge_linked": "식약처 영양성분 DB · 바코드 확인됨 · 원재료 정보 없음"
+  },
+  "rules": [
+    "L1 입력: HACCP 덤프 행(품목보고번호·바코드·제품명·제조사) × kfind active 품목(같은 품목보고번호 · 숨김 아님).",
+    "L2 판정 decide({source:'haccp', barcode, web:{report_no:kfind.report_no, name:kfind.food_name, maker:kfind.maker}, cand:{report_no, name, maker}, public_hit, linked_other, siblings_pass}).",
+    "L3 public_hit = 그 바코드가 public.products 에 있음 → needs_review(conflict_public) · public 보충은 하지 않는다(금지 67 취지).",
+    "L4 linked_other = 그 바코드가 web_label(auto/approved) 또는 다른 kfind 품목에 이미 연결 → needs_review(conflict_linked).",
+    "L5 같은 품목보고번호의 kfind active 품목이 2개 이상 → needs_review(multi_kfind) — 어느 맛·용량인지 모름.",
+    "L6 저장: auto·needs_review 만 kfind.product_barcodes 에(reject 는 기록 JSON 에만). decided_by 있는 행은 덮지 않는다. --undo <batch>.",
+    "R1 스캔 폴백 순서: public → web_label 연결(1개) → kfind 연결(auto/approved · 정확히 1개 · 품목 노출 중) → 404.",
+    "R2 kfind 연결 응답 = getKfindProduct 와 같은 키 · product.barcode = 스캔 바코드 · kfind.barcode_linked=true · kfind.badge = wording.badge_linked. 이름 검색 상세는 barcode_linked=false · 배지 종전.",
+    "R3 신호등·알레르기 규칙은 kfind 상세와 같다(연결됐다고 알레르기를 «확인»으로 바꾸지 않는다).",
+    "L7 (v1.1 정정 · 2026-10-17 11:0x · 실측 반례 + 화면 반영 전 + 기록) decide 가 auto 여도 이름 불일치(제조사만 일치)면 needs_review(maker_only). 근거: 적용 kfbc_20261017020007 의 maker_only 23건 표본에 «THE촉촉한 오리지널 도넛 ← 초코칩쿠키» · «오션블루 ← 퓨어그린» · «장수회관 한돈육포 ← 아임햄» — 같은 품목보고번호에 다른 브랜드(OEM) 제품. 금지 61 과 같은 원칙."
+  ],
+  "KL_cases": [
+    {
+      "id": "KL01",
+      "in": "HACCP 1 바코드 · 체크섬 OK · 이름 일치 · public/연결 충돌 없음 · kfind 같은 번호 1개",
+      "expect": "auto haccp_exact"
+    },
+    {
+      "id": "KL02",
+      "in": "바코드가 public.products 에 있음",
+      "expect": "needs_review conflict_public"
+    },
+    {
+      "id": "KL03",
+      "in": "바코드가 web_label 품목에 approved 로 연결됨",
+      "expect": "needs_review conflict_linked"
+    },
+    {
+      "id": "KL04",
+      "in": "같은 품목보고번호 kfind active 2개",
+      "expect": "needs_review multi_kfind"
+    },
+    {
+      "id": "KL05",
+      "in": "체크섬 실패",
+      "expect": "reject checksum(저장 안 함)"
+    },
+    {
+      "id": "KL06",
+      "in": "이름·제조사 모두 불일치",
+      "expect": "needs_review identity"
+    },
+    {
+      "id": "KL07",
+      "in": "이미 decided_by='jay' rejected 인 행",
+      "expect": "재실행해도 그대로"
+    },
+    {
+      "id": "KL08",
+      "in": "HACCP 이름 불일치 · 제조사 일치 (OEM 형)",
+      "expect": "needs_review maker_only"
+    }
+  ],
+  "KB_cases": [
+    {
+      "id": "KB01",
+      "check": "auto 연결 1개 → /:barcode 가 kfind 응답 · product.barcode=스캔값 · kfind.barcode_linked true · badge_linked"
+    },
+    {
+      "id": "KB02",
+      "check": "needs_review 연결만 → 404"
+    },
+    {
+      "id": "KB03",
+      "check": "같은 바코드 auto 가 kfind 2품목 → 404(모호)"
+    },
+    {
+      "id": "KB04",
+      "check": "public 에 그 바코드 제품 있음 → public 응답(kfind 블록 없음)"
+    },
+    {
+      "id": "KB05",
+      "check": "web_label 에도 연결 → web_label 응답 우선"
+    },
+    {
+      "id": "KB06",
+      "check": "연결된 kfind 품목이 숨김(public 활성 동번호) 또는 withdrawn → 404"
+    },
+    {
+      "id": "KB07",
+      "check": "이름 검색 상세(getKfindProduct) 는 barcode_linked false · badge 종전"
+    }
+  ]
+}

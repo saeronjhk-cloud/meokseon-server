@@ -1,0 +1,355 @@
+{
+ "name": "eval_label_basis_anchor_v1",
+ "fixed_at": "2026-10-18 11:2x 세션81 · 구현 전 고정",
+ "source": "판매처(컬리) 상세 이미지 OCR 원문 .tmp/s78/crawl_run1/ocr/rv_*/ocr.txt → texts/<web_label id>.txt",
+ "rules": [
+  "B1 열량 숫자 «바로 앞»에 붙은 기준(«30g당 166 kcal» · «1회섭취참고량(30g)당 128kcal» · «1개당(130g) 205 kcal» · «개(120g)당»)이 있으면 그 기준이 이긴다 — 같은 라벨의 «100g당»(기준치 칸 머리)보다 우선.",
+  "B2 «1+단위어+당+(Ng)» 순서도 1회분 기준으로 읽는다.",
+  "B3 열량에 붙은 기준이 없으면 종전 규칙 그대로(회귀 R 불변).",
+  "B4 기대 열량은 파서가 지금 고르는 열량 숫자와 같다(숫자 선택은 바꾸지 않는다 — 기준만 맞춘다)."
+ ],
+ "cases": [
+  {
+   "id": "306315",
+   "cls": "A",
+   "note": "포카칩 «30g당 166 kcal» + DV «100g당»",
+   "name": "포카칩 황치즈맛 112g",
+   "kf_kcal_100": 553,
+   "want": {
+    "basis": "per_serving",
+    "amount": 30,
+    "calories": 166,
+    "kcal_per100": 553.3
+   },
+   "now": {
+    "basis": "per_100g",
+    "amount": 100,
+    "calories": 166
+   }
+  },
+  {
+   "id": "306377",
+   "cls": "A",
+   "note": "꼬북칩 «30g당 161 kcal»",
+   "name": "꼬북칩 카라멜팝콘 108g",
+   "kf_kcal_100": 537,
+   "want": {
+    "basis": "per_serving",
+    "amount": 30,
+    "calories": 161,
+    "kcal_per100": 536.7
+   },
+   "now": {
+    "basis": "per_100g",
+    "amount": 100,
+    "calories": 161
+   }
+  },
+  {
+   "id": "306387",
+   "cls": "B",
+   "note": "틈새라면 «1봉지당(120g) 505 kcal»",
+   "name": "틈새라면 매운김치 4입",
+   "kf_kcal_100": 421,
+   "want": {
+    "basis": "per_serving",
+    "amount": 120,
+    "calories": 505,
+    "kcal_per100": 420.8
+   },
+   "now": {
+    "basis": "per_total",
+    "amount": null,
+    "calories": 505
+   }
+  },
+  {
+   "id": "306408",
+   "cls": "B",
+   "note": "열라면 «510kcal 개(120g)당»(1 분리)",
+   "name": "더핫 열라면 4입",
+   "kf_kcal_100": 425,
+   "want": {
+    "basis": "per_serving",
+    "amount": 120,
+    "calories": 510,
+    "kcal_per100": 425
+   },
+   "now": {
+    "basis": "per_total",
+    "amount": null,
+    "calories": 510
+   }
+  },
+  {
+   "id": "306661",
+   "cls": "R",
+   "note": "두유 190ml 55kcal",
+   "name": "단호박 아침두유 (190mL X 10개)",
+   "kf_kcal_100": 40,
+   "want": {
+    "basis": "per_serving",
+    "amount": 190,
+    "calories": 55,
+    "kcal_per100": 28.9
+   },
+   "now": {
+    "basis": "per_serving",
+    "amount": 190,
+    "calories": 55
+   }
+  },
+  {
+   "id": "306736",
+   "cls": "A",
+   "note": "콘푸로스트 «1회섭취참고량(30g)당 116kcal»",
+   "name": "콘푸로스트 다크초코 시리얼 550g",
+   "kf_kcal_100": 387,
+   "want": {
+    "basis": "per_serving",
+    "amount": 30,
+    "calories": 116,
+    "kcal_per100": 386.7
+   },
+   "now": {
+    "basis": "per_100g",
+    "amount": 100,
+    "calories": 116
+   }
+  },
+  {
+   "id": "306738",
+   "cls": "A",
+   "note": "시리얼 «30g당 115kcal»",
+   "name": "포스트바이오틱스 유산균 시리얼 560g",
+   "kf_kcal_100": 383,
+   "want": {
+    "basis": "per_serving",
+    "amount": 30,
+    "calories": 115,
+    "kcal_per100": 383.3
+   },
+   "now": {
+    "basis": "per_100g",
+    "amount": 100,
+    "calories": 115
+   }
+  },
+  {
+   "id": "306741",
+   "cls": "A",
+   "note": "초코쌀별 «30g당 120 kcal»",
+   "name": "뽀로로 초코쌀별 쌀 시리얼 450g",
+   "kf_kcal_100": 400,
+   "want": {
+    "basis": "per_serving",
+    "amount": 30,
+    "calories": 120,
+    "kcal_per100": 400
+   },
+   "now": {
+    "basis": "per_100g",
+    "amount": 100,
+    "calories": 120
+   }
+  },
+  {
+   "id": "306747",
+   "cls": "A",
+   "note": "그래놀라 «1회섭취참고량(30g)당 128kcal»",
+   "name": "넛츠&씨드 그래놀라 500g",
+   "kf_kcal_100": 427,
+   "want": {
+    "basis": "per_serving",
+    "amount": 30,
+    "calories": 128,
+    "kcal_per100": 426.7
+   },
+   "now": {
+    "basis": "per_100g",
+    "amount": 100,
+    "calories": 128
+   }
+  },
+  {
+   "id": "307192",
+   "cls": "B",
+   "note": "양반밥 «1개당(130g) 205 kcal»",
+   "name": "양반 100밥 카무트 현미밥 130g*6입",
+   "kf_kcal_100": 158,
+   "want": {
+    "basis": "per_serving",
+    "amount": 130,
+    "calories": 205,
+    "kcal_per100": 157.7
+   },
+   "now": {
+    "basis": "per_total",
+    "amount": null,
+    "calories": 205
+   }
+  },
+  {
+   "id": "307200",
+   "cls": "R",
+   "note": "곤드레 «1인분(242g)당 380kcal»",
+   "name": "국산 생곤드레로 만든 곤드레나물밥 (4개입)",
+   "kf_kcal_100": 184,
+   "want": {
+    "basis": "per_serving",
+    "amount": 242,
+    "calories": 380,
+    "kcal_per100": 157
+   },
+   "now": {
+    "basis": "per_serving",
+    "amount": 242,
+    "calories": 380
+   }
+  },
+  {
+   "id": "307302",
+   "cls": "R",
+   "note": "양파절임 «100g당 11 kcal»",
+   "name": "저당 양파절임소스",
+   "kf_kcal_100": 50,
+   "want": {
+    "basis": "per_100g",
+    "amount": 100,
+    "calories": 11,
+    "kcal_per100": 11
+   },
+   "now": {
+    "basis": "per_100g",
+    "amount": 100,
+    "calories": 11
+   }
+  },
+  {
+   "id": "307567",
+   "cls": "R",
+   "note": "진한두부 «100g 당 100 kcal»",
+   "name": "특등급 국산콩 고농도 진한두부",
+   "kf_kcal_100": 33,
+   "want": {
+    "basis": "per_100g",
+    "amount": 100,
+    "calories": 100,
+    "kcal_per100": 100
+   },
+   "now": {
+    "basis": "per_100g",
+    "amount": 100,
+    "calories": 100
+   }
+  },
+  {
+   "id": "307622",
+   "cls": "X",
+   "note": "칼국수 «(97%)당 350 kcal» OCR + 97gx4 — OCR 훼손(«1봉지(97g)당»→«(97%)당») · 처리하지 않음(억지 매칭 금지)",
+   "name": "후루룩칼국수 97g*4입",
+   "kf_kcal_100": 345,
+   "want": {
+    "basis": "per_total",
+    "amount": null,
+    "calories": 350,
+    "kcal_per100": null
+   },
+   "now": {
+    "basis": "per_total",
+    "amount": null,
+    "calories": 350
+   }
+  },
+  {
+   "id": "307645",
+   "cls": "B",
+   "note": "연양갱 «1갑(50g)당 95 kcal» + 총 300g",
+   "name": "제로 연양갱 50g X 6개입",
+   "kf_kcal_100": 190,
+   "want": {
+    "basis": "per_serving",
+    "amount": 50,
+    "calories": 95,
+    "kcal_per100": 190
+   },
+   "now": {
+    "basis": "per_total",
+    "amount": null,
+    "calories": 95
+   }
+  },
+  {
+   "id": "307883",
+   "cls": "R",
+   "note": "닭목살 «총 내용량 200g … 450 kcal»",
+   "name": "직화 닭목살구이 매콤한맛 200g (냉동)",
+   "kf_kcal_100": 450,
+   "want": {
+    "basis": "per_total",
+    "amount": null,
+    "calories": 450,
+    "kcal_per100": null
+   },
+   "now": {
+    "basis": "per_total",
+    "amount": null,
+    "calories": 450
+   }
+  },
+  {
+   "id": "307884",
+   "cls": "R",
+   "note": "용가리 «100g당 278kcal»",
+   "name": "용가리 떡갈비 600g",
+   "kf_kcal_100": 345,
+   "want": {
+    "basis": "per_100g",
+    "amount": 100,
+    "calories": 278,
+    "kcal_per100": 278
+   },
+   "now": {
+    "basis": "per_100g",
+    "amount": 100,
+    "calories": 278
+   }
+  },
+  {
+   "id": "307913",
+   "cls": "B",
+   "note": "라볶이 «1봉지당(145g) 575 kcal»",
+   "name": "팔도라볶이 4입",
+   "kf_kcal_100": 393,
+   "want": {
+    "basis": "per_serving",
+    "amount": 145,
+    "calories": 575,
+    "kcal_per100": 396.6
+   },
+   "now": {
+    "basis": "per_total",
+    "amount": null,
+    "calories": 575
+   }
+  },
+  {
+   "id": "307914",
+   "cls": "B",
+   "note": "짜장면 «1봉지당(203g) 595 kcal»",
+   "name": "팔도짜장면 4입",
+   "kf_kcal_100": 293,
+   "want": {
+    "basis": "per_serving",
+    "amount": 203,
+    "calories": 595,
+    "kcal_per100": 293.1
+   },
+   "now": {
+    "basis": "per_total",
+    "amount": null,
+    "calories": 595
+   }
+  }
+ ]
+}

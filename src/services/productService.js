@@ -271,7 +271,12 @@ async function getWebLabelProduct(webId) {
   const payload = await assembleProductPayload(product, WEB_DEPS, { webId });
   payload.web_label = buildWebLabelBlock(product);
   // ★ 세션80 R8 — 판매처 품목 영양이 비었고 같은 품목보고번호 K-FIND 후보가 정확히 1개면 보충(신호등은 켜지 않는다 · 블록 안 · 최상위 키 무변경)
-  payload.web_label.kfind_supplement = payload.nutrition === null ? await loadKfindSupplement(product.c005_report_no) : null;
+  // ★ 세션81g C3 — 판매처 영양이 있어도 식약처와 «크게» 다르면 같은 번호 K-FIND 값을 «비교»로 함께(신호등·내 기준 미사용 · 정답 IP/eval_kfind_compare_v1).
+  if (payload.nutrition === null) payload.web_label.kfind_supplement = await loadKfindSupplement(product.c005_report_no);
+  else if (payload.web_label.kfind_gross) {
+    const sup = await loadKfindSupplement(product.c005_report_no);
+    payload.web_label.kfind_supplement = sup ? { ...sup, role: 'compare', badge: KFIND_COMPARE_BADGE } : null;
+  } else payload.web_label.kfind_supplement = null;
   return payload;
 }
 
@@ -281,6 +286,7 @@ const KFIND_BADGE = '식약처 영양성분 DB · 바코드·원재료 정보 �
 const KFIND_WARNING = '영양성분만 있는 공공 데이터예요. 알레르기와 원재료는 실물 포장을 확인하세요.';
 const KFIND_SOURCE_LABEL = '출처: 식품의약품안전처 식품영양성분 데이터베이스';
 const KFIND_SUPPLEMENT_BADGE = '식약처 영양성분 DB 보충';
+const KFIND_COMPARE_BADGE = '식약처 영양성분 DB 값(비교)';   // 세션81g C3
 const KFIND_BADGE_LINKED = '식약처 영양성분 DB · 바코드 확인됨 · 원재료 정보 없음';   // 세션80 바코드 잇기(R2)
 let _kfMissingLogged = false;
 
@@ -359,7 +365,15 @@ function buildWebLabelBlock(product) {
     barcode_linked: false,
     // ★ 세션79(제이 23:05) — 포장지에 인쇄된 기준·숫자 {basis, amount, unit, values, upper_bound?} | null. 화면은 이것을 먼저, 100 기준을 보조로.
     label_nutrition: product.label_basis || null,
+    // ★ 세션81g C2 — 신호등을 끈 사유('calc' 4·4·9 실패 | 'kfind' 식약처와 다름 | null) · 열량이 «크게» 다른가(정답 IP/eval_kfind_compare_v1).
+    ...offReason(product),
   };
+}
+function offReason(product) {
+  let q = product.quality; if (typeof q === 'string') { try { q = JSON.parse(q); } catch { q = null; } }
+  const kf = (q && q.kfind) || null;
+  const reason = product.nutrition_ok !== false ? null : (kf && kf.result === 'conflict' && q.nutrition_449 === true ? 'kfind' : 'calc');
+  return { nutrition_off_reason: reason, kfind_gross: !!(kf && kf.gross === true) };
 }
 
 /** public 제품의 빈 축만 판매처 라벨 보충으로 채운다. 신호등·allergens 키는 건드리지 않는다(보충으로 «안전»을 단정하지 않는다). 실패 = null. */
@@ -819,7 +833,7 @@ module.exports = {
   getWebLabelProduct,         // 세션79 U78-3
   getWebLabelAdditives,       // 세션79 E9
   getKfindProduct,            // 세션80 결정 80-1
-  KFIND_BADGE, KFIND_BADGE_LINKED, KFIND_WARNING, KFIND_SOURCE_LABEL, KFIND_SUPPLEMENT_BADGE, _kfindReleaseLabel: kfindReleaseLabel,
+  KFIND_BADGE, KFIND_BADGE_LINKED, KFIND_WARNING, KFIND_SOURCE_LABEL, KFIND_SUPPLEMENT_BADGE, KFIND_COMPARE_BADGE, _kfindReleaseLabel: kfindReleaseLabel,
   WEB_LABEL_BADGE, WEB_LABEL_BADGE_LINKED, WEB_LABEL_WARNING, WEB_SUPPLEMENT_BADGE,   // 세션79 — 라우트·평가가 같은 문구를 쓴다
   _collectedLabel: collectedLabel,
   getProductAdditives,

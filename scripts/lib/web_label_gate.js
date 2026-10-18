@@ -61,7 +61,10 @@ function kfindCheck(wl, cands) {
     if (a == null || b == null) continue;
     if (Math.abs(a - b) > Math.max(abs, 0.1 * Math.max(Math.abs(a), Math.abs(b)))) diff.push(ax);
   }
-  return { result: diff.length ? 'conflict' : 'agree', diff, ...(best.food_cd ? { food_cd: best.food_cd } : {}) };
+  // ★ 세션81g C1 — 열량이 «크게» 다르면 gross:true(작은/큰 < 1/1.5 · 차 > 20kcal). 아니면 키를 넣지 않는다(G 정답 모양 유지).
+  const kb = _n(best.calories); const lo = Math.min(k, kb); const hi = Math.max(k, kb);
+  const gross = hi > 0 && lo / hi < 1 / 1.5 && hi - lo > 20;
+  return { result: diff.length ? 'conflict' : 'agree', diff, ...(best.food_cd ? { food_cd: best.food_cd } : {}), ...(gross ? { gross: true } : {}) };
 }
 
 module.exports = { cleanFoodType, nutritionOk, allergenCheck, productStatus, kfindCheck, MAJOR };

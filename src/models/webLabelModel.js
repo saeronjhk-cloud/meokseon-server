@@ -47,7 +47,7 @@ async function findWebProduct(webId, q) {
     `SELECT p.product_id, NULL::text AS barcode, p.product_name, p.brand, p.manufacturer,
             p.food_type, p.food_category, p.serving_size, p.total_content, p.content_unit,
             p.data_source, NULL::text AS image_url, p.verification, p.verify_count,
-            p.status, p.nutrition_ok, p.collected_at, p.c005_report_no,
+            p.status, p.nutrition_ok, p.collected_at, p.c005_report_no, p.quality,
             n.calories, n.total_fat, n.saturated_fat, n.trans_fat, n.cholesterol, n.sodium,
             n.total_carbs, n.total_sugars, n.dietary_fiber, n.protein,
             n.data_source AS nutrition_source, n.serving_size AS nutrition_serving_size, n.verified_at,

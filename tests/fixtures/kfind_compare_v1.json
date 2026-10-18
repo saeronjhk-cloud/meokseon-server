@@ -1,0 +1,32 @@
+{
+ "name": "eval_kfind_compare_v1 (판매처 ↔ 식약처 크게 다를 때 비교 표시 · 신호등 끈 사유 문구)",
+ "fixed_at": "2026-10-18 15:2x 세션81g · 구현 전 고정",
+ "why": "세션81f 실측: 열량이 크게 다른 활성 판매처 품목 38 — 판매처가 틀린 것(한우미역국 466 · 즉석국 · 쏙떡)과 식약처가 틀린 것(꼬치어묵 53 · 진한두부 33 — 라벨 «100g당 100kcal»)이 섞여 있다 → 엔진이 한쪽을 숨기면 맞는 값을 숨긴다. 둘 다 보여 주고 실물 확인을 권한다. 신호등은 종전대로 끈다(80-8). 동시에 «열량 계산과 맞지 않아» 문구가 K-FIND 불일치로 꺼진 경우에도 나오던 것을 사유별로 나눈다.",
+ "rules": [
+  "C1 kfindCheck 결과에 gross:true — 두 열량이 모두 있고 (작은 쪽/큰 쪽) < 1/1.5 이며 |차| > 20kcal 일 때만. 아니면 gross 키를 넣지 않는다(기존 G 정답 모양 유지).",
+  "C2 web_label 블록 nutrition_off_reason: nutrition_ok ≠ false → null · quality.kfind.result='conflict' 이고 quality.nutrition_449=true → 'kfind' · 그 밖(4·4·9 실패) → 'calc'. kfind_gross: quality.kfind.gross === true.",
+  "C3 web_label.kfind_supplement: 판매처 영양 없음 → 종전 R8(보충 · role 없음) · 판매처 영양 있음 + kfind_gross → 같은 품목보고번호 K-FIND 후보 정확히 1개일 때 role:'compare' · badge '식약처 영양성분 DB 값(비교)' · 그 밖 null.",
+  "C4 신호등은 바꾸지 않는다(nutrition_ok 그대로 · compare 값은 신호등·«내 기준으로 보기»에 쓰지 않는다)."
+ ],
+ "check_cases": [
+  {"id":"KC01","desc":"205 vs 53 → gross","wl":{"calories":205,"sodium":500},"cands":[{"calories":53,"sodium":500,"food_cd":"P1"}],"want_gross":true},
+  {"id":"KC02","desc":"나트륨만 다름 → gross 없음","wl":{"calories":400,"sodium":1200},"cands":[{"calories":395,"sodium":800,"food_cd":"P1"}],"want_gross":false,"want_result":"conflict"},
+  {"id":"KC03","desc":"4 vs 2 kcal(제로 음료) → 차 20kcal 이하 → gross 아님","wl":{"calories":4},"cands":[{"calories":2,"food_cd":"P1"}],"want_gross":false},
+  {"id":"KC04","desc":"120 vs 170(1.42배) → gross 아님","wl":{"calories":120},"cands":[{"calories":170,"food_cd":"P1"}],"want_gross":false},
+  {"id":"KC05","desc":"39.5 vs 68(1.72배 · 차 28.5) → gross","wl":{"calories":39.5},"cands":[{"calories":68,"food_cd":"P1"}],"want_gross":true}
+ ],
+ "runtime_cases": [
+  {"id":"KR01","desc":"영양 있음 + gross + 후보 1 → nutrition_off_reason 'kfind' · kfind_gross true · kfind_supplement.role 'compare' · badge 비교"},
+  {"id":"KR02","desc":"영양 있음 + conflict(gross 아님) → reason 'kfind' · kfind_gross false · supplement null"},
+  {"id":"KR03","desc":"4·4·9 실패(kfind agree) → reason 'calc' · supplement null"},
+  {"id":"KR04","desc":"nutrition_ok true → reason null · supplement null"},
+  {"id":"KR05","desc":"영양 없음 → 종전 R8 보충(role 없음 · badge «식약처 영양성분 DB 보충»)"},
+  {"id":"KR06","desc":"gross 인데 K-FIND 후보 2개 → supplement null"}
+ ],
+ "wording": {
+  "compare_badge": "식약처 영양성분 DB 값(비교)",
+  "note_calc": "판매처 라벨의 영양 수치가 열량 계산과 맞지 않아 신호등을 표시하지 않아요. 수치는 참고만 해 주세요.",
+  "note_kfind": "판매처 라벨 값이 식약처 영양성분 DB와 달라 신호등을 표시하지 않아요. 수치는 참고만 해 주세요.",
+  "note_gross": "판매처 라벨 값과 식약처 영양성분 DB 값이 크게 달라요. 아래 두 값을 비교하고, 실물 포장을 꼭 확인하세요."
+ }
+}

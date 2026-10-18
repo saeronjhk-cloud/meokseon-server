@@ -1,6 +1,6 @@
 {
  "name": "eval_label_basis_anchor_v1",
- "fixed_at": "2026-10-18 11:2x 세션81 · 구현 전 고정",
+ "fixed_at": "2026-10-18 11:2x 세션81 · 구현 전 고정 · v1.1 회귀 2건 추가 2026-10-18 15:5x(CI 68-eval 실패 원인)",
  "source": "판매처(컬리) 상세 이미지 OCR 원문 .tmp/s78/crawl_run1/ocr/rv_*/ocr.txt → texts/<web_label id>.txt",
  "rules": [
   "B1 열량 숫자 «바로 앞»에 붙은 기준(«30g당 166 kcal» · «1회섭취참고량(30g)당 128kcal» · «1개당(130g) 205 kcal» · «개(120g)당»)이 있으면 그 기준이 이긴다 — 같은 라벨의 «100g당»(기준치 칸 머리)보다 우선.",
@@ -350,6 +350,34 @@
     "amount": null,
     "calories": 595
    }
+  },
+  {
+   "id": "V048",
+   "cls": "R",
+   "note": "칼집돼지왕구이 «2000g당 185 kcal»(=«100g당» OCR 오독 · 내용량 1kg) → 1회분이 총량보다 클 수 없음 · 68-eval 기준선 회귀(세션81 v1.1)",
+   "name": "칼집돼지왕구이(68-eval 048)",
+   "kf_kcal_100": null,
+   "want": {
+    "basis": "per_100g",
+    "amount": 100,
+    "calories": 185,
+    "kcal_per100": 185
+   },
+   "now": null
+  },
+  {
+   "id": "rv_1002070588",
+   "cls": "R",
+   "note": "미니샘초코 «총 내용량 30mL(38ml * 1개)»(OCR 오독 · 실제 380mL) + «1개(38ml)당 70kcal» → 내용량은 가장 큰 값과 비교(세션81 v1.1)",
+   "name": "미니샘초코 바닐라빈",
+   "kf_kcal_100": null,
+   "want": {
+    "basis": "per_serving",
+    "amount": 38,
+    "calories": 70,
+    "kcal_per100": 184.2
+   },
+   "now": null
   }
  ]
 }

@@ -60,7 +60,14 @@ function reconcileServingVsPer100({ text, basis, calories }) {
   const pairs = [];
   for (const m of t.matchAll(RE_SERVING_KCAL)) pairs.push({ s: n(m[1]), unit: m[2], k: n(m[3]), reason: 'serving_kcal_pair' });
   for (const [reason, re, si, ui, ki] of RE_PAIR) for (const m of t.matchAll(re)) pairs.push({ s: n(m[si]), unit: m[ui], k: n(m[ki]), reason });
+  // ★ 세션81 v1.1 — 1회분은 총 내용량보다 클 수 없고 1kg(1L)를 넘지 않는다(68-eval 048 «2000g당 185 kcal» = «100g당» OCR 오독 · 내용량 1kg).
+  //   라벨의 «내용량» 숫자 중 «가장 큰 것»과 비교한다 — 첫 값은 OCR 오독일 수 있다(rv_1002070588 «총 내용량 30mL(38ml * 1개)» · 실제 380mL).
+  let totalAmt = null;
+  for (const tm of t.matchAll(/내용량[:\s]{0,10}(\d[\d,.]{0,12})\s{0,4}(kg|g|㎖|ml|mL|L)(?![a-zA-Z])/g)) {
+    const v = n(tm[1]) * (/^(kg|L)$/.test(tm[2]) ? 1000 : 1); if (v && (totalAmt == null || v > totalAmt)) totalAmt = v;
+  }
   for (const p of pairs) {
+    if (p.s && (p.s > 1000 || (totalAmt && p.s > totalAmt))) continue;
     if (p.s && p.k != null && p.k === calories && p.s !== 100) {
       if (p100k != null && p100k === calories) return null;
       return { basis: 'serving', amount: p.s, unit: String(p.unit).toLowerCase(), reason: p.reason };

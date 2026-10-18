@@ -1569,6 +1569,25 @@ router.post('/review/matches/bulk', async (req, res) => {
 const ENTITY_ROUTES = ['AUTO_APPROVE_ENTITY', 'BULK_REVIEW_READY', 'NAME_ONLY_WEAK', 'HOLD_SPLIT'];
 
 // ── GET /review/entities/summary — 엔티티 큐 헤더 카운트(candidate 멤버 보유 그룹) ──
+// ── ★ 세션81c — 바코드 연결 확인 큐(kfind.product_barcodes needs_review · HACCP + 사용자 연결) ─────────
+//   정답 IP/eval_kfind_barcode_review_v1 · 로직 src/services/kfindBarcodeReview.js
+const kbr = require('../services/kfindBarcodeReview');   // 맨 위 수준 require — boot-graph 가 보게
+router.get('/review/kfind-barcodes', async (req, res) => {
+  const data = await kbr.listQueue({ status: req.query.status, reason: req.query.reason || null, limit: req.query.limit, offset: req.query.offset });
+  res.json({ success: true, data });
+});
+router.post('/review/kfind-barcodes', async (req, res) => {
+  const { barcode, food_cd: foodCd, action } = req.body || {};
+  try {
+    const data = await kbr.decide({ barcode, foodCd, action, actor: req.admin && req.admin.email });
+    logger.info('kfind 바코드 연결 판정', { barcode, food_cd: foodCd, action, by: (req.admin && req.admin.email) || 'admin-token', changed: data.changed, siblings: data.siblings_changed });
+    res.json({ success: true, data });
+  } catch (e) {
+    if (e instanceof kbr.ReviewError) return res.status(e.status).json({ success: false, error: { code: e.code, message: e.message } });
+    throw e;
+  }
+});
+
 router.get('/review/entities/summary', async (req, res) => {
   try {
     const reg = (await db.query(`SELECT to_regclass('public.product_entity_members') t`)).rows[0].t;

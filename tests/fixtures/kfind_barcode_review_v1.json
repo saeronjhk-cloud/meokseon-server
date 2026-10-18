@@ -1,0 +1,47 @@
+{
+ "name": "eval_kfind_barcode_review_v1 (관리자 바코드 연결 확인 큐)",
+ "fixed_at": "2026-10-18 09:5x 세션81c · 구현 전 고정",
+ "scope": "kfind.product_barcodes 의 needs_review(세션80 HACCP 255 + 세션81 사용자 연결 'ublink') — 관리자가 승인/반려/되돌리기. public·web_label 표 무접촉.",
+ "rules": [
+  "A1 목록 GET /api/admin/review/kfind-barcodes?status=needs_review|approved|rejected&reason=&limit&offset → {total, by_reason, items[]} · item = barcode, food_cd, status, reason, batch_id, source('haccp'|'user'), kfind{name, maker, importer, report_no, calories, basis}, evidence, public_product{product_id, product_name}|null, siblings[{food_cd, name, status}], users(제보한 서로 다른 사용자 수 · 사용자 연결만), decided_by, decided_at.",
+  "A2 승인 POST /api/admin/review/kfind-barcodes {barcode, food_cd, action:'approve'} → status approved · decided_by = 관리자 이메일(토큰 로그인이면 'admin-token') · decided_at now.",
+  "A3 승인 가드: 그 바코드가 public.products 에 있으면 409 PUBLIC_EXISTS(스캔은 공공 제품이 이기므로 연결이 보이지 않고, 공공 보충은 금지 67). web_label 에 auto/approved 로 연결돼 있으면 409 LINKED_ELSEWHERE.",
+  "A4 승인 시 같은 바코드의 다른 kfind 행(사람 판정 없는 것)은 rejected · reason 'sibling_approved' · decided_by 같은 관리자 — 한 바코드는 한 품목(스캔 폴백은 연결 1개일 때만 보인다).",
+  "A5 반려 → status rejected · decided_by · decided_at. 이후 사용자 제보 엔진은 이 행을 keep(덮지 않음).",
+  "A6 되돌리기(reopen) → status needs_review · decided_by/decided_at NULL. A4 로 함께 반려된 형제 행도 같은 관리자·sibling_approved 면 함께 needs_review 로.",
+  "A7 대상 행 없음 404 · action/형식 오류 400 · 관리자 아님 401/403(requireAdmin 그대로).",
+  "A8 이미 그 상태면 200 changed:false(멱등)."
+ ],
+ "runtime_cases": [
+  {"id":"KA01","desc":"목록: needs_review 만 · by_reason 집계 · public_product · siblings · users 수 채움"},
+  {"id":"KA02","desc":"승인 → approved + decided_by · 비로그인 스캔이 그 품목을 냄(barcode_linked)"},
+  {"id":"KA03","desc":"공공 바코드 승인 → 409 PUBLIC_EXISTS · 행 그대로"},
+  {"id":"KA04","desc":"형제 2개 중 하나 승인 → 다른 하나 rejected(sibling_approved) · 스캔은 승인된 것"},
+  {"id":"KA05","desc":"반려 → rejected · 그 뒤 사용자 2명이 같은 연결 제보해도 행 rejected 유지(keep) · 스캔 404"},
+  {"id":"KA06","desc":"되돌리기 → needs_review · decided_by NULL · 함께 반려된 형제도 needs_review"},
+  {"id":"KA07","desc":"없는 행 404 · 잘못된 action 400 · 토큰 없음 401"},
+  {"id":"KA08","desc":"web_label 에 연결된 바코드 승인 → 409 LINKED_ELSEWHERE"},
+  {"id":"KA09","desc":"같은 상태 재요청 → changed:false"}
+ ],
+ "wording": {
+  "tab": "바코드 연결 확인",
+  "reason_ko": {
+   "conflict_public": "공공 제품에 이미 있는 바코드",
+   "conflict_linked": "다른 품목에 이미 연결된 바코드",
+   "conflict_user": "사용자마다 다른 제품으로 연결",
+   "user_pair_unverified": "사용자 2명 · 업체 바코드 대역 확인 안 됨",
+   "maker_only": "제조사만 같음(이름 다름)",
+   "identity": "이름·제조사 모두 다름",
+   "multi_kfind": "같은 품목보고번호에 품목 여러 개",
+   "multi": "후보 여러 개",
+   "size_mismatch": "용량 다름",
+   "sibling_approved": "같은 바코드의 다른 품목을 승인함"
+  },
+  "source_ko": {"haccp": "HACCP 공공자료", "user": "사용자 연결"},
+  "approve": "이 연결 승인",
+  "reject": "반려",
+  "reopen": "되돌리기",
+  "blocked_public": "공공 제품에 이미 있는 바코드라 승인할 수 없어요(스캔하면 공공 제품이 먼저 나와요).",
+  "blocked_linked": "판매처 품목에 이미 연결된 바코드라 승인할 수 없어요."
+ }
+}

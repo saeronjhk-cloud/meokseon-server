@@ -342,20 +342,22 @@ function extractConflicts(literals, file) {
   let lastTable = null;
   for (const lit of literals) {
     const flat = lit.text.replace(/\s+/g, ' ');
-    const im = flat.match(/INSERT\s+INTO\s+([a-z_][a-z0-9_]*)\b/i);
-    if (im) lastTable = im[1].toLowerCase();
+    // ★ 세션81 — «스키마.표»(web_label.* · kfind.*)도 읽는다. public 은 종전대로 표 이름만(qkey 와 같은 규칙).
+    //   (종전: `INSERT INTO kfind.product_barcodes` 를 `kfind` 로 읽어 «UNIQUE 없음» 거짓 빨강 · scripts 쪽은 «baseline 에 없다» 경고로 «검사 자체가 빠졌다»)
+    const im = flat.match(/INSERT\s+INTO\s+((?:[a-z_][a-z0-9_]*\.)?[a-z_][a-z0-9_]*)\b/i);
+    if (im) lastTable = im[1].toLowerCase().replace(/^public\./, '');
     const re = /ON\s+CONFLICT\s*\(([^)]*)\)(\s*WHERE\s+[^)]*?)?\s*DO\b/gi;
     let cm;
     while ((cm = re.exec(flat)) !== null) {
       const cols = cm[1].split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
       if (!cols.length) continue;
       out.push({
-        file, line: lit.line, table: im ? im[1].toLowerCase() : lastTable,
+        file, line: lit.line, table: im ? im[1].toLowerCase().replace(/^public\./, '') : lastTable,
         cols, partial: !!cm[2], inferred: !im,
       });
     }
     if (/ON\s+CONFLICT\s+ON\s+CONSTRAINT/i.test(flat)) {
-      out.push({ file, line: lit.line, table: im ? im[1].toLowerCase() : lastTable, byConstraint: true });
+      out.push({ file, line: lit.line, table: im ? im[1].toLowerCase().replace(/^public\./, '') : lastTable, byConstraint: true });
     }
   }
   return out;
@@ -539,7 +541,7 @@ function collectCreators(files) {
 
   // UNIQUE 인덱스 목록 (partial 술어 포함)
   const uniqRows = (await db.query(`
-    SELECT t.relname AS tbl, i.relname AS idx,
+    SELECT CASE WHEN n.nspname = 'public' THEN t.relname ELSE n.nspname || '.' || t.relname END AS tbl, i.relname AS idx,
            ix.indpred IS NOT NULL AS partial,
            pg_get_expr(ix.indpred, ix.indrelid) AS pred,
            ARRAY(SELECT a.attname FROM unnest(ix.indkey) WITH ORDINALITY k(attnum, ord)
@@ -549,7 +551,7 @@ function collectCreators(files) {
       JOIN pg_class i ON i.oid = ix.indexrelid
       JOIN pg_class t ON t.oid = ix.indrelid
       JOIN pg_namespace n ON n.oid = t.relnamespace
-     WHERE n.nspname = 'public' AND ix.indisunique`)).rows;
+     WHERE n.nspname = ANY($1) AND ix.indisunique`, [['public', ...EXTRA_SCHEMAS]])).rows;   // ★ 세션81 — 분리 스키마의 UNIQUE 도(키 = qkey 규칙)
   const uniquesByTable = new Map();
   for (const r of uniqRows) {
     if (!uniquesByTable.has(r.tbl)) uniquesByTable.set(r.tbl, []);

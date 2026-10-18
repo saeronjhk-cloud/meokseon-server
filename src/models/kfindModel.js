@@ -84,4 +84,15 @@ async function findKfindIdByBarcode(barcode, q) {
   return r.rows.length === 1 ? r.rows[0].food_cd : null;
 }
 
-module.exports = { searchKfind, findKfindProduct, findByReportNo, findKfindIdByBarcode };
+/** ★ 세션81 사용자 바코드 연결 — 판정 대상 품목(노출 여부 · 같은 품목보고번호의 노출 품목 수 포함). 없으면 null. */
+async function findLinkTarget(foodCd, q) {
+  const r = await run(q)(
+    `SELECT k.food_cd, k.food_name, k.maker, k.importer, k.report_no,
+            (k.status = 'active' AND ${NOT_SHADOWED}) AS exposed,
+            (SELECT count(*)::int FROM kfind.products k2 WHERE k2.report_no = k.report_no AND k2.status = 'active') AS report_kfind_count
+       FROM kfind.products k WHERE k.food_cd = $1`, [foodCd]);
+  const x = r.rows[0]; if (!x) return null;
+  return { food_cd: x.food_cd, name: x.food_name, maker: x.maker, importer: x.importer, report_no: x.report_no, exposed: !!x.exposed, report_kfind_count: Number(x.report_kfind_count) || 1 };
+}
+
+module.exports = { searchKfind, findKfindProduct, findByReportNo, findKfindIdByBarcode, findLinkTarget };

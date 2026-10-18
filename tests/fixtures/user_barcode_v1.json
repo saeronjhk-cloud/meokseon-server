@@ -1,0 +1,1032 @@
+{
+ "name": "eval_user_barcode_v1 (UB 순수 판정 · UR 런타임) · v1.1",
+ "fixed_at": "2026-10-17 23:3x (세션81 · 구현 전 고정)",
+ "decision": "결정 80-9 «사용자 바코드 연결» 엔진 · 결정 81-1~81-4(인수인계 192). 증거 출처 source = user | photo | gs1 (haccp 는 113 그대로). 판정은 엔진 규칙(AI 아님). public·web_label 표 무접촉. 대상은 kfind 품목만(v1).",
+ "measured_basis": {
+  "prefix_probe": "backends/먹선/.tmp/s81/prefix_loo.js — 오프라인 120,119 바코드(c005 members 2026-10-05 + HACCP 덤프). 9자리 대역: 실제 제조사가 같은 대역 다른 바코드 제조사와 일치 98.7% · 무작위 다른 제조사가 우연히 일치 0.03% · 대역당 평균 제조사 2.32. 8자리: 98.9% · 0.10% · 4.88.",
+  "meaning": "대역 일치 = «같은 회사 계열» 근거(다른 회사 바코드를 잘못 찍은 경우를 거의 다 거른다). 같은 회사의 다른 맛·용량은 못 가린다 → 대역 일치만으로는 모든 사용자에게 보이는 연결(auto)을 주지 않는다(결정 80-7 maker_only 와 같은 이유)."
+ },
+ "statuses": {
+  "auto": "모든 사용자의 스캔에서 연결(kfind.product_barcodes status auto)",
+  "personal": "제보한 그 사용자에게만 연결(본인 조회 경로) · 전역 저장 없음",
+  "needs_review": "kfind.product_barcodes needs_review(관리자 큐) · 본인 표시 여부는 personal 플래그",
+  "reject": "저장 안 함(제보 기록만)",
+  "keep": "사람이 이미 판정한 행(decided_by) — 엔진이 바꾸지 않음"
+ },
+ "rules": [
+  "N1 바코드 정규화: 숫자만 · 12자리(UPC-A)는 앞에 0 을 붙여 13자리 · 8/13자리 아니면 형식 오류.",
+  "R1 체크섬 실패 → reject(checksum).",
+  "R2 대상 kfind 품목이 노출 중이 아님(withdrawn·숨김) → reject(target_hidden).",
+  "R3 같은 (바코드, food_cd)에 사람 판정(decided_by) 있음 → keep(decided).",
+  "R4 그 바코드가 public.products 에 있음 → needs_review(conflict_public) · personal=false(스캔하면 공공 제품이 이미 나온다).",
+  "R5 그 바코드가 다른 품목(web_label 또는 다른 kfind)에 auto/approved → needs_review(conflict_linked) · personal=false.",
+  "R6 같은 바코드에 서로 다른 사용자가 다른 food_cd 를 제보 → needs_review(conflict_user) · personal=true(각자 고른 것을 본인에게만).",
+  "R7 대역 판정: 880 으로 시작하는 13자리만. 9자리 대역에 알려진 제조사가 있으면 그것으로, 없으면 8자리. 대상 maker 또는 importer 가 대역 제조사 중 하나와 (표기 정리 후) 포함 일치 → match · 알려진 제조사가 있는데 하나도 안 맞음 → mismatch · 알려진 것 없음/880 아님 → unknown.",
+  "R9 source=user: 같은 food_cd 를 제보한 서로 다른 사용자 수 n(같은 사용자는 최신 1건). 대역 match: n≥2 → auto(user_pair) · n=1 → personal(user_single). 대역 mismatch/unknown: n≥3 → auto(user_trio_unverified) · n=2 → needs_review(user_pair_unverified, personal) · n=1 → personal(user_single_unverified). (v1.1)",
+  "R10 source=photo(포장 사진 OCR 의 품목보고번호·이름): 번호 숫자가 대상 report_no 와 다름 → reject(report_no) · 같은 번호의 노출 kfind 품목이 2개 이상 → needs_review(multi_kfind) personal=true · 이름 불일치 → needs_review(identity) personal=true · 모두 통과 → auto(photo_report_no). 대역은 보지 않는다(v1.1).",
+  "R11 source=gs1(외부 표준DB 레코드 이름·제조사·규격): 규격 불일치 → needs_review(size_mismatch) · 이름 불일치(제조사만 일치 포함) → needs_review(maker_only 또는 identity) · gs1 이름이 맞는 kfind 후보가 2개 이상 → needs_review(multi) · 통과 → auto(gs1_exact). personal=false(사용자 행위가 아님).",
+  "R12 이름 일치·제조사 일치·규격은 scripts/lib/barcode_link_gate 의 nameMatch·makerMatch·sizeOf 를 그대로 쓴다(복제 금지)."
+ ],
+ "fixtures_note": "B(p12) = 앞 12자리 + 계산된 체크숫자. 대역 표는 케이스마다 prefix9/prefix8 로 준다(제조사는 표기 정리 전 원문).",
+ "cases": [
+  {
+   "id": "UB01",
+   "desc": "사용자 1명 · 대역 일치 → personal",
+   "in": {
+    "barcode": "B(880123456001)",
+    "target": {
+     "food_cd": "P1",
+     "name": "바삭김부각",
+     "maker": "(주)부각상회",
+     "report_no": "2001",
+     "exposed": true,
+     "report_kfind_count": 1
+    },
+    "claims": [
+     {
+      "user": 1,
+      "food_cd": "P1",
+      "source": "user",
+      "at": 1
+     }
+    ],
+    "prefix9": [
+     "부각상회 경기도 이천시"
+    ],
+    "prefix8": []
+   },
+   "want": {
+    "status": "personal",
+    "reason": "user_single",
+    "personal": true,
+    "prefix": "match"
+   }
+  },
+  {
+   "id": "UB02",
+   "desc": "서로 다른 사용자 2명 같은 품목 · 대역 일치 → auto",
+   "in": {
+    "barcode": "B(880123456001)",
+    "target": {
+     "food_cd": "P1",
+     "name": "바삭김부각",
+     "maker": "(주)부각상회",
+     "report_no": "2001",
+     "exposed": true,
+     "report_kfind_count": 1
+    },
+    "claims": [
+     {
+      "user": 1,
+      "food_cd": "P1",
+      "source": "user",
+      "at": 1
+     },
+     {
+      "user": 2,
+      "food_cd": "P1",
+      "source": "user",
+      "at": 2
+     }
+    ],
+    "prefix9": [
+     "부각상회"
+    ],
+    "prefix8": []
+   },
+   "want": {
+    "status": "auto",
+    "reason": "user_pair",
+    "personal": true,
+    "prefix": "match"
+   }
+  },
+  {
+   "id": "UB03",
+   "desc": "같은 사용자가 두 번 → 1명으로 셈 → personal",
+   "in": {
+    "barcode": "B(880123456001)",
+    "target": {
+     "food_cd": "P1",
+     "name": "바삭김부각",
+     "maker": "부각상회",
+     "report_no": "2001",
+     "exposed": true,
+     "report_kfind_count": 1
+    },
+    "claims": [
+     {
+      "user": 1,
+      "food_cd": "P1",
+      "source": "user",
+      "at": 1
+     },
+     {
+      "user": 1,
+      "food_cd": "P1",
+      "source": "user",
+      "at": 5
+     }
+    ],
+    "prefix9": [
+     "부각상회"
+    ],
+    "prefix8": []
+   },
+   "want": {
+    "status": "personal",
+    "reason": "user_single",
+    "personal": true
+   }
+  },
+  {
+   "id": "UB04",
+   "desc": "두 사용자가 다른 품목 → conflict_user",
+   "in": {
+    "barcode": "B(880123456001)",
+    "target": {
+     "food_cd": "P1",
+     "name": "바삭김부각",
+     "maker": "부각상회",
+     "report_no": "2001",
+     "exposed": true,
+     "report_kfind_count": 1
+    },
+    "claims": [
+     {
+      "user": 1,
+      "food_cd": "P1",
+      "source": "user",
+      "at": 1
+     },
+     {
+      "user": 2,
+      "food_cd": "P2",
+      "source": "user",
+      "at": 2
+     }
+    ],
+    "prefix9": [
+     "부각상회"
+    ],
+    "prefix8": []
+   },
+   "want": {
+    "status": "needs_review",
+    "reason": "conflict_user",
+    "personal": true
+   }
+  },
+  {
+   "id": "UB05",
+   "desc": "체크섬 실패 → reject",
+   "in": {
+    "barcode": "8801234560010",
+    "target": {
+     "food_cd": "P1",
+     "name": "바삭김부각",
+     "maker": "부각상회",
+     "report_no": "2001",
+     "exposed": true,
+     "report_kfind_count": 1
+    },
+    "claims": [
+     {
+      "user": 1,
+      "food_cd": "P1",
+      "source": "user",
+      "at": 1
+     }
+    ],
+    "prefix9": [],
+    "prefix8": []
+   },
+   "want_if_checksum_bad": true,
+   "want": {
+    "status": "reject",
+    "reason": "checksum",
+    "personal": false
+   }
+  },
+  {
+   "id": "UB06",
+   "desc": "공공 제품에 있는 바코드 → conflict_public · 본인 표시 안 함",
+   "in": {
+    "barcode": "B(880123456002)",
+    "public_hit": true,
+    "target": {
+     "food_cd": "P1",
+     "name": "바삭김부각",
+     "maker": "부각상회",
+     "report_no": "2001",
+     "exposed": true,
+     "report_kfind_count": 1
+    },
+    "claims": [
+     {
+      "user": 1,
+      "food_cd": "P1",
+      "source": "user",
+      "at": 1
+     }
+    ],
+    "prefix9": [
+     "부각상회"
+    ],
+    "prefix8": []
+   },
+   "want": {
+    "status": "needs_review",
+    "reason": "conflict_public",
+    "personal": false
+   }
+  },
+  {
+   "id": "UB07",
+   "desc": "다른 품목에 이미 auto 연결 → conflict_linked",
+   "in": {
+    "barcode": "B(880123456003)",
+    "linked_other": true,
+    "target": {
+     "food_cd": "P1",
+     "name": "바삭김부각",
+     "maker": "부각상회",
+     "report_no": "2001",
+     "exposed": true,
+     "report_kfind_count": 1
+    },
+    "claims": [
+     {
+      "user": 1,
+      "food_cd": "P1",
+      "source": "user",
+      "at": 1
+     },
+     {
+      "user": 2,
+      "food_cd": "P1",
+      "source": "user",
+      "at": 2
+     }
+    ],
+    "prefix9": [
+     "부각상회"
+    ],
+    "prefix8": []
+   },
+   "want": {
+    "status": "needs_review",
+    "reason": "conflict_linked",
+    "personal": false
+   }
+  },
+  {
+   "id": "UB08",
+   "desc": "대역에 다른 회사만 알려짐 · 2명 → 막지 않고 관리자 확인(user_pair_unverified) · 본인 표시 (v1.1)",
+   "in": {
+    "barcode": "B(880123456004)",
+    "target": {
+     "food_cd": "P1",
+     "name": "바삭김부각",
+     "maker": "부각상회",
+     "report_no": "2001",
+     "exposed": true,
+     "report_kfind_count": 1
+    },
+    "claims": [
+     {
+      "user": 1,
+      "food_cd": "P1",
+      "source": "user",
+      "at": 1
+     },
+     {
+      "user": 2,
+      "food_cd": "P1",
+      "source": "user",
+      "at": 2
+     }
+    ],
+    "prefix9": [
+     "롯데칠성음료(주) 안성공장"
+    ],
+    "prefix8": [
+     "롯데칠성음료"
+    ]
+   },
+   "want": {
+    "status": "needs_review",
+    "reason": "user_pair_unverified",
+    "personal": true,
+    "prefix": "mismatch"
+   }
+  },
+  {
+   "id": "UB09",
+   "desc": "9자리 대역 미지 · 8자리에서 일치 → match",
+   "in": {
+    "barcode": "B(880123456005)",
+    "target": {
+     "food_cd": "P1",
+     "name": "바삭김부각",
+     "maker": "부각상회",
+     "report_no": "2001",
+     "exposed": true,
+     "report_kfind_count": 1
+    },
+    "claims": [
+     {
+      "user": 1,
+      "food_cd": "P1",
+      "source": "user",
+      "at": 1
+     }
+    ],
+    "prefix9": [],
+    "prefix8": [
+     "부각상회",
+     "다른식품"
+    ]
+   },
+   "want": {
+    "status": "personal",
+    "reason": "user_single",
+    "personal": true,
+    "prefix": "match"
+   }
+  },
+  {
+   "id": "UB10",
+   "desc": "대역 미지 · 2명 → needs_review(user_pair_unverified) (v1.1)",
+   "in": {
+    "barcode": "B(880123456006)",
+    "target": {
+     "food_cd": "P1",
+     "name": "바삭김부각",
+     "maker": "부각상회",
+     "report_no": "2001",
+     "exposed": true,
+     "report_kfind_count": 1
+    },
+    "claims": [
+     {
+      "user": 1,
+      "food_cd": "P1",
+      "source": "user",
+      "at": 1
+     },
+     {
+      "user": 2,
+      "food_cd": "P1",
+      "source": "user",
+      "at": 2
+     }
+    ],
+    "prefix9": [],
+    "prefix8": []
+   },
+   "want": {
+    "status": "needs_review",
+    "reason": "user_pair_unverified",
+    "personal": true,
+    "prefix": "unknown"
+   }
+  },
+  {
+   "id": "UB11",
+   "desc": "수입품 UPC-A 12자리 → 0 붙여 정규화 · 880 아님 → unknown · 1명 → personal",
+   "in": {
+    "barcode": "UPC(01234567890)",
+    "target": {
+     "food_cd": "P9",
+     "name": "힙스노말 에너지",
+     "maker": "Drink Awake",
+     "importer": "드링크어웨이크",
+     "report_no": "23AU0F200D9",
+     "exposed": true,
+     "report_kfind_count": 1
+    },
+    "claims": [
+     {
+      "user": 1,
+      "food_cd": "P9",
+      "source": "user",
+      "at": 1
+     }
+    ],
+    "prefix9": [],
+    "prefix8": []
+   },
+   "want": {
+    "status": "personal",
+    "reason": "user_single_unverified",
+    "personal": true,
+    "prefix": "unknown",
+    "barcode_len": 13
+   }
+  },
+  {
+   "id": "UB12",
+   "desc": "대상 품목 숨김(공공에 같은 번호) → reject target_hidden",
+   "in": {
+    "barcode": "B(880123456001)",
+    "target": {
+     "food_cd": "P1",
+     "name": "바삭김부각",
+     "maker": "부각상회",
+     "report_no": "2001",
+     "exposed": false,
+     "report_kfind_count": 1
+    },
+    "claims": [
+     {
+      "user": 1,
+      "food_cd": "P1",
+      "source": "user",
+      "at": 1
+     }
+    ],
+    "prefix9": [
+     "부각상회"
+    ],
+    "prefix8": []
+   },
+   "want": {
+    "status": "reject",
+    "reason": "target_hidden",
+    "personal": false
+   }
+  },
+  {
+   "id": "UB13",
+   "desc": "사람 판정 행 → keep",
+   "in": {
+    "barcode": "B(880123456001)",
+    "decided": {
+     "status": "rejected",
+     "decided_by": "admin:1"
+    },
+    "target": {
+     "food_cd": "P1",
+     "name": "바삭김부각",
+     "maker": "부각상회",
+     "report_no": "2001",
+     "exposed": true,
+     "report_kfind_count": 1
+    },
+    "claims": [
+     {
+      "user": 1,
+      "food_cd": "P1",
+      "source": "user",
+      "at": 1
+     },
+     {
+      "user": 2,
+      "food_cd": "P1",
+      "source": "user",
+      "at": 2
+     }
+    ],
+    "prefix9": [
+     "부각상회"
+    ],
+    "prefix8": []
+   },
+   "want": {
+    "status": "keep",
+    "reason": "decided",
+    "personal": false
+   }
+  },
+  {
+   "id": "UB14",
+   "desc": "사진: 품목보고번호·이름 일치 · 번호당 품목 1개 → auto",
+   "in": {
+    "barcode": "B(880123456001)",
+    "target": {
+     "food_cd": "P1",
+     "name": "바삭김부각",
+     "maker": "부각상회",
+     "report_no": "20010000123",
+     "exposed": true,
+     "report_kfind_count": 1
+    },
+    "claims": [
+     {
+      "user": 1,
+      "food_cd": "P1",
+      "source": "photo",
+      "at": 1,
+      "evidence": {
+       "report_no": "2001-0000-123",
+       "name": "바삭 김부각 50g"
+      }
+     }
+    ],
+    "prefix9": [
+     "부각상회"
+    ],
+    "prefix8": []
+   },
+   "want": {
+    "status": "auto",
+    "reason": "photo_report_no",
+    "personal": true
+   }
+  },
+  {
+   "id": "UB15",
+   "desc": "사진: 품목보고번호 다름 → reject",
+   "in": {
+    "barcode": "B(880123456001)",
+    "target": {
+     "food_cd": "P1",
+     "name": "바삭김부각",
+     "maker": "부각상회",
+     "report_no": "20010000123",
+     "exposed": true,
+     "report_kfind_count": 1
+    },
+    "claims": [
+     {
+      "user": 1,
+      "food_cd": "P1",
+      "source": "photo",
+      "at": 1,
+      "evidence": {
+       "report_no": "20010000999",
+       "name": "바삭김부각"
+      }
+     }
+    ],
+    "prefix9": [
+     "부각상회"
+    ],
+    "prefix8": []
+   },
+   "want": {
+    "status": "reject",
+    "reason": "report_no",
+    "personal": false
+   }
+  },
+  {
+   "id": "UB16",
+   "desc": "사진: 같은 번호 품목 2개(맛 다름) → multi_kfind",
+   "in": {
+    "barcode": "B(880123456001)",
+    "target": {
+     "food_cd": "P1",
+     "name": "두맛 딸기",
+     "maker": "부각상회",
+     "report_no": "20010000123",
+     "exposed": true,
+     "report_kfind_count": 2
+    },
+    "claims": [
+     {
+      "user": 1,
+      "food_cd": "P1",
+      "source": "photo",
+      "at": 1,
+      "evidence": {
+       "report_no": "20010000123",
+       "name": "두맛 딸기"
+      }
+     }
+    ],
+    "prefix9": [
+     "부각상회"
+    ],
+    "prefix8": []
+   },
+   "want": {
+    "status": "needs_review",
+    "reason": "multi_kfind",
+    "personal": true
+   }
+  },
+  {
+   "id": "UB17",
+   "desc": "GS1: 이름·규격 일치 · 후보 1 → auto",
+   "in": {
+    "barcode": "B(880123456001)",
+    "target": {
+     "food_cd": "P1",
+     "name": "바삭김부각 50g",
+     "maker": "부각상회",
+     "report_no": "2001",
+     "exposed": true,
+     "report_kfind_count": 1
+    },
+    "claims": [
+     {
+      "user": null,
+      "food_cd": "P1",
+      "source": "gs1",
+      "at": 1,
+      "evidence": {
+       "name": "바삭 김부각 50g",
+       "maker": "부각상회",
+       "gs1_candidates": 1
+      }
+     }
+    ],
+    "prefix9": [
+     "부각상회"
+    ],
+    "prefix8": []
+   },
+   "want": {
+    "status": "auto",
+    "reason": "gs1_exact",
+    "personal": false
+   }
+  },
+  {
+   "id": "UB18",
+   "desc": "GS1: 제조사만 일치(OEM) → maker_only",
+   "in": {
+    "barcode": "B(880123456001)",
+    "target": {
+     "food_cd": "P1",
+     "name": "THE촉촉한 오리지널 도넛",
+     "maker": "(주)신흥식품",
+     "report_no": "2001",
+     "exposed": true,
+     "report_kfind_count": 1
+    },
+    "claims": [
+     {
+      "user": null,
+      "food_cd": "P1",
+      "source": "gs1",
+      "at": 1,
+      "evidence": {
+       "name": "초코칩쿠키",
+       "maker": "신흥식품",
+       "gs1_candidates": 1
+      }
+     }
+    ],
+    "prefix9": [
+     "신흥식품"
+    ],
+    "prefix8": []
+   },
+   "want": {
+    "status": "needs_review",
+    "reason": "maker_only",
+    "personal": false
+   }
+  },
+  {
+   "id": "UB19",
+   "desc": "GS1: 규격 다름 → size_mismatch",
+   "in": {
+    "barcode": "B(880123456001)",
+    "target": {
+     "food_cd": "P1",
+     "name": "바삭김부각 50g",
+     "maker": "부각상회",
+     "report_no": "2001",
+     "exposed": true,
+     "report_kfind_count": 1
+    },
+    "claims": [
+     {
+      "user": null,
+      "food_cd": "P1",
+      "source": "gs1",
+      "at": 1,
+      "evidence": {
+       "name": "바삭김부각 100g",
+       "maker": "부각상회",
+       "gs1_candidates": 1
+      }
+     }
+    ],
+    "prefix9": [
+     "부각상회"
+    ],
+    "prefix8": []
+   },
+   "want": {
+    "status": "needs_review",
+    "reason": "size_mismatch",
+    "personal": false
+   }
+  },
+  {
+   "id": "UB20",
+   "desc": "같은 사용자가 마음을 바꿈(P2→P1 최신) → 최신만 · 다른 사용자 P1 → auto",
+   "in": {
+    "barcode": "B(880123456001)",
+    "target": {
+     "food_cd": "P1",
+     "name": "바삭김부각",
+     "maker": "부각상회",
+     "report_no": "2001",
+     "exposed": true,
+     "report_kfind_count": 1
+    },
+    "claims": [
+     {
+      "user": 1,
+      "food_cd": "P2",
+      "source": "user",
+      "at": 1
+     },
+     {
+      "user": 1,
+      "food_cd": "P1",
+      "source": "user",
+      "at": 3
+     },
+     {
+      "user": 2,
+      "food_cd": "P1",
+      "source": "user",
+      "at": 4
+     }
+    ],
+    "prefix9": [
+     "부각상회"
+    ],
+    "prefix8": []
+   },
+   "want": {
+    "status": "auto",
+    "reason": "user_pair",
+    "personal": true
+   }
+  },
+  {
+   "id": "UB21",
+   "desc": "형식 오류(7자리) → reject format",
+   "in": {
+    "barcode": "1234567",
+    "target": {
+     "food_cd": "P1",
+     "name": "바삭김부각",
+     "maker": "부각상회",
+     "report_no": "2001",
+     "exposed": true,
+     "report_kfind_count": 1
+    },
+    "claims": [
+     {
+      "user": 1,
+      "food_cd": "P1",
+      "source": "user",
+      "at": 1
+     }
+    ],
+    "prefix9": [],
+    "prefix8": []
+   },
+   "want": {
+    "status": "reject",
+    "reason": "format",
+    "personal": false
+   }
+  },
+  {
+   "id": "UB22",
+   "desc": "대역 불일치 · 3명 → auto(user_trio_unverified) (v1.1)",
+   "in": {
+    "barcode": "B(880123456004)",
+    "target": {
+     "food_cd": "P1",
+     "name": "바삭김부각",
+     "maker": "부각상회",
+     "report_no": "2001",
+     "exposed": true,
+     "report_kfind_count": 1
+    },
+    "claims": [
+     {
+      "user": 1,
+      "food_cd": "P1",
+      "source": "user",
+      "at": 1
+     },
+     {
+      "user": 2,
+      "food_cd": "P1",
+      "source": "user",
+      "at": 2
+     },
+     {
+      "user": 3,
+      "food_cd": "P1",
+      "source": "user",
+      "at": 3
+     }
+    ],
+    "prefix9": [
+     "롯데칠성음료"
+    ],
+    "prefix8": []
+   },
+   "want": {
+    "status": "auto",
+    "reason": "user_trio_unverified",
+    "personal": true,
+    "prefix": "mismatch"
+   }
+  },
+  {
+   "id": "UB23",
+   "desc": "대역 불일치 · 1명 → personal(user_single_unverified) — OEM 정상 연결을 막지 않는다 (v1.1)",
+   "in": {
+    "barcode": "B(880123456004)",
+    "target": {
+     "food_cd": "P1",
+     "name": "바삭김부각",
+     "maker": "부각상회",
+     "report_no": "2001",
+     "exposed": true,
+     "report_kfind_count": 1
+    },
+    "claims": [
+     {
+      "user": 1,
+      "food_cd": "P1",
+      "source": "user",
+      "at": 1
+     }
+    ],
+    "prefix9": [
+     "소디프비앤에프"
+    ],
+    "prefix8": []
+   },
+   "want": {
+    "status": "personal",
+    "reason": "user_single_unverified",
+    "personal": true,
+    "prefix": "mismatch"
+   }
+  },
+  {
+   "id": "UB24",
+   "desc": "사진: 대역 불일치여도 번호·이름 일치 → auto (v1.1)",
+   "in": {
+    "barcode": "B(880123456004)",
+    "target": {
+     "food_cd": "P1",
+     "name": "바삭김부각",
+     "maker": "부각상회",
+     "report_no": "20010000123",
+     "exposed": true,
+     "report_kfind_count": 1
+    },
+    "claims": [
+     {
+      "user": 1,
+      "food_cd": "P1",
+      "source": "photo",
+      "at": 1,
+      "evidence": {
+       "report_no": "20010000123",
+       "name": "바삭김부각"
+      }
+     }
+    ],
+    "prefix9": [
+     "롯데칠성음료"
+    ],
+    "prefix8": []
+   },
+   "want": {
+    "status": "auto",
+    "reason": "photo_report_no",
+    "personal": true
+   }
+  }
+ ],
+ "runtime_cases": [
+  {
+   "id": "UR01",
+   "desc": "POST /api/barcode-links (로그인) → 제보 저장 + 판정 결과 반환 · personal 이면 응답에 kfind 상품 본문"
+  },
+  {
+   "id": "UR02",
+   "desc": "GET /api/barcode-links/mine/:barcode → 본인 personal/auto 연결 food_cd · 남의 제보는 안 보임(404)"
+  },
+  {
+   "id": "UR03",
+   "desc": "두 번째 사용자 제보로 auto 가 되면 비로그인 GET /api/products/:barcode 가 kfind 품목을 낸다(80d 폴백 그대로)"
+  },
+  {
+   "id": "UR04",
+   "desc": "auto 행은 batch_id 'ublink' · decided_by 없음 · public·web_label 표 행 수 변화 0"
+  },
+  {
+   "id": "UR05",
+   "desc": "로그인 없음 → 401 · food_cd 형식 오류 → 400 · 없는 food_cd → 404"
+  },
+  {
+   "id": "UR06",
+   "desc": "같은 사용자 하루 제보 상한(30) 초과 → 429"
+  },
+  {
+   "id": "UR07",
+   "desc": "auto 뒤 한 사용자가 다른 품목으로 바꿈 → 같은 바코드의 모든 품목을 다시 판정 · 둘 다 conflict_user(needs_review) · 비로그인 스캔 404 (구현 중 발견한 구멍 · 세션81)"
+  },
+  {
+   "id": "UR08",
+   "desc": "HACCP 배치(kfbc_*) 행·사람 판정 행은 사용자 제보로 덮지 않는다 · 그 바코드에 다른 품목 제보는 conflict_linked"
+  },
+  {
+   "id": "UR09",
+   "desc": "공공 제품 바코드 제보 → conflict_public · personal=false · 응답 product=null / 숨김 품목 → reject target_hidden"
+  }
+ ],
+ "correction_v1_1": {
+  "at": "2026-10-17 23:5x 세션81 · 구현 중 · 화면 반영 전",
+  "why": "실측 반례: 세션80 HACCP 정답 쌍(auto 247 중 880 대역 판정 가능 192)에 대역 판정을 걸면 K-FIND 제조사(공장·OEM) ≠ 공공 대역 제조사(브랜드·다른 공장)가 47~56건(약 25%). 같은 자료 안 leave-one-out 98.8% 는 같은 표기 체계끼리라 부풀려진 값. 무작위 다른 K-FIND 제조사 통과율은 0.5~0.7% → «일치»는 강한 근거, «불일치»는 약한 근거. 스크립트 .tmp/s81/prefix_on_kfind.js · prefix_on_kfind2.js",
+  "changes": [
+   "R8 삭제: 대역 불일치로 막지 않는다(본인 표시도 막지 않는다).",
+   "R9 개정: 1명 → personal(일치=user_single · 불일치/미지=user_single_unverified) · 대역 일치 + 서로 다른 사용자 2명 → auto(user_pair) · 대역 불일치/미지 → 2명 needs_review(user_pair_unverified, personal) · 3명 이상 auto(user_trio_unverified).",
+   "R10 개정: 사진 경로는 대역을 보지 않는다(품목보고번호+이름 = 제품 단위 근거).",
+   "UB08·UB10 정답 변경 · UB22~24 추가."
+  ]
+ },
+ "wording": {
+  "_note": "웹 domain/meokseon/barcodeLink.ts 정본과 같아야 한다(웹 테스트가 이 표를 읽는다). 고정 2026-10-18 00:1x 세션81 · 화면 구현 전.",
+  "offer_button": "이름으로 찾아서 연결하기",
+  "offer_hint": "제품 이름을 검색한 뒤, 식약처 영양성분 DB 품목을 열면 이 바코드와 연결할 수 있어요.",
+  "confirm_title": "바코드 {barcode} 를 이 제품과 연결할까요?",
+  "confirm_body": "포장의 제품 이름·맛·용량이 같은지 확인해 주세요. 다른 제품과 연결하면 잘못된 영양정보가 보여요.",
+  "confirm_button": "이 제품과 연결하기",
+  "cancel_button": "연결 안 함",
+  "my_link_note": "회원님이 이 바코드와 연결한 제품이에요.",
+  "outcomes": [
+   {
+    "verdict": "personal",
+    "personal": true,
+    "tone": "ok",
+    "text": "연결했어요. 다음부터 이 바코드를 찍으면 이 제품이 바로 나와요. 다른 분도 같은 제품으로 연결하면 모두에게 보여요."
+   },
+   {
+    "verdict": "auto",
+    "personal": true,
+    "tone": "ok",
+    "text": "연결했어요. 이제 누구나 이 바코드로 이 제품을 볼 수 있어요."
+   },
+   {
+    "verdict": "needs_review",
+    "personal": true,
+    "tone": "wait",
+    "text": "연결했어요. 다른 분의 연결과 달라 담당자가 확인할게요. 그동안은 회원님 화면에서만 이 제품이 나와요."
+   },
+   {
+    "verdict": "needs_review",
+    "personal": false,
+    "tone": "wait",
+    "text": "이 바코드는 이미 다른 제품 정보와 이어져 있어 담당자가 확인할게요."
+   },
+   {
+    "verdict": "keep",
+    "personal": false,
+    "tone": "wait",
+    "text": "이 바코드는 담당자가 이미 확인한 제품이에요."
+   },
+   {
+    "verdict": "reject",
+    "reason": "checksum",
+    "personal": false,
+    "tone": "error",
+    "text": "바코드 숫자가 올바르지 않아요. 다시 찍어 주세요."
+   },
+   {
+    "verdict": "reject",
+    "reason": "format",
+    "personal": false,
+    "tone": "error",
+    "text": "바코드 숫자가 올바르지 않아요. 다시 찍어 주세요."
+   },
+   {
+    "verdict": "reject",
+    "reason": "target_hidden",
+    "personal": false,
+    "tone": "error",
+    "text": "이 품목은 지금 연결할 수 없어요. 이름으로 다시 검색해 주세요."
+   },
+   {
+    "verdict": "reject",
+    "reason": "other",
+    "personal": false,
+    "tone": "error",
+    "text": "연결하지 못했어요. 잠시 후 다시 시도해 주세요."
+   }
+  ],
+  "errors": {
+   "CLAIM_LIMIT": "오늘은 더 연결할 수 없어요. 내일 다시 시도해 주세요.",
+   "network": "연결하지 못했어요. 잠시 후 다시 시도해 주세요."
+  }
+ }
+}

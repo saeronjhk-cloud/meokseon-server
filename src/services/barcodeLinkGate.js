@@ -62,6 +62,8 @@ function decide(inp) {
   if (!checks.size) return { status: 'needs_review', reason: 'size_mismatch', checks };
   checks.name = nameMatch(inp.web.name, inp.cand.name); checks.maker = makerMatch(inp.web.maker, inp.cand.maker);
   if (!checks.name && !checks.maker) return { status: 'needs_review', reason: 'identity', checks };
+  // ★ 세션82 L7(E2 v1.1) — 이름 불일치 + 제조사만 일치는 동일성 근거가 아니다(80-7 OEM 반례 · 금지 61·74). 종전엔 auto.
+  if (!checks.name) return { status: 'needs_review', reason: 'maker_only', checks };
   if ((inp.siblings_pass || 1) > 1) return { status: 'needs_review', reason: 'multi', checks };
   return { status: 'auto', reason: 'haccp_exact', checks };
 }

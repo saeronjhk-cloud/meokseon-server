@@ -686,8 +686,22 @@ async function getIngredientText(productId) {
   }
 }
 
+/**
+ * ★ 세션82 결정 ⑧ — 사진 제보(ocr_nutrition)들의 서버 OCR 품목보고번호(contributions.data.ocr_report_no · 저장·백필 값).
+ *   정답 IP/eval_photo_kfind_supplement_v1 S2·S3. 반려(rejected) 제보는 빼고, 값 있는 것만. 판정(중복·상충)은 photoKfindSupplement.
+ */
+async function findOcrReportNos(productId) {
+  const r = await db.query(
+    `SELECT data->>'ocr_report_no' AS rn FROM contributions
+      WHERE product_id = $1 AND contribution_type = 'ocr_nutrition' AND COALESCE(status,'') <> 'rejected'
+        AND COALESCE(data->>'ocr_report_no','') <> ''
+      ORDER BY contribution_id DESC LIMIT 10`, [productId]);
+  return r.rows.map((x) => x.rn);
+}
+
 module.exports = {
   findByBarcode,
+  findOcrReportNos,             // 세션82 결정 ⑧
   findForPortion,
   searchByName,
   getNutrition,

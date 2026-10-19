@@ -58,6 +58,7 @@ const { applyAutoAllergens } = require('./contributionApply');
 const { notifyNewContribution } = require('./adminNotify');
 // ★ 세션65 C2-a — 022(`products.additive_detected_count`) 배포순서 방어 판정에만 쓴다.
 const productModel = require('../models/productModel');
+const { ocrReportNoFromText } = require('./photoKfindSupplement');   // 세션82 결정 ⑧
 
 // 최소 OCR 신뢰도 (Gemini 피드백: 0.5→0.7 상향)
 const MIN_CONFIDENCE = 0.7;
@@ -647,6 +648,9 @@ async function saveOcrContribution(params) {
         'ocr_nutrition',
         JSON.stringify({
           ocr_raw_text: ocrResult?.corrected_text || '',
+          // ★ 세션82 결정 ⑧ — 서버 OCR 원문에서 읽은 품목보고번호(정규화 · 없으면 null). 사용자 입력은 안 받는다(81-3).
+          //   ⚠ products.c005_report_no 에는 쓰지 않는다 — 검색 가림 키(정답 IP/eval_photo_kfind_supplement_v1 S2).
+          ocr_report_no: ocrReportNoFromText(ocrResult?.corrected_text || ''),
           avg_confidence: avgConfidence,
           corrections: ocrResult?.corrections || [],
           // ★★★ 세션64b — 영양이 쓸 수 없는 값이면 `parsed_nutrition` 에 **넣지 않는다.**

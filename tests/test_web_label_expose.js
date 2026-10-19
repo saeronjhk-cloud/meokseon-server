@@ -57,8 +57,8 @@ const keys = (o) => Object.keys(o || {}).sort();
   console.log('── E3 응답 모양');
   const pub = await svc.getProductWithTrafficLight('8800000000011');
   const web = await svc.getWebLabelProduct(W_OK);
-  await t('E3-01 최상위 키 = 바코드 응답 키 − {web_label_supplements} ∪ {web_label}', async () => {
-    const a = keys(pub).filter((k) => k !== 'web_label_supplements'); const b = keys(web).filter((k) => k !== 'web_label'); assert.deepStrictEqual(b, a); assert.ok(web.web_label);
+  await t('E3-01 최상위 키 = 바코드 응답 키 − {web_label_supplements, kfind_supplement} ∪ {web_label}', async () => {
+    const a = keys(pub).filter((k) => k !== 'web_label_supplements' && k !== 'kfind_supplement');   // ★ 세션82 — kfind_supplement 도 바코드 응답 전용(정답 photo_kfind_supplement S6) const b = keys(web).filter((k) => k !== 'web_label'); assert.deepStrictEqual(b, a); assert.ok(web.web_label);
   });
   await t('E3-02 product 하위 키 동일 · barcode=null · data_source=web_label · image_url=null', async () => {
     assert.deepStrictEqual(keys(web.product), keys(pub.product)); assert.strictEqual(web.product.barcode, null); assert.strictEqual(web.product.data_source, 'web_label'); assert.strictEqual(web.product.image_url, null);
@@ -115,7 +115,7 @@ const keys = (o) => Object.keys(o || {}).sort();
     await link('8809000000017', W_OK, 'auto');
     const x = await svc.getProductWithTrafficLight('8809000000017');
     assert.strictEqual(x.web_label.barcode_linked, true); assert.strictEqual(x.product.barcode, '8809000000017'); assert.strictEqual(x.web_label.badge, RT.badge_linked);
-    assert.deepStrictEqual(keys(x).filter((k) => k !== 'web_label'), keys(pub).filter((k) => k !== 'web_label_supplements'));
+    assert.deepStrictEqual(keys(x).filter((k) => k !== 'web_label'), keys(pub).filter((k) => k !== 'web_label_supplements' && k !== 'kfind_supplement'));
   });
   await t('E7-02 needs_review 연결 → 404', async () => { await link('8809000000024', W_OK, 'needs_review'); assert.ok(await nf('8809000000024')); });
   await t('E7-03 품목이 needs_review → 404', async () => { await link('8809000000031', W_REV, 'auto'); assert.ok(await nf('8809000000031')); });

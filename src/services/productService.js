@@ -25,6 +25,7 @@ const logger = require('../config/logger');   // 세션45: 알레르기 조회 �
 const { flattenAllergensV2 } = require('./ocrParser');
 const { getLabelDv } = require('./labelDvRead');
 const { classifyAdditive } = require('./additiveSignal');     // 세션75j — 첨가물 신호등 v3
+const { decidePhotoKfind, normalizeReportNo } = require('./photoKfindSupplement');   // 세션82 결정 ⑧
 const { detectAdditives } = require('./additiveDetect');      // 세션75j — 첨가물 표가 비면 원재료에서 검출   // 세션73 U71-3 — 라벨 인쇄 % 병기   // 세션45: flat 규칙 단일화(중대4)
 
 // 4색 우선순위 — 가장 위험한 색이 dominant_color
@@ -257,7 +258,32 @@ async function getProductWithTrafficLight(barcode) {
   const payload = await assembleProductPayload(product, PUBLIC_DEPS, { barcode });
   // ★ 세션79 U78-3 — 판매처 라벨 보충(키 추가만 · 기존 키 무변경). 빈 축(알레르기 미수집·영양 없음)일 때만 조회한다.
   payload.web_label_supplements = await loadWebLabelSupplements(product.product_id, payload);
+  // ★ 세션82 결정 ⑧ — 사진 제보 제품(영양 없음) ← K-FIND 보충(키 추가만 · 바코드 응답 전용 · 신호등 무관).
+  payload.kfind_supplement = await loadPhotoKfindSupplement(product, payload);
   return payload;
+}
+
+/**
+ * ★ 세션82 결정 ⑧ — 정답 IP/eval_photo_kfind_supplement_v1 (S1~S6). 조건 밖이면 질의 없이 null.
+ *   ⚠ c005_report_no 를 쓰지 않는다(검색 가림 키). 번호는 contributions.data.ocr_report_no(서버 OCR)만.
+ */
+let _photoKfMissingLogged = false;
+async function loadPhotoKfindSupplement(product, payload) {
+  if (!product || product.data_source !== 'ocr_crowdsource' || payload.nutrition !== null) return null;
+  try {
+    const rns = await productModel.findOcrReportNos(product.product_id);
+    if (!rns.length) return null;
+    const norm = [...new Set(rns.map(normalizeReportNo).filter(Boolean))];
+    const rows = norm.length === 1 ? await kfindModel.findByReportNo(norm[0]) : [];
+    const d = decidePhotoKfind({ data_source: product.data_source, product_name: product.product_name, has_nutrition: false, ocr_report_nos: rns }, rows);
+    if (!d.ok) return null;
+    const sup = await loadKfindSupplement(d.report_no);
+    return sup && sup.food_cd === d.row.food_cd ? { ...sup, match: 'ocr_report_no' } : null;
+  } catch (e) {
+    if (!(e && e.code === '42P01' && _photoKfMissingLogged)) logger.warn('사진 제보 K-FIND 보충 조회 실패 — null', { productId: product.product_id, error: e.message });
+    if (e && e.code === '42P01') _photoKfMissingLogged = true;
+    return null;
+  }
 }
 
 /**

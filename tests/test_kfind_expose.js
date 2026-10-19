@@ -68,8 +68,8 @@ const keys = (o) => Object.keys(o || {}).sort();
   await realQuery(`insert into products (barcode, product_name, food_type, data_source) values ('8800000000999','바코드기준','과자','manual_seed')`);
   const bar = await svc.getProductWithTrafficLight('8800000000999');
   const k = await svc.getKfindProduct('P109-000000007-0001');
-  await t('K06 최상위 키 = 바코드 응답 키 − {web_label_supplements} ∪ {kfind}', async () => {
-    const want = keys(bar).filter((x) => x !== 'web_label_supplements').concat('kfind').sort(); assert.deepStrictEqual(keys(k), want);
+  await t('K06 최상위 키 = 바코드 응답 키 − {web_label_supplements, kfind_supplement} ∪ {kfind}', async () => {
+    const want = keys(bar).filter((x) => x !== 'web_label_supplements' && x !== 'kfind_supplement').concat('kfind').sort();   // ★ 세션82 — kfind_supplement 도 바코드 응답 전용(S6) assert.deepStrictEqual(keys(k), want);
   });
   await t('K07 알레르기·원재료 없음(null/false) · 신호등 있음', async () => {
     assert.strictEqual(k.allergens, null); assert.strictEqual(k.allergens_v2, null); assert.strictEqual(k.allergens_available, false);

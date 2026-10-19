@@ -1,0 +1,27 @@
+{
+  "name": "eval_pack_structure_v1 (묶음 라벨 «총 내용량(Ng × M단위)» + «단위당(Ng) K kcal» → 1회분)",
+  "fixed_at": "2026-10-19 16:3x 세션82 · 구현 전 고정 · PS06~08 은 구현 후 전수 diff(3,967)에서 나온 «계획 밖 변경» 3건을 원문 확인 후 양성으로 추가(같은 날 · 출시 전)",
+  "why": "190 §10-4 «1봉지당(115g)» 런타임 파서 과제. 세션82 전수 실측(크롤 OCR 3,967 · 괄호 기준 선언 489): per_serving 455 · per_100g 13 · per_total 10 · unknown 11. per_total 중 5건은 1회분 값을 총량으로 나눠 100g 환산이 1/2~1/8 로 낮아짐(거짓 초록 방향). 81f 의 A 규칙(선언 열량 = 집은 열량)은 총열량 OCR 오독·단위어 «입» 누락·«당» 중복·개수≠1 로 못 잡음.",
+  "rules": [
+    "C1 대상: 현재 기준이 총량(runtime per_total · capture total)일 때만. per100·serving·unknown 은 무변경.",
+    "C2 묶음 구조: 텍스트에 «N단위 × M(단위어)?»(x·X·×·*) 이 있고 N 이 1~1000.",
+    "C3 1회분 선언: «(개수)?단위어 당? (N단위) 당? K kcal» 또는 «… (N단위) 당 K kcal» — 괄호 안 N 이 C2 의 N 과 같고, 선언에 «당»이 적어도 하나 있어야 한다(당 없으면 무변경 · PN04).",
+    "C4 결과: basis 1회분 · amount N · unit · calories K(집은 열량이 달라도 K 로 바꾼다 — 총열량 OCR 오독 방어 · PS01). reason 'pack_structure'.",
+    "C5 두 파서 공용(nutritionBasisReconcile 한 곳 · 78-10 원칙). 전수 diff 에서 C 로 바뀌는 건은 이 정답의 양성 계열만이어야 한다.",
+    "C6 전수 diff(크롤 OCR 3,967 · 두 파서): 바뀌는 건은 PS01~08 의 8건뿐이어야 한다(그 밖 변화 = 회귀)."
+  ],
+  "cases": [
+    {"id":"PS01","text":"texts/rv_1000467360.txt","why":"190 원래 사례 «총 내용량 460g(115g x 4봉지) 1봉지당(115g) 485kcal» · 총열량 OCR 오독 1,540(실제 1,940) — 열량 일치 규칙(A)으로는 못 잡음","before":{"a":["per_total",null,1540],"c":["total",null,1540]},"expect":{"runtime":["per_serving",115,485],"capture":["serving",115,485]}},
+    {"id":"PS02","text":"texts/rv_1001336385.txt","why":"«478g (239gx2입) 1입(239g)당 420kcal» — 단위어 «입» 누락","before":{"a":["per_total",null,420],"c":["total",null,420]},"expect":{"runtime":["per_serving",239,420],"capture":["serving",239,420]}},
+    {"id":"PS03","text":"texts/rv_1001394873.txt","why":"«422g (211gx2입) 1입(211g)당 505kcal»","before":{"a":["per_total",null,505],"c":["total",null,505]},"expect":{"runtime":["per_serving",211,505],"capture":["serving",211,505]}},
+    {"id":"PS04","text":"texts/rv_5048264.txt","why":"«256g(32gX8개)/1개당(32g)당 30kcal» — «당» 두 번","before":{"a":["per_total",null,30],"c":["total",null,30]},"expect":{"runtime":["per_serving",32,30],"capture":["serving",32,30]}},
+    {"id":"PS05","text":"texts/rv_1000229307.txt","why":"«1kg(500gx27개), 17개(500g)당 475 kcal» — 개수 1이 아님 · OCR 2→27","before":{"a":["per_total",null,475],"c":["total",null,475]},"expect":{"runtime":["per_serving",500,475],"capture":["serving",500,475]}},
+    {"id":"PS06","text":"texts/rv_1000227551.txt","why":"전수 diff 발견 · 자유시간 미니 «총 내용량 408g[8gx51 포장] 1포장(8g)당 35 kcal»(2열 1포장당|총내용량당)","before":{"a":["per_total",null,35],"c":["total",null,35]},"expect":{"runtime":["per_serving",8,35],"capture":["serving",8,35]}},
+    {"id":"PS07","text":"texts/rv_1002187281.txt","why":"전수 diff 발견 · 누룽지팝 «142g(35.5gx4봉입) 1봉입(35.5 g)당 185 kcal»","before":{"a":["per_total",null,185],"c":["total",null,185]},"expect":{"runtime":["per_serving",35.5,185],"capture":["serving",35.5,185]}},
+    {"id":"PS08","text":"texts/rv_1001032079.txt","why":"전수 diff 발견 · 비락식혜 제로 «1,428ml(238ml X 6개입) 1개입 당(238ml) 0kcal» — 라벨 0kcal(238ml)과 일치","before":{"a":["per_total",null,24],"c":["total",null,24]},"expect":{"runtime":["per_serving",238,0],"capture":["serving",238,0]}},
+    {"id":"PN01","text":"texts/rv_1001584427.txt","why":"«1입(116g)당 … 총 내용량 116g 515kcal» — 묶음 구조(×) 없음 = 총량이 곧 1회분 → 종전 그대로","before":{"a":["per_total",null,515],"c":["total",null,515]},"expect":{"runtime":["per_total",null,515],"capture":["total",null,515]}},
+    {"id":"PN02","text":"texts/rv_1002050331.txt","why":"«총 내용량 782g 2인분 (782g)당 960 kcal» — × 구조 없음 → 종전 그대로","before":{"a":["per_total",null,960],"c":["total",null,960]},"expect":{"runtime":["per_total",null,960],"capture":["total",null,960]}},
+    {"id":"PN03","text":"texts/rv_1001971302.txt","why":"계란 «15개(780 g/940 kcal)» — × 구조 없음 → 종전 그대로","before":{"a":["per_total",null,940],"c":["total",null,940]},"expect":{"runtime":["per_total",null,940],"capture":["total",null,940]}},
+    {"id":"PN04","text":"texts/rv_1001805110.txt","why":"당근 «1,200g/338kcal (120gx10개입) … 1개(120g) 33.8kcal» — 선언에 «당» 없음 → 종전 그대로(총량 338/1200 도 맞는 값)","before":{"a":["per_total",null,338],"c":["total",null,338]},"expect":{"runtime":["per_total",null,338],"capture":["total",null,338]}}
+  ]
+}

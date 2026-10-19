@@ -43,6 +43,12 @@ const RE_PAIR = [
 const RE_PER100_KCAL = new RegExp('100\\s{0,4}(?:g|㎖|ml|mL)\\s{0,4}당' + KCAL_TAIL, 'i');
 const RE_TOTAL_KCAL = /(\d[\d,.]{0,12})\s{0,4}(g|㎖|ml|mL)\s{0,4}[(（]\s{0,4}(\d[\d,.]{0,12})\s{0,4}kcal\s{0,4}[)）]/gi;
 
+// ★ 세션82 C — 묶음 구조 «460 g(115g x 4봉지)» · «1kg(500gx27개)» · «256g(32gX8개)» · «(239gx2입)»
+const RE_PACK = /(\d[\d,.]{0,8})\s{0,4}(g|㎖|ml|mL)\s{0,4}[xX×*]\s{0,4}\d{1,3}/g;
+// 1회분 선언 «(개수)?단위어 당? (N단위) 당? K kcal» — 당이 적어도 하나(괄호 앞 또는 뒤). 단위어에 «입» 포함.
+const PACK_WORD = '(?:회\\s{0,4}제공량|회분|봉지|봉|개입|개|입|포|스틱|컵|캔|병|조각|장|인분|용기|그릇|팩|매|줄|판|알|쪽|덩이|갑)';
+const RE_PACK_DECL = new RegExp('(?:\\d{1,3}\\s{0,4})?' + PACK_WORD + '\\s{0,4}(?:당\\s{0,4}\\(\\s{0,4}(\\d[\\d,.]{0,8})\\s{0,4}(g|㎖|ml|mL)\\s{0,4}\\)\\s{0,4}(?:당\\s{0,4})?|\\(\\s{0,4}(\\d[\\d,.]{0,8})\\s{0,4}(g|㎖|ml|mL)\\s{0,4}\\)\\s{0,4}당\\s{0,4})(\\d[\\d,.]{0,8})\\s{0,4}(?:kcal|킬로칼로리)', 'gi');
+const normU = (u) => { const x = String(u).toLowerCase(); return x === '㎖' ? 'ml' : x; };
 function n(s) { const v = Number(String(s).replace(/,/g, '')); return Number.isFinite(v) ? v : null; }
 
 /**
@@ -73,7 +79,22 @@ function reconcileServingVsPer100({ text, basis, calories }) {
       return { basis: 'serving', amount: p.s, unit: String(p.unit).toLowerCase(), reason: p.reason };
     }
   }
-  if (basis === 'total') return null;
+  // ★ 세션82 C(정답 IP/eval_pack_structure_v1) — 묶음 구조 «(N단위 × M)» + «단위당(N단위) K kcal» 이면 1회분 N · 열량 K.
+  //   A 규칙(열량 일치)이 못 잡는 경우: 총열량 OCR 오독(1,940→1,540) · 단위어 «입» · «1개당(32g)당» · «17개(500g)당».
+  //   «당»이 없거나 × 구조가 없으면 무변경(PN01~04). 열량이 집은 값과 달라도 K 로 바꾼다(C4).
+  if (basis === 'total') {
+    const pack = new Set();
+    for (const m of t.matchAll(RE_PACK)) { const v = n(m[1]); if (v && v <= 1000) pack.add(v + '|' + normU(m[2])); }
+    if (pack.size) {
+      for (const m of t.matchAll(RE_PACK_DECL)) {
+        const s2 = n(m[1] || m[3]); const u2 = normU(m[2] || m[4]); const k2 = n(m[5]);
+        if (!s2 || k2 == null || !pack.has(s2 + '|' + u2)) continue;
+        if (totalAmt && s2 >= totalAmt) continue;
+        return { basis: 'serving', amount: s2, unit: u2, reason: 'pack_structure', calories: k2 };
+      }
+    }
+    return null;
+  }
 
   const decls = [...t.matchAll(RE_SERVING_DECL)].map((m) => ({ amount: n(m[1]), unit: m[2].toLowerCase() })).filter((d) => d.amount);
   if (!decls.length) return null;

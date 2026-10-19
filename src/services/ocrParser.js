@@ -1023,6 +1023,8 @@ function parseNutrition(text) {
     const rc = reconcileServingVsPer100({ text: _textForBasis, basis: basisInfo.basis === 'per_total' ? 'total' : 'per100', calories: nutrition.calories ?? null });
     if (rc) {
       basisInfo = { basis: 'per_serving', amount: rc.amount, unit: rc.unit, reconciled: rc.reason };
+      // ★ 세션82 C4 — 묶음 구조 근거면 선언의 열량으로(총열량 OCR 오독 방어 · 정답 eval_pack_structure_v1 PS01). 두 파서 동일.
+      if (rc.calories != null && Number.isFinite(rc.calories) && rc.calories !== nutrition.calories) nutrition.calories = rc.calories;
       if (nutrition.serving_size === undefined) { nutrition.serving_size = rc.amount; nutrition.serving_unit = rc.unit; }
     }
   }

@@ -1,0 +1,212 @@
+{
+ "name": "eval_web_label_fill_v1 (판매처 신규 품목 «영양 행 없음» → 원문에서 새로 채우기)",
+ "fixed_at": "2026-10-22 세션83 · 제이 결정 ⑨ «채워»(15:46) · 기대값은 라벨 산수(1회분 열량×100/1회분)로 따로 계산",
+ "why": "102 적재 때 기준 unknown(83a 로 해결) 또는 당시 파서 결함(82f PS05)으로 영양 없이 만들어진 판매처 품목. 115 는 «있는 값만» 고친다.",
+ "rules": [
+  "F1 web_label.products 중 source_pages(target web_label) 있고 nutrition_data 행 없는 것",
+  "F2 webFromText per100 sane · 두 파서 기준 모두 unknown 아님",
+  "F3 열량 + 주요 영양소(나트륨·탄수화물·당류·지방·단백질) 3개 이상",
+  "F4 행 = 102 신규 품목과 같음(serving_size 100g/100ml · KEYS · label_basis consistent 일 때만 · data_source web_label)",
+  "F5 INSERT 만 · undo = 기록 nutrition_id DELETE · 적용 후 104 게이트",
+  "F6 운영 미리보기(10-22): 영양 없는 품목 229 → 대상 13(= F01~F13 의 product_id 와 같아야 함) · 제외 insane 39 · no_value 175 · sparse 2"
+ ],
+ "cases": [
+  {
+   "id": "F01",
+   "text": "unknown_basis_v1/texts/rv_1001156424.txt",
+   "name": "바나나우유맛 커피 파우더 스틱 (20g X 10포)",
+   "product_id": 306645,
+   "why": "1회 섭취량(20g)당 85kcal → 85×100/20",
+   "expect": {
+    "serving_size": "100g",
+    "calories": 425
+   }
+  },
+  {
+   "id": "F02",
+   "text": "unknown_basis_v1/texts/rv_1002273920.txt",
+   "name": "국산콩 검은콩 무가당 (190mL X 16개)",
+   "product_id": 306660,
+   "why": "1팩(190ml) 55kcal → 55/1.9",
+   "expect": {
+    "serving_size": "100ml",
+    "calories": 28.95
+   }
+  },
+  {
+   "id": "F03",
+   "text": "unknown_basis_v1/texts/rv_1002273918.txt",
+   "name": "더진한 국산콩 무가당 (190mL X 16개)",
+   "product_id": 306663,
+   "why": "1팩(190ml) 65kcal",
+   "expect": {
+    "serving_size": "100ml",
+    "calories": 34.21
+   }
+  },
+  {
+   "id": "F04",
+   "text": "unknown_basis_v1/texts/rv_1002273932.txt",
+   "name": "검은콩 고칼슘 (190mL X 16개)",
+   "product_id": 306669,
+   "why": "1팩(190mL) 105kcal",
+   "expect": {
+    "serving_size": "100ml",
+    "calories": 55.26
+   }
+  },
+  {
+   "id": "F05",
+   "text": "unknown_basis_v1/texts/rv_1002273924.txt",
+   "name": "더진한 서리태 무가당 99.9 (190mL X 16개)",
+   "product_id": 306675,
+   "why": "1팩(190ml) 65kcal",
+   "expect": {
+    "serving_size": "100ml",
+    "calories": 34.21
+   }
+  },
+  {
+   "id": "F06",
+   "text": "unknown_basis_v1/texts/rv_1002273926.txt",
+   "name": "국산콩 검은콩 고칼슘 저당 (190mL X 16개)",
+   "product_id": 306686,
+   "why": "1팩(190ml) 60kcal(박스 960 아님)",
+   "expect": {
+    "serving_size": "100ml",
+    "calories": 31.58
+   }
+  },
+  {
+   "id": "F07",
+   "text": "unknown_basis_v1/texts/rv_1002273930.txt",
+   "name": "검은콩 검은참깨 고칼슘 (190mL X 16개)",
+   "product_id": 306692,
+   "why": "1팩(190mL) 100kcal",
+   "expect": {
+    "serving_size": "100ml",
+    "calories": 52.63
+   }
+  },
+  {
+   "id": "F08",
+   "text": "unknown_basis_v1/texts/rv_5105726.txt",
+   "name": "소금빵 75g",
+   "product_id": 306703,
+   "why": "1회제공량(75g/1회) 211.42kcal",
+   "expect": {
+    "serving_size": "100g",
+    "calories": 281.89
+   }
+  },
+  {
+   "id": "F09",
+   "text": "unknown_basis_v1/texts/rv_1000220024.txt",
+   "name": "햄치즈 야채 모닝빵 (35g X 6개)",
+   "product_id": 306705,
+   "why": "1회제공량(35g/1회) 95.13kcal",
+   "expect": {
+    "serving_size": "100g",
+    "calories": 271.8
+   }
+  },
+  {
+   "id": "F10",
+   "text": "unknown_basis_v1/texts/rv_1000224414.txt",
+   "name": "ABC주스 30팩",
+   "product_id": 307152,
+   "why": "1회 제공량 1포(100ml) 42kcal",
+   "expect": {
+    "serving_size": "100ml",
+    "calories": 42
+   }
+  },
+  {
+   "id": "F11",
+   "text": "pack_structure_v1/texts/rv_1000229307.txt",
+   "name": "행복한콩 큰두부500*2",
+   "product_id": 307549,
+   "why": "82f PS05 «17개(500g)당 475 kcal» → 475/5 (82f 이후 값이 생겼지만 115 는 기존 값만 고쳐 빠졌던 품목)",
+   "expect": {
+    "serving_size": "100g",
+    "calories": 95
+   }
+  },
+  {
+   "id": "F12",
+   "text": "unknown_basis_v1/texts/rv_1000220026.txt",
+   "name": "쁘띠 치즈롤 (35g X 6개)",
+   "product_id": 307714,
+   "why": "1회제공량(35g/1회) 98.78kcal",
+   "expect": {
+    "serving_size": "100g",
+    "calories": 282.23
+   }
+  },
+  {
+   "id": "F13",
+   "text": "unknown_basis_v1/texts/rv_5066956.txt",
+   "name": "라우겐 100g",
+   "product_id": 307727,
+   "why": "1회제공량 1개(100g) 273.09kcal",
+   "expect": {
+    "serving_size": "100g",
+    "calories": 273.09
+   }
+  },
+  {
+   "id": "FN01",
+   "text": "unknown_basis_v1/texts/rv_5051653.txt",
+   "name": "청매실 캔디 300g",
+   "why": "열량만 있음(주요 영양소 0개) → 채우지 않음(제이 결정 ⑨ 범위)",
+   "expect": {
+    "skip": "sparse"
+   }
+  },
+  {
+   "id": "FN02",
+   "text": "unknown_basis_v1/texts/rv_5051654.txt",
+   "name": "청매실 젤리 300g",
+   "why": "열량만 있음 → 채우지 않음",
+   "expect": {
+    "skip": "sparse"
+   }
+  },
+  {
+   "id": "FN03",
+   "text": "unknown_basis_v1/texts/syn_N04_no_confirm.txt",
+   "name": "합성",
+   "why": "기준 unknown → webFromText 가 100g 값을 만들지 않음(no_value) → 채우지 않음",
+   "expect": {
+    "skip": "no_value"
+   }
+  },
+  {
+   "id": "FN04",
+   "text": "unknown_basis_v1/texts/rv_5156445.txt",
+   "name": "김치",
+   "why": "영양 값 없음",
+   "expect": {
+    "skip": "no_value"
+   }
+  },
+  {
+   "id": "FN05",
+   "text": "web_label_fill_v1_texts/syn_F_insane.txt",
+   "name": "합성",
+   "why": "100g당 열량 1,200(상식 범위 밖) → 채우지 않음",
+   "expect": {
+    "skip": "insane"
+   }
+  }
+ ],
+ "corrections": [
+  {
+   "id": "FN03",
+   "at": "2026-10-22 첫 실행",
+   "from": "basis_unknown_runtime",
+   "to": "no_value",
+   "why": "unknown 이면 webFromText 단계에서 per100 이 null — 결과(채우지 않음)는 같고 사유 이름만 다름"
+  }
+ ]
+}

@@ -48,6 +48,15 @@ const RE_PACK = /(\d[\d,.]{0,8})\s{0,4}(g|㎖|ml|mL)\s{0,4}[xX×*]\s{0,4}\d{1,3}
 // 1회분 선언 «(개수)?단위어 당? (N단위) 당? K kcal» — 당이 적어도 하나(괄호 앞 또는 뒤). 단위어에 «입» 포함.
 const PACK_WORD = '(?:회\\s{0,4}제공량|회분|봉지|봉|개입|개|입|포|스틱|컵|캔|병|조각|장|인분|용기|그릇|팩|매|줄|판|알|쪽|덩이|갑)';
 const RE_PACK_DECL = new RegExp('(?:\\d{1,3}\\s{0,4})?' + PACK_WORD + '\\s{0,4}(?:당\\s{0,4}\\(\\s{0,4}(\\d[\\d,.]{0,8})\\s{0,4}(g|㎖|ml|mL)\\s{0,4}\\)\\s{0,4}(?:당\\s{0,4})?|\\(\\s{0,4}(\\d[\\d,.]{0,8})\\s{0,4}(g|㎖|ml|mL)\\s{0,4}\\)\\s{0,4}당\\s{0,4})(\\d[\\d,.]{0,8})\\s{0,4}(?:kcal|킬로칼로리)', 'gi');
+// ★ 세션83 D(정답 IP/eval_unknown_basis_v1) — 기준 unknown 라벨의 «괄호 뒤 당 없는» 1회분 선언.
+//   D1 구형·건기식 «1회 제공량 1포(100ml)» · «1회제공량(35g/1회)» · «1일 섭취량 : 1포(20mL)» · «1회 섭취량(20g)당»
+//      — 확인 근거(바로 뒤 «/1회»·«당» · «제공량|섭취량 당 (함량|열량|숫자)» · «총 M회 제공량») 가 있을 때만.
+//   D3 단품 팩 «총 내용량 1팩(190ml)» — 숫자 뒤 단위어 때문에 총 내용량 정규식이 못 읽던 것(완전두유).
+const RE_LEGACY_DECL = new RegExp('1\\s{0,4}(?:회|일)\\s{0,4}(?:제공량|섭취량)\\s{0,4}[:：]?\\s{0,4}(?:\\d{1,2}\\s{0,4}' + PACK_WORD + '\\s{0,4})?[(（]?\\s{0,4}(\\d[\\d,.]{0,8})\\s{0,4}(g|㎖|ml|mL)(?![a-zA-Z])(\\s{0,2}/\\s{0,2}1\\s{0,2}회)?\\s{0,4}[)）]?\\s{0,4}(당)?', 'g');
+const RE_LEGACY_CONFIRM = /(?:제공량|섭취량)\s{0,4}당\s{0,4}(?:함량|열량|\d)|총\s{0,4}\d{1,3}\s{0,4}회\s{0,4}제공량/;
+const RE_SINGLE_PACK = new RegExp('총\\s{0,4}내용량\\s{0,4}[:：]?\\s{0,4}1\\s{0,4}' + PACK_WORD + '\\s{0,4}[(（]\\s{0,4}(\\d[\\d,.]{0,8})\\s{0,4}(g|㎖|ml|mL)(?![a-zA-Z])\\s{0,4}[)）]?');
+const RE_NEAR_KCAL = /^[^\d]{0,40}?(\d[\d,.]{0,8})\s{0,4}(?:kcal|킬로칼로리)/i;
+const RE_BOX_KCAL = /[(（]\s{0,4}[\d,.]{1,12}\s{0,4}(?:g|kg|ml|mL|L|㎖)?\s{0,4}\/\s{0,4}(\d[\d,.]{0,12})\s{0,4}(?:kcal|킬로칼로리)/gi;
 const normU = (u) => { const x = String(u).toLowerCase(); return x === '㎖' ? 'ml' : x; };
 function n(s) { const v = Number(String(s).replace(/,/g, '')); return Number.isFinite(v) ? v : null; }
 
@@ -57,8 +66,9 @@ function n(s) { const v = Number(String(s).replace(/,/g, '')); return Number.isF
 function reconcileServingVsPer100({ text, basis, calories }) {
   // ★ 세션81 — 'total'(총 내용량 기준)에도 적용: 묶음 라벨 «총 내용량 780g(130g×6) / 1개당(130g) 205 kcal» 을
   //   총량으로 나누던 결함(양반밥 100g당 26 → 정답 158). total 은 «열량에 붙은 1회분 선언»(A) 이 있을 때만 바꾼다(B 규칙 미적용).
-  if ((basis !== 'per100' && basis !== 'total') || calories == null || !Number.isFinite(calories)) return null;
+  if ((basis !== 'per100' && basis !== 'total' && basis !== 'unknown') || calories == null || !Number.isFinite(calories)) return null;
   const t = String(text || '').slice(0, 20000);
+  if (basis === 'unknown') return reconcileUnknown(t, calories);
   const p100 = t.match(RE_PER100_KCAL);
   const p100k = p100 ? n(p100[1]) : null;
 
@@ -109,6 +119,31 @@ function reconcileServingVsPer100({ text, basis, calories }) {
         return { basis: 'serving', amount: d.amount, unit: d.unit, reason: 'total_kcal_ratio' };
       }
     }
+  }
+  return null;
+}
+
+/** ★ 세션83 D — 기준 unknown 일 때만(D0). 근거 없으면 null = 종전(unknown · 저장 안 됨). */
+function reconcileUnknown(t, calories) {
+  // D3 단품 팩 — 개수 1 만(UN02). 열량: 선언 뒤 40자 안 «K kcal»(사이에 숫자 없음) → 없으면 집은 값. 박스 총열량이면 무변경(UN03).
+  const sp = t.match(RE_SINGLE_PACK);
+  if (sp) {
+    const s = n(sp[1]);
+    if (s && s <= 1000) {
+      const near = t.slice(sp.index + sp[0].length, sp.index + sp[0].length + 60).match(RE_NEAR_KCAL);
+      const k = near ? n(near[1]) : calories;
+      const box = new Set([...t.matchAll(RE_BOX_KCAL)].map((m) => n(m[1])).filter((v) => v != null));
+      if (k != null && !box.has(k)) return { basis: 'serving', amount: s, unit: normU(sp[2]), reason: 'total_single_pack', calories: k };
+    }
+    return null;
+  }
+  // D1 구형·건기식 1회분 선언 — 확인 근거가 있어야 한다(UN04).
+  const confirmAll = RE_LEGACY_CONFIRM.test(t);
+  for (const m of t.matchAll(RE_LEGACY_DECL)) {
+    const s = n(m[1]);
+    if (!s || s > 1000) continue;
+    if (!(m[3] || m[4] || confirmAll)) continue;
+    return { basis: 'serving', amount: s, unit: normU(m[2]), reason: 'serving_decl_legacy' };
   }
   return null;
 }

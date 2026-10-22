@@ -1019,8 +1019,9 @@ function parseNutrition(text) {
   // ★ 세션78 — 2열 영양표(1회분 | 100g당): 집은 값이 1회분 열이면 기준을 1회분으로 바로잡는다.
   //   판정은 공용 함수 «한 곳»(nutritionBasisReconcile.js · 정본 파서도 같은 함수). 근거 없으면 null = 종전 그대로.
   // ★ 세션81 — 총 내용량 기준(per_total)도 «열량에 붙은 1회분 선언»이 있으면 재판정(묶음 라벨 · eval_label_basis_anchor_v1 B).
-  if (basisInfo.basis === 'per_100g' || basisInfo.basis === 'per_100ml' || basisInfo.basis === 'per_total') {
-    const rc = reconcileServingVsPer100({ text: _textForBasis, basis: basisInfo.basis === 'per_total' ? 'total' : 'per100', calories: nutrition.calories ?? null });
+  // ★ 세션83 — 기준 unknown 도 공용 함수에 넘긴다(D 규칙 · 정답 IP/eval_unknown_basis_v1 · 정본 파서는 원래 넘기고 있었다).
+  if (basisInfo.basis === 'per_100g' || basisInfo.basis === 'per_100ml' || basisInfo.basis === 'per_total' || basisInfo.basis === 'unknown') {
+    const rc = reconcileServingVsPer100({ text: _textForBasis, basis: basisInfo.basis === 'per_total' ? 'total' : basisInfo.basis === 'unknown' ? 'unknown' : 'per100', calories: nutrition.calories ?? null });
     if (rc) {
       basisInfo = { basis: 'per_serving', amount: rc.amount, unit: rc.unit, reconciled: rc.reason };
       // ★ 세션82 C4 — 묶음 구조 근거면 선언의 열량으로(총열량 OCR 오독 방어 · 정답 eval_pack_structure_v1 PS01). 두 파서 동일.

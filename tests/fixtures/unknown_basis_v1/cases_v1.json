@@ -1,0 +1,691 @@
+{
+ "name": "eval_unknown_basis_v1 (기준 unknown 라벨의 «괄호·당 없는 1회분 선언» → 1회분)",
+ "fixed_at": "2026-10-20 세션83 · 구현 전 고정",
+ "why": "193 §5-1 — 런타임 파서 unknown 11(저장 안 됨). 원문 확인 결과 세 유형: (D1) 구형 «1회 제공량 1포(100ml) / 총 N회 제공량 / 1회 제공량당 함량» · (D2) 건기식 «1일 섭취량 : 1포(20mL) / 1일 섭취량 당 함량» · (D3) 완전두유 «총 내용량 1팩(190ml)» — 숫자 뒤 단위어 «팩» 때문에 총 내용량 정규식이 못 읽고, 열량은 박스 «190mlx16팩(3,040 mL/960kcal)» 의 총열량을 집어 16배 과대(960·1600·1680). 전수(크롤 OCR 3,967 · 두 파서 unknown 968)에서 같은 계열 9건을 더 찾아 UB12~UB20 으로 넣었다.",
+ "rules": [
+  "D0 대상: 현재 기준이 unknown 이고 집은 열량이 있을 때만(runtime unknown · capture unknown). per100·serving·total 은 무변경(UN05). 열량 없으면 무변경(UN01).",
+  "D1 1회분 선언: «1회|1일 + 제공량|섭취량 [:] (N개수 단위어)? (? N단위 )?» — N 은 1~1000. 확인 근거가 하나 이상 있어야 한다: ① 선언 바로 뒤 «/1회» ② 선언 바로 뒤 «당» ③ 텍스트에 «제공량|섭취량 당 (함량|열량|숫자)» ④ «총 M회 제공량». 근거 없으면 무변경(UN04). 결과 1회분 N · 열량은 집은 값 그대로. reason 'serving_decl_legacy'.",
+  "D3 단품 팩: «총 내용량 1단위어(N단위)» (닫는 괄호 탈락 허용 · 개수는 1만 · UN02). 열량 = 선언 뒤 40자 안에 숫자 없이 이어지는 «K kcal» → 없으면 집은 값. 그 값이 박스 총열량 «(…/K kcal)» 과 같으면 무변경(UN03). 결과 1회분 N · 열량 K. reason 'total_single_pack'.",
+  "D4 두 파서 공용(nutritionBasisReconcile 한 곳 · 78-10). 런타임은 unknown 일 때도 공용 함수를 부른다.",
+  "D5 전수 diff(크롤 OCR 3,967 · 두 파서): 바뀌는 건은 UB01~UB20 의 20건뿐이어야 한다(그 밖 변화 = 회귀 · 금지 92)."
+ ],
+ "cases": [
+  {
+   "id": "UB01",
+   "text": "texts/rv_1000224414.txt",
+   "why": "구형 표기 «1회 제공량 1포(100ml) · 총 1회 제공량(100ml) 열량 42kcal» (193 §5-1 목록)",
+   "before": {
+    "a": [
+     "unknown",
+     100,
+     42
+    ],
+    "c": [
+     "unknown",
+     null,
+     42
+    ]
+   },
+   "expect": {
+    "runtime": [
+     "per_serving",
+     100,
+     42
+    ],
+    "capture": [
+     "serving",
+     100,
+     42
+    ]
+   }
+  },
+  {
+   "id": "UB02",
+   "text": "texts/rv_1000232159.txt",
+   "why": "건강기능식품 «1일 섭취량 : 1포(20mL) · 1일 섭취량 당 함량 · 15 kcal» (193 §5-1 목록)",
+   "before": {
+    "a": [
+     "unknown",
+     null,
+     15
+    ],
+    "c": [
+     "unknown",
+     null,
+     15
+    ]
+   },
+   "expect": {
+    "runtime": [
+     "per_serving",
+     20,
+     15
+    ],
+    "capture": [
+     "serving",
+     20,
+     15
+    ]
+   }
+  },
+  {
+   "id": "UB03",
+   "text": "texts/rv_1002273918.txt",
+   "why": "완전두유 «총 내용량 1팩(190ml)» · 열량 65(박스 총열량 1,040/16 = 65 와 일치) (193 §5-1)",
+   "before": {
+    "a": [
+     "unknown",
+     null,
+     65
+    ],
+    "c": [
+     "unknown",
+     null,
+     65
+    ]
+   },
+   "expect": {
+    "runtime": [
+     "per_serving",
+     190,
+     65
+    ],
+    "capture": [
+     "serving",
+     190,
+     65
+    ]
+   }
+  },
+  {
+   "id": "UB04",
+   "text": "texts/rv_1002273926.txt",
+   "why": "완전두유 «총내용량 1팩(190ml) 60 kcal» · 지금 박스 총열량 960 을 집음(16배 과대) → 60 (193 §5-1)",
+   "before": {
+    "a": [
+     "unknown",
+     null,
+     960
+    ],
+    "c": [
+     "unknown",
+     null,
+     960
+    ]
+   },
+   "expect": {
+    "runtime": [
+     "per_serving",
+     190,
+     60
+    ],
+    "capture": [
+     "serving",
+     190,
+     60
+    ]
+   }
+  },
+  {
+   "id": "UB05",
+   "text": "texts/rv_1002273928.txt",
+   "why": "완전두유 «총내용량 1팩(190mL)⏎100 kcal» · 지금 1,600(박스) → 100 (193 §5-1)",
+   "before": {
+    "a": [
+     "unknown",
+     null,
+     1600
+    ],
+    "c": [
+     "unknown",
+     null,
+     1600
+    ]
+   },
+   "expect": {
+    "runtime": [
+     "per_serving",
+     190,
+     100
+    ],
+    "capture": [
+     "serving",
+     190,
+     100
+    ]
+   }
+  },
+  {
+   "id": "UB06",
+   "text": "texts/rv_1002273930.txt",
+   "why": "완전두유 «1팩(190mL)⏎100 kcal» · 지금 1,600 → 100 (193 §5-1)",
+   "before": {
+    "a": [
+     "unknown",
+     null,
+     1600
+    ],
+    "c": [
+     "unknown",
+     null,
+     1600
+    ]
+   },
+   "expect": {
+    "runtime": [
+     "per_serving",
+     190,
+     100
+    ],
+    "capture": [
+     "serving",
+     190,
+     100
+    ]
+   }
+  },
+  {
+   "id": "UB07",
+   "text": "texts/rv_1002273932.txt",
+   "why": "완전두유 «1팩(190mL)⏎105 kcal» · 지금 1,680 → 105 (193 §5-1)",
+   "before": {
+    "a": [
+     "unknown",
+     null,
+     1680
+    ],
+    "c": [
+     "unknown",
+     null,
+     1680
+    ]
+   },
+   "expect": {
+    "runtime": [
+     "per_serving",
+     190,
+     105
+    ],
+    "capture": [
+     "serving",
+     190,
+     105
+    ]
+   }
+  },
+  {
+   "id": "UB08",
+   "text": "texts/rv_5008425.txt",
+   "why": "구형 «1회 제공량 1컵(50ml) 총 4회 제공량(200ml) 1회 제공량당 함량 열량 4kcal» (193 §5-1)",
+   "before": {
+    "a": [
+     "unknown",
+     null,
+     4
+    ],
+    "c": [
+     "unknown",
+     null,
+     4
+    ]
+   },
+   "expect": {
+    "runtime": [
+     "per_serving",
+     50,
+     4
+    ],
+    "capture": [
+     "serving",
+     50,
+     4
+    ]
+   }
+  },
+  {
+   "id": "UB09",
+   "text": "texts/rv_5027734.txt",
+   "why": "구형 «1회 제공량 1컵(50ml), 총 10회 제공량(500ml) 1회 제공량당 함량» (193 §5-1)",
+   "before": {
+    "a": [
+     "unknown",
+     null,
+     4
+    ],
+    "c": [
+     "unknown",
+     null,
+     4
+    ]
+   },
+   "expect": {
+    "runtime": [
+     "per_serving",
+     50,
+     4
+    ],
+    "capture": [
+     "serving",
+     50,
+     4
+    ]
+   }
+  },
+  {
+   "id": "UB10",
+   "text": "texts/rv_5052201.txt",
+   "why": "구형 «1회 제공량 1컵(50ml) / 총 10회 제공량 (500ml) 1회 제공량당 함량» (193 §5-1)",
+   "before": {
+    "a": [
+     "unknown",
+     null,
+     4
+    ],
+    "c": [
+     "unknown",
+     null,
+     4
+    ]
+   },
+   "expect": {
+    "runtime": [
+     "per_serving",
+     50,
+     4
+    ],
+    "capture": [
+     "serving",
+     50,
+     4
+    ]
+   }
+  },
+  {
+   "id": "UB11",
+   "text": "texts/rv_5066956.txt",
+   "why": "구형 «1회제공량 1개(100g), 총 1회 제공량(100g) 열량273.09Kcal» (193 §5-1)",
+   "before": {
+    "a": [
+     "unknown",
+     100,
+     273.09
+    ],
+    "c": [
+     "unknown",
+     null,
+     273.09
+    ]
+   },
+   "expect": {
+    "runtime": [
+     "per_serving",
+     100,
+     273.09
+    ],
+    "capture": [
+     "serving",
+     100,
+     273.09
+    ]
+   }
+  },
+  {
+   "id": "UB12",
+   "text": "texts/rv_1000220024.txt",
+   "why": "전수 탐색(unknown 968 중 같은 계열) «1회제공량(35g/1회), 총 6회 제공량(210g) 열량95.13Kcal»",
+   "before": {
+    "a": [
+     "unknown",
+     35,
+     95.13
+    ],
+    "c": [
+     "unknown",
+     null,
+     95.13
+    ]
+   },
+   "expect": {
+    "runtime": [
+     "per_serving",
+     35,
+     95.13
+    ],
+    "capture": [
+     "serving",
+     35,
+     95.13
+    ]
+   }
+  },
+  {
+   "id": "UB13",
+   "text": "texts/rv_1000220026.txt",
+   "why": "같은 계열 «1회제공량(35g /1회), 총 6회 제공량(210g)» 98.78",
+   "before": {
+    "a": [
+     "unknown",
+     35,
+     98.78
+    ],
+    "c": [
+     "unknown",
+     null,
+     98.78
+    ]
+   },
+   "expect": {
+    "runtime": [
+     "per_serving",
+     35,
+     98.78
+    ],
+    "capture": [
+     "serving",
+     35,
+     98.78
+    ]
+   }
+  },
+  {
+   "id": "UB14",
+   "text": "texts/rv_1000463116.txt",
+   "why": "건기식 «1일 섭취량: 1포(2g) · 1일 섭취량 당 함량: 열량 8kcal»",
+   "before": {
+    "a": [
+     "unknown",
+     null,
+     8
+    ],
+    "c": [
+     "unknown",
+     null,
+     8
+    ]
+   },
+   "expect": {
+    "runtime": [
+     "per_serving",
+     2,
+     8
+    ],
+    "capture": [
+     "serving",
+     2,
+     8
+    ]
+   }
+  },
+  {
+   "id": "UB15",
+   "text": "texts/rv_1002273920.txt",
+   "why": "완전두유 «총 내용량 1팩(190ml» (닫는 괄호 OCR 탈락) · 55kcal = 박스 880/16",
+   "before": {
+    "a": [
+     "unknown",
+     null,
+     55
+    ],
+    "c": [
+     "unknown",
+     null,
+     55
+    ]
+   },
+   "expect": {
+    "runtime": [
+     "per_serving",
+     190,
+     55
+    ],
+    "capture": [
+     "serving",
+     190,
+     55
+    ]
+   }
+  },
+  {
+   "id": "UB16",
+   "text": "texts/rv_1002273924.txt",
+   "why": "완전두유 서리태 «총 내용량 1팩(190ml» · 65 kcal = 박스 1,040/16",
+   "before": {
+    "a": [
+     "unknown",
+     null,
+     65
+    ],
+    "c": [
+     "unknown",
+     null,
+     65
+    ]
+   },
+   "expect": {
+    "runtime": [
+     "per_serving",
+     190,
+     65
+    ],
+    "capture": [
+     "serving",
+     190,
+     65
+    ]
+   }
+  },
+  {
+   "id": "UB17",
+   "text": "texts/rv_1001156424.txt",
+   "why": "«1회 섭취량(20g)당 85kcal» — 단위어 목록에 «회 섭취량» 이 없어 unknown",
+   "before": {
+    "a": [
+     "unknown",
+     null,
+     85
+    ],
+    "c": [
+     "unknown",
+     null,
+     85
+    ]
+   },
+   "expect": {
+    "runtime": [
+     "per_serving",
+     20,
+     85
+    ],
+    "capture": [
+     "serving",
+     20,
+     85
+    ]
+   }
+  },
+  {
+   "id": "UB18",
+   "text": "texts/rv_5051653.txt",
+   "why": "«1회 제공량 12g(2개) 50kcal · 1회(2개)제공량당 50kcal»",
+   "before": {
+    "a": [
+     "unknown",
+     12,
+     50
+    ],
+    "c": [
+     "unknown",
+     null,
+     50
+    ]
+   },
+   "expect": {
+    "runtime": [
+     "per_serving",
+     12,
+     50
+    ],
+    "capture": [
+     "serving",
+     12,
+     50
+    ]
+   }
+  },
+  {
+   "id": "UB19",
+   "text": "texts/rv_5051654.txt",
+   "why": "«1회 제공량 12g(1개) 40kcal · 1회(1개)제공량당 40kcal»",
+   "before": {
+    "a": [
+     "unknown",
+     12,
+     40
+    ],
+    "c": [
+     "unknown",
+     null,
+     40
+    ]
+   },
+   "expect": {
+    "runtime": [
+     "per_serving",
+     12,
+     40
+    ],
+    "capture": [
+     "serving",
+     12,
+     40
+    ]
+   }
+  },
+  {
+   "id": "UB20",
+   "text": "texts/rv_5105726.txt",
+   "why": "«1회제공량 (75g/1회) 열량211.42Kcal» — «/1회» 가 1회분 확인 근거",
+   "before": {
+    "a": [
+     "unknown",
+     75,
+     211.42
+    ],
+    "c": [
+     "unknown",
+     null,
+     211.42
+    ]
+   },
+   "expect": {
+    "runtime": [
+     "per_serving",
+     75,
+     211.42
+    ],
+    "capture": [
+     "serving",
+     75,
+     211.42
+    ]
+   }
+  },
+  {
+   "id": "UN01",
+   "text": "texts/rv_5156445.txt",
+   "why": "김치 «1회 섭취량 … 40g» · 열량 없음 → 그대로 unknown(열량 없으면 규칙 미적용)",
+   "expect": {
+    "runtime": [
+     "unknown",
+     null,
+     null
+    ],
+    "capture": [
+     "unknown",
+     null,
+     null
+    ]
+   },
+   "before": {
+    "a": [
+     "unknown",
+     null,
+     null
+    ],
+    "c": [
+     "unknown",
+     null,
+     null
+    ]
+   }
+  },
+  {
+   "id": "UN02",
+   "text": "texts/syn_N02_two_packs.txt",
+   "why": "(합성) «총 내용량 2팩(380ml)» — 개수 2 는 단품 근거가 아님 → unknown",
+   "expect": {
+    "runtime": [
+     "unknown",
+     null,
+     120
+    ],
+    "capture": [
+     "unknown",
+     null,
+     120
+    ]
+   }
+  },
+  {
+   "id": "UN03",
+   "text": "texts/syn_N03_box_kcal_only.txt",
+   "why": "(합성) «총 내용량 1팩(190ml)» 인데 열량이 박스 총열량(960)뿐 → 바꾸지 않음(unknown · 저장 안 됨 = 안전)",
+   "expect": {
+    "runtime": [
+     "unknown",
+     null,
+     960
+    ],
+    "capture": [
+     "unknown",
+     null,
+     960
+    ]
+   }
+  },
+  {
+   "id": "UN04",
+   "text": "texts/syn_N04_no_confirm.txt",
+   "why": "(합성) «1회 제공량 1포(100ml)» 만 있고 확인 근거(총 N회 제공량 · 제공량당 · /1회 · (N)당) 없음 → unknown",
+   "expect": {
+    "runtime": [
+     "unknown",
+     null,
+     42
+    ],
+    "capture": [
+     "unknown",
+     null,
+     42
+    ]
+   }
+  },
+  {
+   "id": "UN05",
+   "text": "texts/syn_N05_per100.txt",
+   "why": "(합성) «100ml당» 이 있으면 per100 — unknown 규칙은 손대지 않음",
+   "expect": {
+    "runtime": [
+     "per_100ml",
+     100,
+     8
+    ],
+    "capture": [
+     "per100",
+     100,
+     8
+    ]
+   }
+  }
+ ]
+}

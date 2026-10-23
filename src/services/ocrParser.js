@@ -2740,13 +2740,52 @@ function extractByLabels(text, labels, opts = {}) {
  *   eval: IP/eval_product_meta_v1 (전사 28 + 합성 3 · 정답 변경 7 · 나머지 기준선 동결).
  */
 const COMPANY_RETURN_LINE_RE = /반품|교환|구입처|그입처/;
-function rejectCompanyValue(text, index, val) {
+function rejectCompanyValue(text, index, val, field) {
   const ls = text.lastIndexOf('\n', index) + 1;
   const le0 = text.indexOf('\n', index);
   const line = text.slice(ls, le0 < 0 ? text.length : le0);
   if (COMPANY_RETURN_LINE_RE.test(line)) return true;
   if (/^(및|또는|에서)(\s|$)/.test(val)) return true;
   if (!/[가-힣A-Za-z0-9]/.test(val)) return true;
+  return isCompanyJunk(val, field);
+}
+/**
+ * ★ 세션83 (정답 IP/eval_company_junk_v1 · J1) — 값만 보고 «회사 표기가 아님»을 판정(운영 정리 73-brand-junk-cleanup 도 이 함수를 쓴다).
+ *   ④ 라벨 낱말(«소비기한» · «원재료명» · «유통전문» · «판매원» · «내용량 150g(820kcal)»)
+ *   ⑤ 주소/전화 조각으로 시작(«37 (순화동)/(02)380-5678» · «남부순환로 2745 (도곡동)» · «화동) / …» · «동18-1» · «F2 충북 …») — 회사 표기는 회사명으로 시작한다.
+ */
+const COMPANY_LABEL_WORDS = ['소비기한', '유통기한', '원재료명', '원재료', '주의사항', '내용량', '총내용량', '유통전문', '판매원', '제조원', '제조사', '보관방법', '포장재질',
+  '품목보고번호', '품목제조보고번호', '영양정보', '영양성분', '식품유형', '식품의유형', '소비자상담', '고객상담', '상담실', '유통판매', '판매전문'];   // «소재지:고려은단…» 처럼 뒤에 회사가 오는 머리말은 거부하지 않는다(meta eval 072)
+/** «판매원 (주)라이브어트/…» · «유통전문 농업회사법인(주)성호/…» · «F1 ㈜샌드팜/…» — 앞 라벨 낱말/공장 기호를 떼어 낸 회사 표기(없으면 원문 그대로). */
+const RE_COMPANY_HEAD = { brand: /^(?:(?:유통전문\s{0,2}판매원|유통전문|유통|판매원|업소명)\s{0,2}[:：/]?\s{0,2})+/, manufacturer: /^(?:(?:제조원|제조사|업소명)\s{0,2}[:：/]?\s{0,2})+/, any: /^(?:업소명\s{0,2}[:：/]?\s{0,2})+/ };   // 칸에 맞는 머리말만 뗀다(제조원 칸의 «판매원 X» 는 판매원 회사라 잔해)
+const RE_COMPANY_STRICT = /\(주\)|\(\s?주\s?\)|㈜|주식회사|유한회사|농업회사법인|영농조합|협동조합|\bCo\.|\bInc\b|\bLtd\b|\bLTD\b|\bCORP/i;   // 회사 «확실» 표기(예외 판정용)
+const RE_COMPANY_MARK = /\(주\)|㈜|주식회사|유한회사|농업회사법인|영농조합|협동조합|Co\.?|Inc|Ltd|LTD|CORP|S\.?P\.?A|식품|제과|푸드|F&B/i;
+function stripCompanyHead(val, field) {
+  let x = String(val || '').replace(/^[|·•▲■*\s]+/, '').trim();
+  const y = x.replace(RE_COMPANY_HEAD[field] || RE_COMPANY_HEAD.any, '').trim();
+  if (y && y !== x && y.length >= 2) x = y;
+  return x;   // «F1) (주)면사랑 …, F2) …» 공장 목록 표기는 그대로 둔다(meta eval 013·060·070)
+}
+function isCompanyJunk(val, field) {
+  let x = stripCompanyHead(val, field);
+  const f = x.match(/^F\d{1,2}\s{0,2}[-:：).]?\s{0,2}(.+)$/);   // «F1 ㈜샌드팜/…» 은 회사 · «F2 충북 충주시 …» 는 주소
+  if (f && RE_COMPANY_MARK.test(f[1])) x = f[1].trim();
+  if (!x) return true;
+  const k = x.replace(/\s/g, '');
+  if (COMPANY_LABEL_WORDS.some((w) => k.startsWith(w))) return true;
+  if (k.length < 2 || /^[a-z]{1,5}$/.test(k)) return true;   // «총» · «tyxo» 같은 OCR 조각(회사 영문 표기는 대문자·더 길다)
+  // 주소만(«서울특별시 중구») — 시·도로 시작하고 모든 낱말이 행정구역(시·도·구·군·읍·면·동)으로 끝날 때만(«대전광역시 동네빵집협동조합» 은 회사)
+  if (/^(?:서울|부산|대구|인천|광주|대전|울산|세종|경기|강원|충청|충북|충남|전라|전북|전남|경상|경북|경남|제주)/.test(x)) {
+    const toks = x.split(/\s+/).filter(Boolean);
+    if (toks.length >= 2 && toks.length <= 4 && toks.every((tk) => /(?:시|도|구|군|읍|면|동)$/.test(tk))) return true;
+  }
+  // 숫자로 시작해도 «153식품» · «40계단 발효소» 같은 회사가 있다(공공 C005 실측) → 전화·«…동)»·층/호 가 같이 있거나 숫자·기호뿐일 때만
+  const strict = RE_COMPANY_STRICT.test(x);   // «원산단2길 112, F2) (주)맑은식품/…» 처럼 뒤에 회사가 있으면 주소 조각 규칙을 적용하지 않는다
+  if (!strict && /^\(?\d/.test(x) && (/\d{2,4}[-)]\s{0,1}\d{3,4}-?\d{4}/.test(x) || /[가-힣]{1,4}동\s{0,2}\)/.test(x) || /^\d[\d,\s]*(?:층|호)/.test(x) || !/[가-힣A-Za-z]{2}/.test(x))) return true;
+  if (!strict && (/^[가-힣0-9]{1,12}(?:로|길)\s{1,2}\d/.test(x) || /^[가-힣]{1,3}동\s{0,2}\)/.test(x) || /^[가-힣]\d{1,3}-\d/.test(x) || /^[가-힣]?\d{1,3}층/.test(x) || /^F\d{1,2}\s{0,2}[\s\-:：).]/.test(x))) return true;   // «남부순환로 2745» · «화동)» · «동18-1» · «지2층» · «F2 충북» · «F5:경기도»
+  if (!strict && /폴리에틸렌|폴리프로필렌|^내면\s{0,2}[:：]/.test(x)) return true;   // 포장재질 값(회사 표기 뒤 꼬리면 회사로 둔다)
+  // 안내 문장(«본 제품은 소비자기본법…» · «부정, 불량식품 신고는 국번없이» · «전면 우측 하단 표시일까지») · 영양 줄
+  if (!RE_COMPANY_STRICT.test(x) && /^(?:본\s?제품|부정|보존기준)|국번|신고는|소비자기본법|분쟁|의거|표시일|하십시오|바랍니다|있으니|당류\s{0,2}\d/.test(x)) return true;   // 회사 표기 뒤 꼬리(«㈜신한에프앤비 … 별도표시일까지»)는 회사로 둔다
   return false;
 }
 
@@ -2866,14 +2905,14 @@ function extractProductMeta(text) {
   // ★ 세션73 U72-6 — 「제조원 및 판매원 X」 복합 라벨을 먼저 본다(제조원 칸이 「및」이 되던 결함) · 반품 문장은 버린다.
   const brand = extractByLabels(text, [
     '제조원 및 판매원', '제조 및 판매원', '유통전문판매원', '유통판매원', '판매원',
-  ], { reject: rejectCompanyValue });
-  if (brand) meta.brand = brand;
+  ], { reject: (t, i, v) => rejectCompanyValue(t, i, v, 'brand') });
+  if (brand) meta.brand = stripCompanyHead(brand, 'brand') || undefined;   // ★ 세션83 J3 앞 OCR 잔해 · 앞 라벨 낱말(«판매원 (주)…») 떼기
 
   // 제조원 (실제 제조 공장)
   const manufacturer = extractByLabels(text, [
     '제조원 및 판매원', '제조 및 판매원', '제조원', '제조사', '제조/소분원', '제조 / 소분원', '소분원', '수입원',
-  ], { reject: rejectCompanyValue });
-  if (manufacturer) meta.manufacturer = manufacturer;
+  ], { reject: (t, i, v) => rejectCompanyValue(t, i, v, 'manufacturer') });
+  if (manufacturer) meta.manufacturer = stripCompanyHead(manufacturer, 'manufacturer') || undefined;
 
   // 내용량 (g, mL, kg, L, 개)
   // ★★ 세션40: 세션39가 parseNutrition(L564)만 고치고 **여기를 놓쳤다**.
@@ -2996,6 +3035,7 @@ module.exports = {
   mergeAllergensV2,     // ★ 세션44: 두 사진 3분리 합집합(치명B)
   flattenAllergensV2,   // ★ 세션45: flat 의 의미를 두 경로에서 일치시킨다(중대4)
   extractProductMeta,
+  isCompanyJunk,
   analyzeText,
   ADDITIVE_KEYWORDS,
   ALLERGEN_KEYWORDS,

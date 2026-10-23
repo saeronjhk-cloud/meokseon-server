@@ -29,7 +29,8 @@ function isJunk(v) {
   if (v === null || v === undefined) return false;
   const s = String(v).trim();
   if (!s) return false;
-  return JUNK_START.test(s) || JUNK_WORDS.test(s) || !HAS_WORD.test(s);
+  // ★ 세션83 — 파서와 같은 판정(isCompanyJunk · 라벨 낱말 · 주소/전화 조각 · OCR 조각 · 정답 IP/eval_company_junk_v1) 추가
+  return JUNK_START.test(s) || JUNK_WORDS.test(s) || !HAS_WORD.test(s) || require('../src/services/ocrParser').isCompanyJunk(s);
 }
 
 async function main() {

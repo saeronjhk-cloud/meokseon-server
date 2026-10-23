@@ -57,13 +57,16 @@ const RE_LEGACY_CONFIRM = /(?:제공량|섭취량)\s{0,4}당\s{0,4}(?:함량|열
 const RE_SINGLE_PACK = new RegExp('총\\s{0,4}내용량\\s{0,4}[:：]?\\s{0,4}1\\s{0,4}' + PACK_WORD + '\\s{0,4}[(（]\\s{0,4}(\\d[\\d,.]{0,8})\\s{0,4}(g|㎖|ml|mL)(?![a-zA-Z])\\s{0,4}[)）]?');
 const RE_NEAR_KCAL = /^[^\d]{0,40}?(\d[\d,.]{0,8})\s{0,4}(?:kcal|킬로칼로리)/i;
 const RE_BOX_KCAL = /[(（]\s{0,4}[\d,.]{1,12}\s{0,4}(?:g|kg|ml|mL|L|㎖)?\s{0,4}\/\s{0,4}(\d[\d,.]{0,12})\s{0,4}(?:kcal|킬로칼로리)/gi;
+// ★ 세션83 E(정답 IP/eval_total_decl_kcal_v1) — 총량 기준 영양정보 머리 «총 내용량 190 mL/60kcal» · «총 내용량 100g|160 kcal».
+//   파서는 문서 «첫» kcal(앞면 문구 · 박스 총열량 «190mlx24개(4.56L/1,440 kcal)»)을 집는 일이 있다. 괄호 총열량은 기존 CTK 규칙 몫이라 제외.
+const RE_TOTAL_DECL_KCAL = /총\s{0,4}내용량\s{0,4}[:：]?\s{0,4}(\d[\d,.]{0,8})\s{0,4}(g|㎖|ml|mL)(?![a-zA-Z])\s{0,4}[/|]?\s{0,4}(\d[\d,.]{0,8})\s{0,4}(?:kcal|킬로칼로리)/gi;
 const normU = (u) => { const x = String(u).toLowerCase(); return x === '㎖' ? 'ml' : x; };
 function n(s) { const v = Number(String(s).replace(/,/g, '')); return Number.isFinite(v) ? v : null; }
 
 /**
  * @param {{text:string, basis:string, calories:number|null}} p  basis 는 정본 어휘(per100|serving|total|unknown)
  */
-function reconcileServingVsPer100({ text, basis, calories }) {
+function reconcileServingVsPer100({ text, basis, calories, macros }) {
   // ★ 세션81 — 'total'(총 내용량 기준)에도 적용: 묶음 라벨 «총 내용량 780g(130g×6) / 1개당(130g) 205 kcal» 을
   //   총량으로 나누던 결함(양반밥 100g당 26 → 정답 158). total 은 «열량에 붙은 1회분 선언»(A) 이 있을 때만 바꾼다(B 규칙 미적용).
   if ((basis !== 'per100' && basis !== 'total' && basis !== 'unknown') || calories == null || !Number.isFinite(calories)) return null;
@@ -101,6 +104,18 @@ function reconcileServingVsPer100({ text, basis, calories }) {
         if (!s2 || k2 == null || !pack.has(s2 + '|' + u2)) continue;
         if (totalAmt && s2 >= totalAmt) continue;
         return { basis: 'serving', amount: s2, unit: u2, reason: 'pack_structure', calories: k2 };
+      }
+    }
+    // ★ 세션83 E — «총 내용량 N단위 [/|] K kcal» 선언. 서로 다른 K 가 정확히 1개 · 집은 열량과 다를 때만(TN01·TN03).
+    const decl = [...t.matchAll(RE_TOTAL_DECL_KCAL)].map((m) => ({ s: n(m[1]), u: normU(m[2]), k: n(m[3]) })).filter((d) => d.s && d.k != null && d.s <= 5000);
+    const ks = new Set(decl.map((d) => d.k));
+    if (ks.size === 1 && decl[0].k !== calories) {
+      // E6 — 같은 라벨의 4·4·9 계산이 있으면 K 가 집은 값보다 계산에 더 가깝고 30% 안일 때만(라면 «스프 8g / 12kcal» 같은 부속 표 방어 · 전수 diff worse 6 · TN05).
+      const c = macros && [macros.carbs, macros.protein, macros.fat].every((v) => v != null && Number.isFinite(Number(v)))
+        ? 4 * Number(macros.carbs) + 4 * Number(macros.protein) + 9 * Number(macros.fat) : null;
+      const k = decl[0].k;
+      if (c == null || (Math.abs(k - c) < Math.abs(calories - c) && Math.abs(k - c) <= Math.max(15, 0.3 * c))) {
+        return { basis: 'serving', amount: decl[0].s, unit: decl[0].u, reason: 'total_decl_kcal', calories: k };
       }
     }
     return null;

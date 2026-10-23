@@ -330,16 +330,17 @@ function parseLabel(text) {
   let basis = detectBasis(text);
   const total = detectTotalContent(text);
   const cal = extractCalories(text, basis.basis);   // 세션43: 괄호 총열량 판단에 basis 가 필요하다
+  // ★ 세션83 E6 — 영양소를 재판정 «전에» 읽는다(4·4·9 교차확인 · 런타임 파서도 영양소를 먼저 읽는다). extractNutrients 는 basis 와 무관.
+  const { values, units } = extractNutrients(text);
   // ★ 세션78 — 2열 영양표(1회분 | 100g당) 기준 재판정. 앱 파서와 «같은 함수»(src/services/nutritionBasisReconcile.js).
   {
-    const rc = reconcileServingVsPer100({ text, basis: basis.basis, calories: cal.calories ?? null });
+    const rc = reconcileServingVsPer100({ text, basis: basis.basis, calories: cal.calories ?? null, macros: { carbs: values.total_carbs ?? null, protein: values.protein ?? null, fat: values.total_fat ?? null } });
     if (rc) {
       basis = { basis: 'serving', amount: rc.amount, unit: rc.unit, reconciled: rc.reason }; warnings.push(`BASIS_RECONCILED: 100g당 → 1회분 ${rc.amount}${rc.unit} (${rc.reason})`);
       // ★ 세션82 C4 — 묶음 구조 근거면 선언의 열량으로(정답 eval_pack_structure_v1 · 런타임 파서와 동일)
       if (rc.calories != null && Number.isFinite(rc.calories) && rc.calories !== cal.calories) cal.calories = rc.calories;
     }
   }
-  const { values, units } = extractNutrients(text);
   const report_nos = extractReportNos(text);
   const identity = extractIdentity(text);
   const ingredients = extractIngredients(text);

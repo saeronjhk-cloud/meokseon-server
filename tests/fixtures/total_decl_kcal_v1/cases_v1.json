@@ -1,0 +1,1596 @@
+{
+ "name": "eval_total_decl_kcal_v1 (총량 기준 라벨: «총 내용량 N단위 [/|] K kcal» 선언의 열량 우선)",
+ "fixed_at": "2026-10-23 세션83 · TE01~06·TN01~04 구현 전 고정 · TE07~48·TN05~11 은 전수 diff 후 판정해 추가(82f 선례 · 출시 전)",
+ "why": "192 §8-2 / 193 §5-2 «남은 conflict C(열량 숫자 OCR 오독)». 운영 K-FIND 교차 conflict 158 중 열량 conflict 63 → 판매처 4·4·9 계산이 K-FIND 와 맞는데 열량만 틀린 것 14. 원문 확인: 파서가 문서 «첫» kcal(앞면 홍보 문구 · 박스 총열량 «190mlx24개(4.56L/1,440 kcal)»)을 집고, 영양정보 머리 «총 내용량 190 mL/60kcal» 의 열량을 놓침.",
+ "rules": [
+  "E1 대상: 현재 기준이 총량(runtime per_total · capture total)일 때만 · C 규칙(pack_structure) 다음.",
+  "E2 선언: «총 내용량 [:] N(g|ml) [/|]? K kcal» (괄호 없음 — 괄호 총열량은 기존 CTK 규칙 몫). 텍스트 안 서로 다른 K 가 정확히 1개일 때만(TN03).",
+  "E3 K 가 집은 열량과 같으면 무변경(TN01 · 기준도 바꾸지 않음).",
+  "E4 결과: 1회분 N · 열량 K(총 내용량 = 한 봉 · D3 · C 와 같은 표현) · reason 'total_decl_kcal'.",
+  "E5 두 파서 공용 · 전수 diff(3,967): 최종 변경 48 = TE01~TE48 뿐(가드 전 55 → 4·4·9 로 악화 7 제외 = TN05~11 · 계획 밖 42 는 4·4·9(36) 또는 원문 확인(6)으로 양성 판정해 추가 · 두 파서 불일치 0).",
+  "E6 같은 라벨의 4·4·9(탄수화물·단백질·지방)가 있으면 K 가 집은 열량보다 계산에 더 가깝고 차이가 max(15, 30%) 안일 때만 바꾼다. 계산이 없으면(영양소 결손) E2~E3 만으로 바꾼다. (첫 전수 diff 55건 중 악화 6 · 부속 표 1 을 막으려고 추가)"
+ ],
+ "cases": [
+  {
+   "id": "TE01",
+   "text": "texts/rv_1001489417.txt",
+   "why": "김밥어묵 «총 내용량 100g|160 kcal» · 지금 앞면 문구 «100g(60kcal» 을 집음 · K-FIND 174 · 4·4·9 162",
+   "before": {
+    "a": [
+     "per_total",
+     null,
+     60
+    ],
+    "c": [
+     "total",
+     null,
+     60
+    ]
+   },
+   "expect": {
+    "runtime": [
+     "per_serving",
+     100,
+     160
+    ],
+    "capture": [
+     "serving",
+     100,
+     160
+    ]
+   }
+  },
+  {
+   "id": "TE02",
+   "text": "texts/rv_1000087233.txt",
+   "why": "아몬드브리즈 «총 내용량 190 mL/60kcal» · 지금 박스 «190mlx24개(4.56L/1,440 kcal)» 를 집음(24배) · K-FIND 32/100ml",
+   "before": {
+    "a": [
+     "per_total",
+     null,
+     1440
+    ],
+    "c": [
+     "total",
+     null,
+     1440
+    ]
+   },
+   "expect": {
+    "runtime": [
+     "per_serving",
+     190,
+     60
+    ],
+    "capture": [
+     "serving",
+     190,
+     60
+    ]
+   }
+  },
+  {
+   "id": "TE03",
+   "text": "texts/rv_5139271.txt",
+   "why": "무항생제 우유 «총 내용량 125 mL 80 kcal» · 지금 «125-130kcal» 문구의 130 · K-FIND 64/100ml",
+   "before": {
+    "a": [
+     "per_total",
+     null,
+     130
+    ],
+    "c": [
+     "total",
+     null,
+     130
+    ]
+   },
+   "expect": {
+    "runtime": [
+     "per_serving",
+     125,
+     80
+    ],
+    "capture": [
+     "serving",
+     125,
+     80
+    ]
+   }
+  },
+  {
+   "id": "TE04",
+   "text": "texts/rv_1002419121.txt",
+   "why": "쑥두유 «총 내용량 180 mL/95kcal» · 지금 박스 «15/27/1425 kcal» · K-FIND 53/100ml",
+   "before": {
+    "a": [
+     "per_total",
+     null,
+     1425
+    ],
+    "c": [
+     "total",
+     null,
+     1425
+    ]
+   },
+   "expect": {
+    "runtime": [
+     "per_serving",
+     180,
+     95
+    ],
+    "capture": [
+     "serving",
+     180,
+     95
+    ]
+   }
+  },
+  {
+   "id": "TE05",
+   "text": "texts/rv_1002142366.txt",
+   "why": "한끼두유 «총 내용량 190 mL 90 kcal» · 지금 박스 «2,850mL…350kcal» · K-FIND 44/100ml",
+   "before": {
+    "a": [
+     "per_total",
+     null,
+     350
+    ],
+    "c": [
+     "total",
+     null,
+     350
+    ]
+   },
+   "expect": {
+    "runtime": [
+     "per_serving",
+     190,
+     90
+    ],
+    "capture": [
+     "serving",
+     190,
+     90
+    ]
+   }
+  },
+  {
+   "id": "TN01",
+   "text": "texts/rv_1002047299.txt",
+   "why": "육개장 «총 내용량 450g 180kcal» = 집은 열량과 같음 → 무변경(기준도 그대로 총량)",
+   "expect": {
+    "runtime": [
+     "per_total",
+     null,
+     180
+    ],
+    "capture": [
+     "total",
+     null,
+     180
+    ]
+   },
+   "before": {
+    "a": [
+     "per_total",
+     null,
+     180
+    ],
+    "c": [
+     "total",
+     null,
+     180
+    ]
+   }
+  },
+  {
+   "id": "TE06",
+   "text": "texts/rv_1001502423.txt",
+   "why": "두부면 «총 내용량 180g⏎40 kcal»(영양정보 머리) · 지금 앞면 «180g (0kcal» OCR 잡음의 0 을 집음 → 40 (100g당 22.2 · K-FIND 27)",
+   "expect": {
+    "runtime": [
+     "per_serving",
+     180,
+     40
+    ],
+    "capture": [
+     "serving",
+     180,
+     40
+    ]
+   },
+   "before": {
+    "a": [
+     "per_total",
+     null,
+     0
+    ],
+    "c": [
+     "total",
+     null,
+     0
+    ]
+   }
+  },
+  {
+   "id": "TN03",
+   "text": "texts/syn_EN03_two_k.txt",
+   "why": "(합성) «총 내용량 200g 300 kcal» 과 «… 350 kcal» 이 둘 — 서로 다르면 무변경",
+   "expect": {
+    "runtime": [
+     "per_total",
+     null,
+     300
+    ],
+    "capture": [
+     "total",
+     null,
+     300
+    ]
+   }
+  },
+  {
+   "id": "TN04",
+   "text": "texts/syn_EN04_per100.txt",
+   "why": "(합성) «100g당» 기준이면 무변경(E 는 총량 기준에서만)",
+   "expect": {
+    "runtime": [
+     "per_100g",
+     100,
+     250
+    ],
+    "capture": [
+     "per100",
+     100,
+     250
+    ]
+   }
+  },
+  {
+   "id": "TE07",
+   "text": "texts/rv_1000050960.txt",
+   "why": "전수 diff 계획 밖 → 같은 라벨 4·4·9 계산에 새 값이 더 가까움(30% 안) 확인 후 양성 · 이전 20 → 201",
+   "before": {
+    "a": [
+     "per_total",
+     null,
+     20
+    ],
+    "c": [
+     "total",
+     null,
+     20
+    ]
+   },
+   "expect": {
+    "runtime": [
+     "per_serving",
+     85,
+     201
+    ],
+    "capture": [
+     "serving",
+     85,
+     201
+    ]
+   }
+  },
+  {
+   "id": "TE08",
+   "text": "texts/rv_1000122557.txt",
+   "why": "전수 diff 계획 밖 → 같은 라벨 4·4·9 계산에 새 값이 더 가까움(30% 안) 확인 후 양성 · 이전 2280 → 95",
+   "before": {
+    "a": [
+     "per_total",
+     null,
+     2280
+    ],
+    "c": [
+     "total",
+     null,
+     2280
+    ]
+   },
+   "expect": {
+    "runtime": [
+     "per_serving",
+     190,
+     95
+    ],
+    "capture": [
+     "serving",
+     190,
+     95
+    ]
+   }
+  },
+  {
+   "id": "TE09",
+   "text": "texts/rv_1000169834.txt",
+   "why": "전수 diff 계획 밖 → 같은 라벨 4·4·9 계산에 새 값이 더 가까움(30% 안) 확인 후 양성 · 이전 350 → 1350",
+   "before": {
+    "a": [
+     "per_total",
+     null,
+     350
+    ],
+    "c": [
+     "total",
+     null,
+     350
+    ]
+   },
+   "expect": {
+    "runtime": [
+     "per_serving",
+     254,
+     1350
+    ],
+    "capture": [
+     "serving",
+     254,
+     1350
+    ]
+   }
+  },
+  {
+   "id": "TE10",
+   "text": "texts/rv_1000232001.txt",
+   "why": "전수 diff 계획 밖 → 같은 라벨 4·4·9 계산에 새 값이 더 가까움(30% 안) 확인 후 양성 · 이전 15 → 115",
+   "before": {
+    "a": [
+     "per_total",
+     null,
+     15
+    ],
+    "c": [
+     "total",
+     null,
+     15
+    ]
+   },
+   "expect": {
+    "runtime": [
+     "per_serving",
+     500,
+     115
+    ],
+    "capture": [
+     "serving",
+     500,
+     115
+    ]
+   }
+  },
+  {
+   "id": "TE11",
+   "text": "texts/rv_1000357140.txt",
+   "why": "전수 diff 계획 밖 → 같은 라벨 4·4·9 계산에 새 값이 더 가까움(30% 안) 확인 후 양성 · 이전 11075 → 75",
+   "before": {
+    "a": [
+     "per_total",
+     null,
+     11075
+    ],
+    "c": [
+     "total",
+     null,
+     11075
+    ]
+   },
+   "expect": {
+    "runtime": [
+     "per_serving",
+     110,
+     75
+    ],
+    "capture": [
+     "serving",
+     110,
+     75
+    ]
+   }
+  },
+  {
+   "id": "TE12",
+   "text": "texts/rv_1000480226.txt",
+   "why": "전수 diff 계획 밖 → 같은 라벨 4·4·9 계산에 새 값이 더 가까움(30% 안) 확인 후 양성 · 이전 640 → 160",
+   "before": {
+    "a": [
+     "per_total",
+     null,
+     640
+    ],
+    "c": [
+     "total",
+     null,
+     640
+    ]
+   },
+   "expect": {
+    "runtime": [
+     "per_serving",
+     235,
+     160
+    ],
+    "capture": [
+     "serving",
+     235,
+     160
+    ]
+   }
+  },
+  {
+   "id": "TE13",
+   "text": "texts/rv_1000494588.txt",
+   "why": "전수 diff 계획 밖 → 같은 라벨 4·4·9 계산에 새 값이 더 가까움(30% 안) 확인 후 양성 · 이전 1920 → 80",
+   "before": {
+    "a": [
+     "per_total",
+     null,
+     1920
+    ],
+    "c": [
+     "total",
+     null,
+     1920
+    ]
+   },
+   "expect": {
+    "runtime": [
+     "per_serving",
+     190,
+     80
+    ],
+    "capture": [
+     "serving",
+     190,
+     80
+    ]
+   }
+  },
+  {
+   "id": "TE14",
+   "text": "texts/rv_1000850128.txt",
+   "why": "전수 diff 계획 밖 → 같은 라벨 4·4·9 계산에 새 값이 더 가까움(30% 안) 확인 후 양성 · 이전 30 → 130",
+   "before": {
+    "a": [
+     "per_total",
+     null,
+     30
+    ],
+    "c": [
+     "total",
+     null,
+     30
+    ]
+   },
+   "expect": {
+    "runtime": [
+     "per_serving",
+     190,
+     130
+    ],
+    "capture": [
+     "serving",
+     190,
+     130
+    ]
+   }
+  },
+  {
+   "id": "TE15",
+   "text": "texts/rv_1000968897.txt",
+   "why": "전수 diff 계획 밖 → 같은 라벨 4·4·9 계산에 새 값이 더 가까움(30% 안) 확인 후 양성 · 이전 37 → 437",
+   "before": {
+    "a": [
+     "per_total",
+     null,
+     37
+    ],
+    "c": [
+     "total",
+     null,
+     37
+    ]
+   },
+   "expect": {
+    "runtime": [
+     "per_serving",
+     600,
+     437
+    ],
+    "capture": [
+     "serving",
+     600,
+     437
+    ]
+   }
+  },
+  {
+   "id": "TE16",
+   "text": "texts/rv_1001100326.txt",
+   "why": "전수 diff 계획 밖 → 같은 라벨 4·4·9 계산에 새 값이 더 가까움(30% 안) 확인 후 양성 · 이전 310 → 335",
+   "before": {
+    "a": [
+     "per_total",
+     null,
+     310
+    ],
+    "c": [
+     "total",
+     null,
+     310
+    ]
+   },
+   "expect": {
+    "runtime": [
+     "per_serving",
+     50,
+     335
+    ],
+    "capture": [
+     "serving",
+     50,
+     335
+    ]
+   }
+  },
+  {
+   "id": "TE17",
+   "text": "texts/rv_1001188486.txt",
+   "why": "전수 diff 계획 밖 → 같은 라벨 4·4·9 계산에 새 값이 더 가까움(30% 안) 확인 후 양성 · 이전 150 → 205",
+   "before": {
+    "a": [
+     "per_total",
+     null,
+     150
+    ],
+    "c": [
+     "total",
+     null,
+     150
+    ]
+   },
+   "expect": {
+    "runtime": [
+     "per_serving",
+     460,
+     205
+    ],
+    "capture": [
+     "serving",
+     460,
+     205
+    ]
+   }
+  },
+  {
+   "id": "TE18",
+   "text": "texts/rv_1001378547.txt",
+   "why": "전수 diff 계획 밖 → 같은 라벨 4·4·9 계산에 새 값이 더 가까움(30% 안) 확인 후 양성 · 이전 500 → 600",
+   "before": {
+    "a": [
+     "per_total",
+     null,
+     500
+    ],
+    "c": [
+     "total",
+     null,
+     500
+    ]
+   },
+   "expect": {
+    "runtime": [
+     "per_serving",
+     800,
+     600
+    ],
+    "capture": [
+     "serving",
+     800,
+     600
+    ]
+   }
+  },
+  {
+   "id": "TE19",
+   "text": "texts/rv_1001407019.txt",
+   "why": "전수 diff 계획 밖 → 같은 라벨 4·4·9 계산에 새 값이 더 가까움(30% 안) 확인 후 양성 · 이전 155 → 165",
+   "before": {
+    "a": [
+     "per_total",
+     null,
+     155
+    ],
+    "c": [
+     "total",
+     null,
+     155
+    ]
+   },
+   "expect": {
+    "runtime": [
+     "per_serving",
+     360,
+     165
+    ],
+    "capture": [
+     "serving",
+     360,
+     165
+    ]
+   }
+  },
+  {
+   "id": "TE20",
+   "text": "texts/rv_1001446656.txt",
+   "why": "전수 diff 계획 밖 → 같은 라벨 4·4·9 계산에 새 값이 더 가까움(30% 안) 확인 후 양성 · 이전 880100 → 170",
+   "before": {
+    "a": [
+     "per_total",
+     null,
+     880100
+    ],
+    "c": [
+     "total",
+     null,
+     880100
+    ]
+   },
+   "expect": {
+    "runtime": [
+     "per_serving",
+     360,
+     170
+    ],
+    "capture": [
+     "serving",
+     360,
+     170
+    ]
+   }
+  },
+  {
+   "id": "TE21",
+   "text": "texts/rv_1001449784.txt",
+   "why": "전수 diff 계획 밖 → 같은 라벨 4·4·9 계산에 새 값이 더 가까움(30% 안) 확인 후 양성 · 이전 175 → 75",
+   "before": {
+    "a": [
+     "per_total",
+     null,
+     175
+    ],
+    "c": [
+     "total",
+     null,
+     175
+    ]
+   },
+   "expect": {
+    "runtime": [
+     "per_serving",
+     100,
+     75
+    ],
+    "capture": [
+     "serving",
+     100,
+     75
+    ]
+   }
+  },
+  {
+   "id": "TE22",
+   "text": "texts/rv_1001480805.txt",
+   "why": "전수 diff 계획 밖 → 원문 확인(영양정보 머리 «총 내용량 N K kcal» = 라벨 값) 후 양성 · 이전 380 → 38",
+   "before": {
+    "a": [
+     "per_total",
+     null,
+     380
+    ],
+    "c": [
+     "total",
+     null,
+     380
+    ]
+   },
+   "expect": {
+    "runtime": [
+     "per_serving",
+     100,
+     38
+    ],
+    "capture": [
+     "serving",
+     100,
+     38
+    ]
+   }
+  },
+  {
+   "id": "TE23",
+   "text": "texts/rv_1001519459.txt",
+   "why": "전수 diff 계획 밖 → 같은 라벨 4·4·9 계산에 새 값이 더 가까움(30% 안) 확인 후 양성 · 이전 35 → 355",
+   "before": {
+    "a": [
+     "per_total",
+     null,
+     35
+    ],
+    "c": [
+     "total",
+     null,
+     35
+    ]
+   },
+   "expect": {
+    "runtime": [
+     "per_serving",
+     230,
+     355
+    ],
+    "capture": [
+     "serving",
+     230,
+     355
+    ]
+   }
+  },
+  {
+   "id": "TE24",
+   "text": "texts/rv_1001618185.txt",
+   "why": "전수 diff 계획 밖 → 같은 라벨 4·4·9 계산에 새 값이 더 가까움(30% 안) 확인 후 양성 · 이전 2520 → 105",
+   "before": {
+    "a": [
+     "per_total",
+     null,
+     2520
+    ],
+    "c": [
+     "total",
+     null,
+     2520
+    ]
+   },
+   "expect": {
+    "runtime": [
+     "per_serving",
+     190,
+     105
+    ],
+    "capture": [
+     "serving",
+     190,
+     105
+    ]
+   }
+  },
+  {
+   "id": "TE25",
+   "text": "texts/rv_1001626420.txt",
+   "why": "전수 diff 계획 밖 → 원문 확인(영양정보 머리 «총 내용량 N K kcal» = 라벨 값) 후 양성 · 이전 2000 → 105",
+   "before": {
+    "a": [
+     "per_total",
+     null,
+     2000
+    ],
+    "c": [
+     "total",
+     null,
+     2000
+    ]
+   },
+   "expect": {
+    "runtime": [
+     "per_serving",
+     70,
+     105
+    ],
+    "capture": [
+     "serving",
+     70,
+     105
+    ]
+   }
+  },
+  {
+   "id": "TE26",
+   "text": "texts/rv_1001879510.txt",
+   "why": "전수 diff 계획 밖 → 같은 라벨 4·4·9 계산에 새 값이 더 가까움(30% 안) 확인 후 양성 · 이전 80170 → 170",
+   "before": {
+    "a": [
+     "per_total",
+     null,
+     80170
+    ],
+    "c": [
+     "total",
+     null,
+     80170
+    ]
+   },
+   "expect": {
+    "runtime": [
+     "per_serving",
+     80,
+     170
+    ],
+    "capture": [
+     "serving",
+     80,
+     170
+    ]
+   }
+  },
+  {
+   "id": "TE27",
+   "text": "texts/rv_1002053968.txt",
+   "why": "전수 diff 계획 밖 → 원문 확인(영양정보 머리 «총 내용량 N K kcal» = 라벨 값) 후 양성 · 이전 175 → 185",
+   "before": {
+    "a": [
+     "per_total",
+     null,
+     175
+    ],
+    "c": [
+     "total",
+     null,
+     175
+    ]
+   },
+   "expect": {
+    "runtime": [
+     "per_serving",
+     30,
+     185
+    ],
+    "capture": [
+     "serving",
+     30,
+     185
+    ]
+   }
+  },
+  {
+   "id": "TE28",
+   "text": "texts/rv_1002057690.txt",
+   "why": "전수 diff 계획 밖 → 원문 확인(영양정보 머리 «총 내용량 N K kcal» = 라벨 값) 후 양성 · 이전 165 → 65",
+   "before": {
+    "a": [
+     "per_total",
+     null,
+     165
+    ],
+    "c": [
+     "total",
+     null,
+     165
+    ]
+   },
+   "expect": {
+    "runtime": [
+     "per_serving",
+     500,
+     65
+    ],
+    "capture": [
+     "serving",
+     500,
+     65
+    ]
+   }
+  },
+  {
+   "id": "TE29",
+   "text": "texts/rv_1002101881.txt",
+   "why": "전수 diff 계획 밖 → 같은 라벨 4·4·9 계산에 새 값이 더 가까움(30% 안) 확인 후 양성 · 이전 2015 → 80",
+   "before": {
+    "a": [
+     "per_total",
+     null,
+     2015
+    ],
+    "c": [
+     "total",
+     null,
+     2015
+    ]
+   },
+   "expect": {
+    "runtime": [
+     "per_serving",
+     72,
+     80
+    ],
+    "capture": [
+     "serving",
+     72,
+     80
+    ]
+   }
+  },
+  {
+   "id": "TE30",
+   "text": "texts/rv_1002125346.txt",
+   "why": "전수 diff 계획 밖 → 같은 라벨 4·4·9 계산에 새 값이 더 가까움(30% 안) 확인 후 양성 · 이전 1534 → 534",
+   "before": {
+    "a": [
+     "per_total",
+     null,
+     1534
+    ],
+    "c": [
+     "total",
+     null,
+     1534
+    ]
+   },
+   "expect": {
+    "runtime": [
+     "per_serving",
+     300,
+     534
+    ],
+    "capture": [
+     "serving",
+     300,
+     534
+    ]
+   }
+  },
+  {
+   "id": "TE31",
+   "text": "texts/rv_1002142368.txt",
+   "why": "전수 diff 계획 밖 → 같은 라벨 4·4·9 계산에 새 값이 더 가까움(30% 안) 확인 후 양성 · 이전 975 → 65",
+   "before": {
+    "a": [
+     "per_total",
+     null,
+     975
+    ],
+    "c": [
+     "total",
+     null,
+     975
+    ]
+   },
+   "expect": {
+    "runtime": [
+     "per_serving",
+     190,
+     65
+    ],
+    "capture": [
+     "serving",
+     190,
+     65
+    ]
+   }
+  },
+  {
+   "id": "TE32",
+   "text": "texts/rv_1002153794.txt",
+   "why": "전수 diff 계획 밖 → 같은 라벨 4·4·9 계산에 새 값이 더 가까움(30% 안) 확인 후 양성 · 이전 1095 → 1030",
+   "before": {
+    "a": [
+     "per_total",
+     null,
+     1095
+    ],
+    "c": [
+     "total",
+     null,
+     1095
+    ]
+   },
+   "expect": {
+    "runtime": [
+     "per_serving",
+     550,
+     1030
+    ],
+    "capture": [
+     "serving",
+     550,
+     1030
+    ]
+   }
+  },
+  {
+   "id": "TE33",
+   "text": "texts/rv_1002159938.txt",
+   "why": "전수 diff 계획 밖 → 같은 라벨 4·4·9 계산에 새 값이 더 가까움(30% 안) 확인 후 양성 · 이전 15 → 115",
+   "before": {
+    "a": [
+     "per_total",
+     null,
+     15
+    ],
+    "c": [
+     "total",
+     null,
+     15
+    ]
+   },
+   "expect": {
+    "runtime": [
+     "per_serving",
+     500,
+     115
+    ],
+    "capture": [
+     "serving",
+     500,
+     115
+    ]
+   }
+  },
+  {
+   "id": "TE34",
+   "text": "texts/rv_1002313740.txt",
+   "why": "전수 diff 계획 밖 → 같은 라벨 4·4·9 계산에 새 값이 더 가까움(30% 안) 확인 후 양성 · 이전 4165 → 165",
+   "before": {
+    "a": [
+     "per_total",
+     null,
+     4165
+    ],
+    "c": [
+     "total",
+     null,
+     4165
+    ]
+   },
+   "expect": {
+    "runtime": [
+     "per_serving",
+     41,
+     165
+    ],
+    "capture": [
+     "serving",
+     41,
+     165
+    ]
+   }
+  },
+  {
+   "id": "TE35",
+   "text": "texts/rv_1002419119.txt",
+   "why": "전수 diff 계획 밖 → 같은 라벨 4·4·9 계산에 새 값이 더 가까움(30% 안) 확인 후 양성 · 이전 15112701125 → 75",
+   "before": {
+    "a": [
+     "per_total",
+     null,
+     15112701125
+    ],
+    "c": [
+     "total",
+     null,
+     15112701125
+    ]
+   },
+   "expect": {
+    "runtime": [
+     "per_serving",
+     180,
+     75
+    ],
+    "capture": [
+     "serving",
+     180,
+     75
+    ]
+   }
+  },
+  {
+   "id": "TE36",
+   "text": "texts/rv_5006550.txt",
+   "why": "전수 diff 계획 밖 → 같은 라벨 4·4·9 계산에 새 값이 더 가까움(30% 안) 확인 후 양성 · 이전 35 → 635",
+   "before": {
+    "a": [
+     "per_total",
+     null,
+     35
+    ],
+    "c": [
+     "total",
+     null,
+     35
+    ]
+   },
+   "expect": {
+    "runtime": [
+     "per_serving",
+     315,
+     635
+    ],
+    "capture": [
+     "serving",
+     315,
+     635
+    ]
+   }
+  },
+  {
+   "id": "TE37",
+   "text": "texts/rv_5034502.txt",
+   "why": "전수 diff 계획 밖 → 같은 라벨 4·4·9 계산에 새 값이 더 가까움(30% 안) 확인 후 양성 · 이전 400 → 110",
+   "before": {
+    "a": [
+     "per_total",
+     null,
+     400
+    ],
+    "c": [
+     "total",
+     null,
+     400
+    ]
+   },
+   "expect": {
+    "runtime": [
+     "per_serving",
+     150,
+     110
+    ],
+    "capture": [
+     "serving",
+     150,
+     110
+    ]
+   }
+  },
+  {
+   "id": "TE38",
+   "text": "texts/rv_5037566.txt",
+   "why": "전수 diff 계획 밖 → 같은 라벨 4·4·9 계산에 새 값이 더 가까움(30% 안) 확인 후 양성 · 이전 313 → 352",
+   "before": {
+    "a": [
+     "per_total",
+     null,
+     313
+    ],
+    "c": [
+     "total",
+     null,
+     313
+    ]
+   },
+   "expect": {
+    "runtime": [
+     "per_serving",
+     500,
+     352
+    ],
+    "capture": [
+     "serving",
+     500,
+     352
+    ]
+   }
+  },
+  {
+   "id": "TE39",
+   "text": "texts/rv_5048034.txt",
+   "why": "전수 diff 계획 밖 → 같은 라벨 4·4·9 계산에 새 값이 더 가까움(30% 안) 확인 후 양성 · 이전 0 → 250",
+   "before": {
+    "a": [
+     "per_total",
+     null,
+     0
+    ],
+    "c": [
+     "total",
+     null,
+     0
+    ]
+   },
+   "expect": {
+    "runtime": [
+     "per_serving",
+     100,
+     250
+    ],
+    "capture": [
+     "serving",
+     100,
+     250
+    ]
+   }
+  },
+  {
+   "id": "TE40",
+   "text": "texts/rv_5054125.txt",
+   "why": "전수 diff 계획 밖 → 같은 라벨 4·4·9 계산에 새 값이 더 가까움(30% 안) 확인 후 양성 · 이전 2141 → 205",
+   "before": {
+    "a": [
+     "per_total",
+     null,
+     2141
+    ],
+    "c": [
+     "total",
+     null,
+     2141
+    ]
+   },
+   "expect": {
+    "runtime": [
+     "per_serving",
+     45,
+     205
+    ],
+    "capture": [
+     "serving",
+     45,
+     205
+    ]
+   }
+  },
+  {
+   "id": "TE41",
+   "text": "texts/rv_5059015.txt",
+   "why": "전수 diff 계획 밖 → 같은 라벨 4·4·9 계산에 새 값이 더 가까움(30% 안) 확인 후 양성 · 이전 870 → 145",
+   "before": {
+    "a": [
+     "per_total",
+     null,
+     870
+    ],
+    "c": [
+     "total",
+     null,
+     870
+    ]
+   },
+   "expect": {
+    "runtime": [
+     "per_serving",
+     190,
+     145
+    ],
+    "capture": [
+     "serving",
+     190,
+     145
+    ]
+   }
+  },
+  {
+   "id": "TE42",
+   "text": "texts/rv_5070684.txt",
+   "why": "전수 diff 계획 밖 → 같은 라벨 4·4·9 계산에 새 값이 더 가까움(30% 안) 확인 후 양성 · 이전 173 → 247",
+   "before": {
+    "a": [
+     "per_total",
+     null,
+     173
+    ],
+    "c": [
+     "total",
+     null,
+     173
+    ]
+   },
+   "expect": {
+    "runtime": [
+     "per_serving",
+     43,
+     247
+    ],
+    "capture": [
+     "serving",
+     43,
+     247
+    ]
+   }
+  },
+  {
+   "id": "TE43",
+   "text": "texts/rv_5104002.txt",
+   "why": "전수 diff 계획 밖 → 원문 확인(영양정보 머리 «총 내용량 N K kcal» = 라벨 값) 후 양성 · 이전 90107 → 107",
+   "before": {
+    "a": [
+     "per_total",
+     null,
+     90107
+    ],
+    "c": [
+     "total",
+     null,
+     90107
+    ]
+   },
+   "expect": {
+    "runtime": [
+     "per_serving",
+     190,
+     107
+    ],
+    "capture": [
+     "serving",
+     190,
+     107
+    ]
+   }
+  },
+  {
+   "id": "TE44",
+   "text": "texts/rv_5116407.txt",
+   "why": "전수 diff 계획 밖 → 원문 확인(영양정보 머리 «총 내용량 N K kcal» = 라벨 값) 후 양성 · 이전 100 → 150",
+   "before": {
+    "a": [
+     "per_total",
+     null,
+     100
+    ],
+    "c": [
+     "total",
+     null,
+     100
+    ]
+   },
+   "expect": {
+    "runtime": [
+     "per_serving",
+     500,
+     150
+    ],
+    "capture": [
+     "serving",
+     500,
+     150
+    ]
+   }
+  },
+  {
+   "id": "TE45",
+   "text": "texts/rv_5118088.txt",
+   "why": "전수 diff 계획 밖 → 같은 라벨 4·4·9 계산에 새 값이 더 가까움(30% 안) 확인 후 양성 · 이전 80 → 60",
+   "before": {
+    "a": [
+     "per_total",
+     null,
+     80
+    ],
+    "c": [
+     "total",
+     null,
+     80
+    ]
+   },
+   "expect": {
+    "runtime": [
+     "per_serving",
+     190,
+     60
+    ],
+    "capture": [
+     "serving",
+     190,
+     60
+    ]
+   }
+  },
+  {
+   "id": "TE46",
+   "text": "texts/rv_5126834.txt",
+   "why": "전수 diff 계획 밖 → 같은 라벨 4·4·9 계산에 새 값이 더 가까움(30% 안) 확인 후 양성 · 이전 150 → 90",
+   "before": {
+    "a": [
+     "per_total",
+     null,
+     150
+    ],
+    "c": [
+     "total",
+     null,
+     150
+    ]
+   },
+   "expect": {
+    "runtime": [
+     "per_serving",
+     238,
+     90
+    ],
+    "capture": [
+     "serving",
+     238,
+     90
+    ]
+   }
+  },
+  {
+   "id": "TE47",
+   "text": "texts/rv_5132978.txt",
+   "why": "전수 diff 계획 밖 → 같은 라벨 4·4·9 계산에 새 값이 더 가까움(30% 안) 확인 후 양성 · 이전 911 → 902",
+   "before": {
+    "a": [
+     "per_total",
+     null,
+     911
+    ],
+    "c": [
+     "total",
+     null,
+     911
+    ]
+   },
+   "expect": {
+    "runtime": [
+     "per_serving",
+     180,
+     902
+    ],
+    "capture": [
+     "serving",
+     180,
+     902
+    ]
+   }
+  },
+  {
+   "id": "TE48",
+   "text": "texts/rv_5156499.txt",
+   "why": "전수 diff 계획 밖 → 같은 라벨 4·4·9 계산에 새 값이 더 가까움(30% 안) 확인 후 양성 · 이전 150 → 30",
+   "before": {
+    "a": [
+     "per_total",
+     null,
+     150
+    ],
+    "c": [
+     "total",
+     null,
+     150
+    ]
+   },
+   "expect": {
+    "runtime": [
+     "per_serving",
+     100,
+     30
+    ],
+    "capture": [
+     "serving",
+     100,
+     30
+    ]
+   }
+  },
+  {
+   "id": "TN05",
+   "text": "texts/rv_1000951798.txt",
+   "why": "전수 diff(가드 전) 악화 건 · 라면 «총 내용량 8g / 12kcal»(스프 부속 표) — 4·4·9 계산(141)과 멂 → 무변경(E6)",
+   "expect": {
+    "runtime": [
+     "per_total",
+     null,
+     651
+    ],
+    "capture": [
+     "total",
+     null,
+     651
+    ]
+   }
+  },
+  {
+   "id": "TN06",
+   "text": "texts/rv_1001722167.txt",
+   "why": "전수 diff(가드 전) 악화 건 · «188.8» 을 선언 «1888» 로 바꿈 → 4·4·9(186)에서 멀어짐 → 무변경(E6)",
+   "expect": {
+    "runtime": [
+     "per_total",
+     null,
+     188.8
+    ],
+    "capture": [
+     "total",
+     null,
+     188.8
+    ]
+   }
+  },
+  {
+   "id": "TN07",
+   "text": "texts/rv_5066714.txt",
+   "why": "전수 diff(가드 전) 악화 건 · 선언 1,646.8 이 4·4·9(881.9)와 멂 → 무변경(E6)",
+   "expect": {
+    "runtime": [
+     "per_total",
+     null,
+     881.6
+    ],
+    "capture": [
+     "total",
+     null,
+     881.6
+    ]
+   }
+  },
+  {
+   "id": "TN08",
+   "text": "texts/rv_5012850.txt",
+   "why": "전수 diff(가드 전) 악화 건 · 선언 40 이 4·4·9(99.3)와 멂 → 무변경(E6)",
+   "expect": {
+    "runtime": [
+     "per_total",
+     null,
+     105
+    ],
+    "capture": [
+     "total",
+     null,
+     105
+    ]
+   }
+  },
+  {
+   "id": "TN09",
+   "text": "texts/rv_1000759237.txt",
+   "why": "전수 diff(가드 전) 악화 건 · 선언 78 이 집은 70 보다 4·4·9(71.6)에서 멂 → 무변경(E6)",
+   "expect": {
+    "runtime": [
+     "per_total",
+     null,
+     70
+    ],
+    "capture": [
+     "total",
+     null,
+     70
+    ]
+   }
+  },
+  {
+   "id": "TN10",
+   "text": "texts/rv_1002098731.txt",
+   "why": "전수 diff(가드 전) 악화 건 · 선언 495 가 집은 500 보다 4·4·9(503)에서 멂 → 무변경(E6)",
+   "expect": {
+    "runtime": [
+     "per_total",
+     null,
+     500
+    ],
+    "capture": [
+     "total",
+     null,
+     500
+    ]
+   }
+  },
+  {
+   "id": "TN11",
+   "text": "texts/rv_1000320790.txt",
+   "why": "전수 diff(가드 전) 악화 건 · 선언 369 가 집은 369.68 보다 4·4·9(369.7)에서 멂 → 무변경(E6)",
+   "expect": {
+    "runtime": [
+     "per_total",
+     null,
+     369.68
+    ],
+    "capture": [
+     "total",
+     null,
+     369.68
+    ]
+   }
+  }
+ ],
+ "corrections": [
+  {
+   "id": "TN02→TE06",
+   "at": "2026-10-23 첫 실행",
+   "why": "구현 전 «총 내용량 N K kcal 선언 없음»으로 봤으나 원문 27~28행에 «총 내용량 180g⏎40 kcal» 이 있음(grep 을 «내용량 180g(40kcal)» 만 봄). 40 이 라벨 값 · 집은 0 은 앞면 OCR 잡음 → 양성으로 정정."
+  }
+ ]
+}

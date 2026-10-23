@@ -2751,6 +2751,71 @@ function rejectCompanyValue(text, index, val) {
 }
 
 /**
+ * ★ 세션83 — 사진 제보 OCR 제품명(정답 IP/eval_product_name_v1 · P1~P5).
+ *   실측(운영 제보 63): 표 배치 «제품명⏎식품의 유형⏎원재료명⏎초코 라이스 뻥튀기 칩» 에서 다음 «라벨»을 이름으로 집음(운영에 «식품의 유형» 이 제품명으로 저장)
+ *   · «제 품 명 양파를 품은 메밀칩» 공백 · «품명 양반 미역국라면»(제 탈락) 은 못 읽음.
+ *   틀린 이름보다 빈칸이 낫다(이름은 products.product_name 으로 저장된다) — 근거 없으면 null.
+ */
+const PN_LABEL_WORDS = ['식품의유형', '식품유형', '품목유형', '총내용량', '내용량', '원재료명및함량', '원재료명', '원재료', '품목보고번호', '품목제조보고번호',
+  '소비기한', '유통기한', '보관방법', '주의사항', '포장재질', '포장지', '제조원', '제조사', '제조업소', '판매원', '유통전문판매원', '수입원', '수입판매원', '원산지',
+  '영양정보', '영양성분', '반품', '교환', '업소명', '소재지', '제품명', '상품명', '품명',
+  '유형', '품목제조번호', '인증번호', '고객', '소비자', '제조회사', '제조일', '포장일자', '수입업소', '판매업소', '수입·판매업소', '용기', '보관', '냉동보관', '냉장보관', '실온보관'];
+const PN_FOOD_TYPES = new Set(['과자', '캔디류', '빵류', '초콜릿가공품', '초콜릿류', '라면', '유탕면', '음료류', '혼합음료', '두유', '발효유', '농후발효유', '가공유', '김치', '소스', '소스류', '드레싱', '복합조미식품', '즉석조리식품',
+  '침출차', '고형차', '액상차', '과채주스', '과채음료', '잼류', '순대', '돼지순대', '어묵', '두부', '식용유지', '조미김']);
+const PN_COUNTRIES = new Set(['국산', '국내산', '미국', '호주', '중국', '일본', '베트남', '태국', '독일', '프랑스', '이탈리아', '스페인', '뉴질랜드', '캐나다', '영국', '네덜란드', '덴마크', '벨기에', '튀르키예', '말레이시아', '인도네시아', '필리핀']);
+const RE_PN_LABEL = /(?:[제상]\s{0,3}품\s{0,3}명|(?<![가-힣])품\s{0,3}명(?![가-힣]))\s{0,4}[:：|\-]?\s{0,4}/g;   // 제품명 뒤는 붙어 써도 됨(«제품명순두부찌개») · 맨 «품명» 은 뒤가 한글이면 제외
+/** 라벨 낱말·조각·식품유형 값·기호 잔해 — 같은 줄 값에도 적용(이것만). */
+function _pnLabelish(v) {
+  const x = String(v || '').trim();
+  if (x.length < 2) return true;
+  if (!/[가-힣A-Za-z]/.test(x)) return true;
+  if (/^(?:및|또는|함량)(?:\s|$)/.test(x)) return true;
+  if (/^[\[(（]/.test(x) && /%|함유/.test(x)) return true;   // «[박하오일 0.3% 함유]» 같은 괄호 표기만 있는 값
+  const k = x.replace(/\s/g, '');
+  for (const w of PN_LABEL_WORDS) { if (k.startsWith(w) || (k.length >= 2 && w.startsWith(k))) return true; }
+  const base = k.replace(/\(.*$/, '');
+  if (PN_FOOD_TYPES.has(k) || PN_FOOD_TYPES.has(base)) return true;
+  return false;
+}
+/** 표 배치(다음 줄) 후보는 더 엄격하게 — «이름처럼 생긴» 줄만. */
+function _pnColumnRejected(v) {
+  const x = String(v || '').trim();
+  if (_pnLabelish(x)) return true;
+  if (/가공품$/.test(x.replace(/\s/g, '').replace(/\(.*$/, ''))) return true;   // «곡류가공품» 등 식품유형 값(표 배치에서만)
+  if (x.length > 40) return true;
+  if (/^[\d,.\s]+(?:g|kg|ml|mL|L|㎖|mg|kcal|cm|mm|%)?\b/.test(x) && !/[가-힣]{2}/.test(x)) return true;
+  if (/나트륨|탄수화물|단백질|콜레스테롤|트랜스지방|포화지방|kcal|%|\d\s{0,2}(?:mg|cm|mm)\b/i.test(x)) return true;
+  if ((x.match(/[,，]/g) || []).length >= 1 || /\([가-힣]{1,8}산\s{0,2}[):,]/.test(x)) return true;   // 원재료 나열 줄
+  if (/(?:tel|fax|전화|☎|\d{2,4}-\d{3,4}-\d{4}|\(주\)|㈜|주식회사|연출|이미지|Ingredients|KEEP)/i.test(x)) return true;
+  if (/(?:하십시오|바랍니다|마십시오|습니다|세요)\.?$/.test(x)) return true;   // 안내 문장
+  if (/까지|보관|표기|표시|업소|상담|센터|번길|[가-힣]로\s{0,2}\d|^\d|^\(|^\[|^류/.test(x) || PN_COUNTRIES.has(x.replace(/\s/g, ''))) return true;   // 날짜·보관·주소·괄호 조각·나라 이름
+  return false;
+}
+function _pnClean(v) { return String(v || '').replace(/^[|·•▲■□●○◆◇※*\s]+/, '').replace(/[\s,:.\/\-|]+$/, '').trim().slice(0, 100); }
+function extractProductName(text) {
+  const t = String(text || '');
+  const endRe = new RegExp(`^(.{1,200}?)${META_END_LOOKAHEAD}`, 's');
+  RE_PN_LABEL.lastIndex = 0;
+  let m;
+  while ((m = RE_PN_LABEL.exec(t)) !== null) {
+    const after = t.slice(m.index + m[0].length);
+    // P1 같은 줄 값 — 라벨 조각만 아니면 종전처럼 그대로(«(가다랑어65%)» 같은 괄호 표기 유지)
+    const same = after.match(endRe);
+    // «동원참치 DHA • 식품의 유형 : …» — 띄어 쓴 «식품의 유형» 은 META_END 낱말에 없어 값에 붙는다 → 거기서 자른다
+    const sv = same ? _pnClean(same[1].split(/\s{0,3}[•·]?\s{0,3}식품의\s{0,2}유형/)[0]) : '';
+    if (sv && !sv.includes('\n') && !_pnLabelish(sv)) return sv;
+    // P3 표 배치 — 같은 줄 값이 없거나 라벨이면, 다음 줄들(최대 8줄)에서 라벨 줄은 건너뛰고 첫 «이름처럼 생긴» 줄
+    const lines = after.split('\n');
+    for (let i = 1; i < Math.min(lines.length, 9); i++) {
+      const v = _pnClean(lines[i]);
+      if (!v) continue;
+      if (!_pnColumnRejected(v)) return v;
+    }
+  }
+  return null;
+}
+
+/**
  * OCR 텍스트에서 제품 메타정보를 추출.
  * @param {string} text - 교정된 OCR 텍스트
  * @returns {Object} { product_name, food_type, brand, manufacturer, total_content, content_unit, report_no }
@@ -2765,7 +2830,8 @@ function extractProductMeta(text) {
   text = normalizeLabelSpacing(text);
 
   // 제품명 (상품명) — 한국 라벨에서 일반적으로 가장 위에 위치
-  const productName = extractByLabels(text, ['제품명', '상품명']);
+  // ★ 세션83 — extractProductName(정답 IP/eval_product_name_v1): «제 품 명»·«품명» 변형 · 표 배치(라벨 열 → 값 열) · 라벨 조각 거부.
+  const productName = extractProductName(text);
   if (productName) meta.product_name = productName;
 
   // 식품유형 — 다양한 라벨 변형 대응

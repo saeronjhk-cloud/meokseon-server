@@ -792,11 +792,12 @@ function evaluateNutrition(product, nutrition, config = DEFAULT_CONFIG, raccPoli
   if (isDried) {
     result.context_messages.push('건조식품으로 100g당 수치가 높게 표시됩니다. 1회 제공량 기준으로 판정하였습니다.');
   }
-  if (category === 'fermented') {
-    result.context_messages.push('발효식품은 나트륨이 높으나, 유산균·식이섬유 등 건강 유익 성분이 함께 포함되어 있습니다.');
-  }
-  if (category === 'nuts') {
-    result.context_messages.push('지방 함량이 높지만, 불포화지방산이 풍부한 건강한 지방입니다.');
+  // ★ 세션83 (정답 IP/eval_context_messages_v1 · disclaimer_guardrails_v1 §1.3) — 효능·«건강» 표현 금지.
+  //   발효 안내는 나트륨이 실제로 노랑·빨강일 때만(발효유류 요거트는 나트륨이 낮다 · CM02).
+  //   견과(nuts) 분기는 detectFoodCategory 가 만들지 않는 죽은 코드라 삭제(M3 · 되살릴 때는 정답 먼저).
+  const naColor = result.nutrients && result.nutrients.sodium && result.nutrients.sodium.color;
+  if (category === 'fermented' && (naColor === 'red' || naColor === 'yellow')) {
+    result.context_messages.push('장류·김치 같은 발효식품은 제조 특성상 나트륨 함량이 높은 경우가 많습니다. 1회 섭취량을 확인해 주세요.');
   }
 
   return result;

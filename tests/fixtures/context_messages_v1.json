@@ -1,0 +1,146 @@
+{
+ "name": "eval_context_messages_v1 (신호등 맥락 안내 문구 — 단정 표현 가드레일)",
+ "fixed_at": "2026-10-23 세션83 · 구현 전 고정",
+ "why": "193 §5-3. 서버 evaluateNutrition context_messages 의 발효 «건강 유익 성분이 함께 포함» · 견과 «건강한 지방입니다» 가 disclaimer_guardrails_v1 §1.3(단정형 금지)·건강 효능 표현과 충돌. 사용처 확인(10-23): 웹은 화이트리스트(건조식품)만 표시 · Flutter APK(backends/먹선/APK/app-release.apk 2026-05-05) libapp.so 에 «context_messages» 문자열 없음 = 앱은 안 읽음 · DB nutrition_traffic_light 0행(응답마다 새로 계산). 또 발효 문구는 «발효유류»(요거트 · 나트륨 낮음)에도 붙어 사실과 어긋났고, 견과 분류('nuts')는 detectFoodCategory 가 만들지 않아 죽은 코드.",
+ "rules": [
+  "M1 건조식품 안내 문구·조건은 그대로(웹 화이트리스트와 같은 글자).",
+  "M2 발효 안내는 food_category 'fermented' 이고 나트륨 색이 red 또는 yellow 일 때만 · 문구 wording.fermented(효능·«건강» 표현 없음 · 섭취량 확인 권고).",
+  "M3 견과(nuts) 안내 삭제(분류가 만들어지지 않는 죽은 분기 · 되살릴 때는 정답 먼저).",
+  "M4 모든 안내 문구에 금지어(건강한 · 유익 · 풍부한 · 안심 · 좋은 · 효과) 없음."
+ ],
+ "wording": {
+  "dried": "건조식품으로 100g당 수치가 높게 표시됩니다. 1회 제공량 기준으로 판정하였습니다.",
+  "fermented": "장류·김치 같은 발효식품은 제조 특성상 나트륨 함량이 높은 경우가 많습니다. 1회 섭취량을 확인해 주세요."
+ },
+ "banned": [
+  "건강한",
+  "유익",
+  "풍부한",
+  "안심",
+  "좋은",
+  "효과"
+ ],
+ "cases": [
+  {
+   "id": "CM01",
+   "why": "김치 · 나트륨 빨강 → 발효 안내(새 문구)",
+   "product": {
+    "product_name": "종가 맛김치",
+    "food_type": "김치류",
+    "content_unit": "g",
+    "serving_size": 40,
+    "total_content": 500
+   },
+   "nutrition": {
+    "calories": 15,
+    "sodium": 340,
+    "sugars": 1,
+    "sat_fat": 0,
+    "total_fat": 0.3,
+    "cholesterol": 0,
+    "protein": 1.2,
+    "fiber": 1.5,
+    "trans_fat": 0
+   },
+   "expect": [
+    "장류·김치 같은 발효식품은 제조 특성상 나트륨 함량이 높은 경우가 많습니다. 1회 섭취량을 확인해 주세요."
+   ]
+  },
+  {
+   "id": "CM02",
+   "why": "발효유(요거트) · 나트륨 초록 → 발효 안내 없음(종전엔 «나트륨이 높으나 … 건강 유익 성분» 이 나와 사실과도 어긋남)",
+   "product": {
+    "product_name": "플레인 요거트",
+    "food_type": "발효유류",
+    "content_unit": "g",
+    "serving_size": 100,
+    "total_content": 400
+   },
+   "nutrition": {
+    "calories": 60,
+    "sodium": 45,
+    "sugars": 4,
+    "sat_fat": 1,
+    "total_fat": 2,
+    "cholesterol": 0,
+    "protein": 3,
+    "fiber": 0,
+    "trans_fat": 0
+   },
+   "expect": []
+  },
+  {
+   "id": "CM03",
+   "why": "된장(제품명 키워드) · 나트륨 빨강 → 발효 안내",
+   "product": {
+    "product_name": "재래식 된장",
+    "food_type": null,
+    "content_unit": "g",
+    "serving_size": 15,
+    "total_content": 500
+   },
+   "nutrition": {
+    "calories": 25,
+    "sodium": 650,
+    "sugars": 1,
+    "sat_fat": 0,
+    "total_fat": 1,
+    "cholesterol": 0,
+    "protein": 2,
+    "fiber": 0,
+    "trans_fat": 0
+   },
+   "expect": [
+    "장류·김치 같은 발효식품은 제조 특성상 나트륨 함량이 높은 경우가 많습니다. 1회 섭취량을 확인해 주세요."
+   ]
+  },
+  {
+   "id": "CM04",
+   "why": "육포 · 건조식품 안내는 그대로(종전 문구 유지)",
+   "product": {
+    "product_name": "쇠고기 육포",
+    "food_type": "육포",
+    "content_unit": "g",
+    "serving_size": 25,
+    "total_content": 50
+   },
+   "nutrition": {
+    "calories": 80,
+    "sodium": 350,
+    "sugars": 5,
+    "sat_fat": 0.5,
+    "total_fat": 1.5,
+    "cholesterol": 20,
+    "protein": 15,
+    "fiber": 0,
+    "trans_fat": 0
+   },
+   "expect": [
+    "건조식품으로 100g당 수치가 높게 표시됩니다. 1회 제공량 기준으로 판정하였습니다."
+   ]
+  },
+  {
+   "id": "CM05",
+   "why": "일반 과자 → 안내 없음",
+   "product": {
+    "product_name": "감자칩",
+    "food_type": "과자",
+    "content_unit": "g",
+    "serving_size": 30,
+    "total_content": 60
+   },
+   "nutrition": {
+    "calories": 160,
+    "sodium": 180,
+    "sugars": 1,
+    "sat_fat": 3,
+    "total_fat": 10,
+    "cholesterol": 0,
+    "protein": 2,
+    "fiber": 0,
+    "trans_fat": 0
+   },
+   "expect": []
+  }
+ ]
+}

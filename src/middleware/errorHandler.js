@@ -55,7 +55,9 @@ function errorHandler(err, req, res, _next) {
     response.error.details = err.details;
   }
 
-  if (process.env.NODE_ENV === 'development') {
+  // ★ 세션83 — 운영(Railway)이 NODE_ENV=development 로 떠 있어 응답에 스택(서버 경로·줄번호)이 나가고 있었다(10-22 실측).
+  //   환경 이름에 기대지 않는다: 명시 플래그 EXPOSE_ERROR_STACK=1 일 때만 응답에 싣는다(로그에는 그대로 남는다).
+  if (process.env.EXPOSE_ERROR_STACK === '1') {
     response.error.stack = err.stack;
   }
 
